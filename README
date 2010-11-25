@@ -6,6 +6,14 @@ This is the Emacs repository for ELPA-style packages.
 
 packages/ contains all the packages
 admin/ contains all the fetch and deployment scripts
+html/ contains the HTML to run the repo.
+
+To make your own copy of this repo:
+bzr cat bzr://bzr.savannah.gnu.org/emacs/elpa/admin/package-update.sh
+chmod +x package-update.sh
+./package-update.sh $INSTALLDIR
+# what did the installer do?  let's check...
+cat $INSTALLDIR/update-log
 
 
 This file is part of GNU Emacs.
