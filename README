@@ -1,19 +1,127 @@
-Copyright (C) 2010  Free Software Foundation, Inc.
+Copyright (C) 2010-2011 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
-This is the Emacs repository for ELPA-style packages.
+This branch contains the sources, deployment scripts, and auxilliary
+files for the Emacs Lisp package archive (elpa.gnu.org).
 
-packages/ contains all the packages
-admin/ contains all the fetch and deployment scripts
-html/ contains the HTML to run the repo.
+This file explains the branch layout, how to add and edit packages,
+and how to deploy the archive (either on elpa.gnu.org, or a local copy
+for testing purposes).
 
-To make your own copy of this repo:
-bzr cat bzr://bzr.savannah.gnu.org/emacs/elpa/admin/package-update.sh
-chmod +x package-update.sh
-./package-update.sh $INSTALLDIR
-# what did the installer do?  let's check...
-cat $INSTALLDIR/update-log
+
+* DIRECTORY LAYOUT
+
+** admin/    -- scripts for deploying the package archive.
+                See the DEPLOYMENT section for details.
+** html/     -- HTML for the elp.gnu.org website.
+** packages/ -- source code for the packages.
+
+
+* PACKAGES
+
+** Contents of the packages/ directory:
+
+This directory holds the package sources.  Unlike the deployed package
+archive, multi-file packages are present here as directories, not tar
+files.  So, edits to the sources can be easily managed by Bzr.
+
+*** archive-contents
+This file contains a Lisp form recording the hosted package names and
+their attributes.  Once the archive is deployed, Emacs learns the
+archive contents by reading this file (normally via HTTP).
+
+In the future, we'll remove this file from the repository, and
+generate it automatically during deployment.
+
+*** Package sources
+In the form of *.el files for simple (1-file) packages, or
+subdirectories for multi-file packages.
+
+*** Readme files
+When the archive is deployed, Emacs retrieves the package descriptions
+by reading these files (normally via HTTP).
+
+In the future, we'll remove these files from the repository, and
+generate them during deployment.
+
+** To add a package:
+
+*** Add a simple (1-file) package as packages/NAME-VERSION.el.
+
+*** Add a multi-file package a directory, packages/NAME-VERSION.
+
+*** Add a readme file, packages/NAME-readme.txt.  This should be a
+copy of the commentary section for a simple package, or the README
+file for a multi-file package.
+
+*** Edit archive-contents and add an entry for the new package.
+
+*** Commit your changes
+This is done the usual way ("bzr add", "bzr commit", etc).
+
+Changes in the Bzr repository do not immediately propagate to the
+user-facing archive (what users see when they do `M-x list-packages').
+That is done by deploying the archive (see below).
+
+
+* DEPLOYMENT
+
+** The package-update.sh script
+
+Use the script admin/package-update.sh to deploy a partial or full
+copy of the package archive.  To run a partial deployment:
+
+  /PATH/TO/admin/package-update.sh DEST
+
+This deploys the packages in packages/ to DEST/packages.
+
+To run a full deployment:
+
+  /PATH/TO/admin/package-update.sh DEST 1
+
+A full deployment additionally copies the admin scripts to DEST/admin,
+creates a full tarball in DEST/packages/emacs-packages-latest.tgz, and
+fetches externally hosted packages (currently, the Org daily builds)
+and adds them to the archive.
+
+The package-update.sh script only works if it lives in a bzr
+repository.  It uses `bzr export' to deploy from the repository to the
+destination directory.  If you have uncommitted changes in the working
+copy, those changes are not deployed.
+
+You can view the deployment log at DEST/update-log.
+
+The other scripts in the admin/ subdirectory are used for fetching the
+Org dailies.
+
+** Accessing a deployed archive
+
+To access the archive via HTPP, have a symlink (say) /var/www/packages
+pointing to DEST/packages, and set up Emacs with
+
+  (setq package-archives '(("new-elpa" . "http://foo.com/packages")))
+
+You can also access the archive via normal file access.  Such "local
+archives" are useful for debugging:
+
+  (setq package-archives '(("local-elpa" . "DEST/packages")))
+
+** Notes specific to elpa.gnu.org
+
+The way things are set up on this machine, we refresh the archive by
+logging in (login access set up by FSF admins), and
+
+su elpa
+cd ~elpa/elpa
+bzr up
+./admin/package-update /home/elpa/staging/ 1
+
+The symlink /var/www/packages points to /home/elpa/staging/packages.
+
+The Org mode dailies are fetched and added by the script
+admin/org-synch.sh, which is run as a cron job (we also run this
+script during deployment).
 
 
 This file is part of GNU Emacs.
@@ -30,3 +138,9 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Local variables:
+mode: outline
+paragraph-separate: "[ 	]*$"
+end:
