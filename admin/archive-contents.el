@@ -71,7 +71,10 @@
                                                 (concat pkg "-readme.txt"))
                             (erase-buffer)
                             (emacs-lisp-mode)
-                            (insert commentary)
+                            (insert (or commentary
+                                        (prog1 "No description"
+                                          (message "Missing Commentary in %s"
+                                                   file))))
                             (goto-char (point-min))
                             (while (looking-at ";*[ \t]*\\(commentary[: \t]*\\)?\n")
                               (delete-region (match-beginning 0)
