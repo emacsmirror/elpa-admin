@@ -24,7 +24,7 @@
 (require 'lisp-mnt)
 
 (defun batch-make-archive-contents ()
-  (let ((packages '(1)))                ;I think this is the format-version.
+  (let ((packages '(1))) ; format-version.
     (dolist (file (directory-files default-directory))
       (pcase file
        ((or `"." `".." `"elpa.rss" `"archive-contents") nil)

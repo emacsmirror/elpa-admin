@@ -14,7 +14,7 @@ for testing purposes).
 
 ** admin/    -- scripts for deploying the package archive.
                 See the DEPLOYMENT section for details.
-** html/     -- HTML for the elp.gnu.org website.
+** html/     -- HTML for the elpa.gnu.org website.
 ** packages/ -- source code for the packages.
 
 
@@ -26,36 +26,15 @@ This directory holds the package sources.  Unlike the deployed package
 archive, multi-file packages are present here as directories, not tar
 files.  So, edits to the sources can be easily managed by Bzr.
 
-*** archive-contents
-This file contains a Lisp form recording the hosted package names and
-their attributes.  Once the archive is deployed, Emacs learns the
-archive contents by reading this file (normally via HTTP).
-
-In the future, we'll remove this file from the repository, and
-generate it automatically during deployment.
-
 *** Package sources
 In the form of *.el files for simple (1-file) packages, or
 subdirectories for multi-file packages.
-
-*** Readme files
-When the archive is deployed, Emacs retrieves the package descriptions
-by reading these files (normally via HTTP).
-
-In the future, we'll remove these files from the repository, and
-generate them during deployment.
 
 ** To add a package:
 
 *** Add a simple (1-file) package as packages/NAME-VERSION.el.
 
 *** Add a multi-file package a directory, packages/NAME-VERSION.
-
-*** Add a readme file, packages/NAME-readme.txt.  This should be a
-copy of the commentary section for a simple package, or the README
-file for a multi-file package.
-
-*** Edit archive-contents and add an entry for the new package.
 
 *** Commit your changes
 This is done the usual way ("bzr add", "bzr commit", etc).
