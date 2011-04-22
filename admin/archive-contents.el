@@ -23,25 +23,37 @@
 
 (require 'lisp-mnt)
 
+(defconst archive-contents-subdirectory-regexp
+  "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)")
+
+(defun archive-contents--convert-require (elt)
+  (list (car elt)
+	(version-to-list (car (cdr elt)))))
+
 (defun batch-make-archive-contents ()
   (let ((packages '(1))) ; format-version.
     (dolist (file (directory-files default-directory))
       (pcase file
        ((or `"." `".." `"elpa.rss" `"archive-contents") nil)
        ((pred file-directory-p)
-        (if (not (string-match "-[0-9.]+\\'" file))
+        (if (not (string-match (concat archive-contents-subdirectory-regexp "\\'")
+			       file))
             (message "Unknown package directory name format %s" file)
-          (let* ((pkg (substring file 0 (match-beginning 0)))
-                 (vers (substring file (1+ (match-beginning 0))))
+          (let* ((pkg  (match-string 1 file))
+                 (vers (match-string 2 file))
                  (exp
                   (with-temp-buffer
                     (insert-file-contents
                      (expand-file-name (concat pkg "-pkg.el") file))
                     (goto-char (point-min))
-                    (read (current-buffer)))))
-            (copy-file (expand-file-name "README" file)
-                       (concat pkg "-readme.txt")
-                       'ok-if-already-exists)
+                    (read (current-buffer))))
+		 (req (mapcar 'archive-contents--convert-require
+			      (nth 4 exp)))
+		 (readme (expand-file-name "README" file)))
+	    (when (file-exists-p readme)
+	      (copy-file readme
+			 (concat pkg "-readme.txt")
+			 'ok-if-already-exists))
             (unless (equal (nth 1 exp) pkg)
               (message "Package name %s doesn't match file name %s"
                        (nth 1 exp) file))
@@ -50,10 +62,11 @@
                        (nth 2 exp) file))
             (push (cons (intern pkg)
                         (vector (version-to-list vers)
-                                nil     ;??
+                                req
                                 (nth 3 exp)
                                 'tar))
                   packages))))
+       ;; Simple package
        ((pred (string-match "\\.el\\'"))
         (if (not (string-match "-\\([0-9.]+\\)\\.el\\'" file))
             (message "Unknown package file name format %s" file)
@@ -85,10 +98,14 @@
                                           (looking-at "[ \t]*\n"))
                               (delete-region (match-beginning 0)
                                              (match-end 0)))
-                            (save-buffer))))))))
+                            (save-buffer)))))))
+		 (requires-str (lm-header "package-requires"))
+		 (req (if requires-str
+			  (mapcar 'archive-contents--convert-require
+				  (car (read-from-string requires-str))))))
             (push (cons (intern pkg)
                         (vector (version-to-list vers)
-                                nil     ;??
+				req
                                 desc
                                 'single))
                   packages))))
