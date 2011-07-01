@@ -1,4 +1,4 @@
-;;; archive-contents.el --- Auto-generate the `archive-contents' file
+;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.
 
 ;; Copyright (C) 2011  Free Software Foundation, Inc
 
@@ -59,10 +59,10 @@ Otherwise return nil."
     (dolist (dir (directory-files default-directory nil archive-re-no-dot))
       (condition-case v
 	  (if (not (file-directory-p dir))
-	      1;(error "Skipping non-package file %s" dir)
+	      (error "Skipping non-package file %s" dir)
 	    (let* ((pkg (file-name-nondirectory dir))
 		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir))
-		   simple-p version)
+		   simple-p)
 	      ;; Omit autoloads and .elc files from the package.
 	      (if (file-exists-p autoloads-file)
 		  (delete-file autoloads-file))
@@ -143,13 +143,7 @@ package commentary to PKG-readme.txt.  Return the descriptor."
   "Deploy the contents of DIR into the archive as a multi-file package.
 Rename DIR/ to PKG-VERS/, and write the package commentary to
 PKG-readme.txt.  Return the descriptor."
-  (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
-	 (exp
-	  (with-temp-buffer
-	    (unless pkg-file (error "File not found: %s" pkg-file))
-	    (insert-file-contents pkg-file)
-	    (goto-char (point-min))
-	    (read (current-buffer))))
+  (let* ((exp (archive--multi-file-package-def dir pkg))
 	 (vers (nth 2 exp))
 	 (req (mapcar 'archive--convert-require (nth 4 exp)))
 	 (readme (expand-file-name "README" dir)))
@@ -161,6 +155,73 @@ PKG-readme.txt.  Return the descriptor."
       (copy-file readme (concat pkg "-readme.txt") 'ok-if-already-exists))
     (rename-file dir (concat pkg "-" vers))
     (cons (intern pkg) (vector (version-to-list vers) req (nth 3 exp) 'tar))))
+
+(defun archive--multi-file-package-def (dir pkg)
+  "Reurn the `define-package' form in the file DIR/PKG-pkg.el."
+  (let ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir)))
+    (with-temp-buffer
+      (unless (file-exists-p pkg-file)
+	(error "File not found: %s" pkg-file))
+      (insert-file-contents pkg-file)
+      (goto-char (point-min))
+      (read (current-buffer)))))
+
+(defun batch-make-site-dir (package-dir site-dir)
+  (require 'package)
+  (setq package-dir (expand-file-name package-dir default-directory))
+  (setq site-dir (expand-file-name site-dir default-directory))
+  (dolist (dir (directory-files package-dir t archive-re-no-dot))
+   (condition-case v
+	(if (not (file-directory-p dir))
+	    (error "Skipping non-package file %s" dir)
+	  (let* ((pkg (file-name-nondirectory dir))
+		 (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir))
+		 simple-p version)
+	    ;; Omit autoloads and .elc files from the package.
+	    (if (file-exists-p autoloads-file)
+		(delete-file autoloads-file))
+	    (archive--delete-elc-files dir)
+	    ;; Test whether this is a simple or multi-file package.
+	    (setq simple-p (archive--simple-package-p dir pkg))
+	    (if simple-p
+		(progn
+		  (apply 'archive--write-pkg-file dir pkg simple-p)
+		  (setq version (car simple-p)))
+	      (setq version
+		    (nth 2 (archive--multi-file-package-def dir pkg))))
+	    (make-symbolic-link (expand-file-name dir package-dir)
+				(expand-file-name (concat pkg "-" version)
+						  site-dir)
+				t)
+	    (package-generate-autoloads pkg dir)
+	    (let ((load-path (cons dir load-path)))
+	      (byte-recompile-directory dir 0 t))))
+     ;; Error handler
+     (error (message "%s" (cadr v))))))
+
+(defun archive--write-pkg-file (pkg-dir name version desc requires &rest ignored)
+  (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
+	(print-level nil)
+	(print-length nil))
+    (write-region
+     (concat (format ";; Generated package description from %s.el\n"
+		     name)
+	     (prin1-to-string
+	      (list 'define-package
+		    name
+		    version
+		    desc
+		    (list 'quote
+			  ;; Turn version lists into string form.
+			  (mapcar
+			   (lambda (elt)
+			     (list (car elt)
+				   (package-version-join (cadr elt))))
+			   requires))))
+	     "\n")
+     nil
+     pkg-file)))
+
 
 ;; Local Variables:
 ;; no-byte-compile: t
