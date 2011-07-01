@@ -1,4 +1,4 @@
-;;; archive-contents.el --- Auto-generate the `archive-contents' file -*- lexical-binding: t -*-
+;;; archive-contents.el --- Auto-generate the `archive-contents' file
 
 ;; Copyright (C) 2011  Free Software Foundation, Inc
 
@@ -30,23 +30,35 @@
   (list (car elt)
 	(version-to-list (car (cdr elt)))))
 
+(defun archive-contents--strip-rcs-id (str)
+  "Strip RCS version ID from the version string STR.
+If the result looks like a dotted numeric version, return it.
+Otherwise return nil."
+  (when str
+    (when (string-match "\\`[ \t]*[$]Revision:[ \t]+" str)
+      (setq str (substring str (match-end 0))))
+    (condition-case nil
+	(if (version-to-list str)
+	    str)
+      (error nil))))
+
 (defun batch-make-archive-contents ()
   (let ((packages '(1))) ; format-version.
     (dolist (file (directory-files default-directory))
-      (pcase file
-       ((or `"." `".." `"elpa.rss" `"archive-contents") nil)
-       ((pred file-directory-p)
-        (if (not (string-match (concat archive-contents-subdirectory-regexp "\\'")
-			       file))
-            (message "Unknown package directory name format %s" file)
-          (let* ((pkg  (match-string 1 file))
-                 (vers (match-string 2 file))
-                 (exp
-                  (with-temp-buffer
-                    (insert-file-contents
-                     (expand-file-name (concat pkg "-pkg.el") file))
-                    (goto-char (point-min))
-                    (read (current-buffer))))
+      (condition-case nil
+	(cond
+	 ((memq file '("." ".." "elpa.rss" "archive-contents"))
+	  nil)
+	 ;; Multi-file package
+	 ((file-directory-p file)
+	  (let* ((pkg (file-name-nondirectory file))
+		 (exp
+		  (with-temp-buffer
+		    (insert-file-contents
+		     (expand-file-name (concat pkg "-pkg.el") file))
+		    (goto-char (point-min))
+		    (read (current-buffer))))
+		 (vers (nth 2 exp))
 		 (req (mapcar 'archive-contents--convert-require
 			      (nth 4 exp)))
 		 (readme (expand-file-name "README" file)))
@@ -54,69 +66,69 @@
 	      (copy-file readme
 			 (concat pkg "-readme.txt")
 			 'ok-if-already-exists))
-            (unless (equal (nth 1 exp) pkg)
-              (message "Package name %s doesn't match file name %s"
-                       (nth 1 exp) file))
-            (unless (equal (nth 2 exp) vers)
-              (message "Package version %s doesn't match file name %s"
-                       (nth 2 exp) file))
-            (push (cons (intern pkg)
-                        (vector (version-to-list vers)
-                                req
-                                (nth 3 exp)
-                                'tar))
-                  packages))))
-       ;; Simple package
-       ((pred (string-match "\\.el\\'"))
-        (if (not (string-match "-\\([0-9.]+\\)\\.el\\'" file))
-            (message "Unknown package file name format %s" file)
-          (let* ((pkg (substring file 0 (match-beginning 0)))
-                 (vers (match-string 1 file))
-                 (desc
-                  (with-temp-buffer
-                    (insert-file-contents file)
-                    (goto-char (point-min))
-                    (if (not (looking-at ";;;.*---[ \t]*\\(.*\\)\\(-\\*-.*-\\*-[ \t]*\\)?$"))
-                        (message "Incorrectly formatted header in %s" file)
-                      (prog1 (match-string 1)
-                        (let ((commentary (lm-commentary)))
-                          (with-current-buffer (find-file-noselect
-                                                (concat pkg "-readme.txt"))
-                            (erase-buffer)
-                            (emacs-lisp-mode)
-                            (insert (or commentary
-                                        (prog1 "No description"
-                                          (message "Missing Commentary in %s"
-                                                   file))))
-                            (goto-char (point-min))
-                            (while (looking-at ";*[ \t]*\\(commentary[: \t]*\\)?\n")
-                              (delete-region (match-beginning 0)
-                                             (match-end 0)))
-                            (uncomment-region (point-min) (point-max))
-                            (goto-char (point-max))
-                            (while (progn (forward-line -1)
-                                          (looking-at "[ \t]*\n"))
-                              (delete-region (match-beginning 0)
-                                             (match-end 0)))
-                            (save-buffer)))))))
+	    (unless (equal (nth 1 exp) pkg)
+	      (error (format "Package name %s doesn't match file name %s"
+			     (nth 1 exp) file)))
+	    (push (cons (intern pkg)
+			(vector (version-to-list vers) req (nth 3 exp) 'tar))
+		  packages))
+	  (rename-file file (concat pkg "-" vers)))
+	 ;; Simple package
+	 ((string-match "\\([^/]+\\)\\.el\\'" file)
+	  (let* ((pkg (match-string 1 file))
+		 (desc
+		  (with-temp-buffer
+		    (insert-file-contents file)
+		    (goto-char (point-min))
+		    (unless (looking-at ";;;.*---[ \t]*\\(.*\\)\\(-\\*-.*-\\*-[ \t]*\\)?$")
+		      (error "Incorrectly formatted header in %s" file))
+		    (prog1 (match-string 1)
+		      (let ((commentary (lm-commentary)))
+			(with-current-buffer (find-file-noselect
+					      (concat pkg "-readme.txt"))
+			  (erase-buffer)
+			  (emacs-lisp-mode)
+			  (insert (or commentary
+				      (prog1 "No description"
+					(message "Missing Commentary in %s"
+						 file))))
+			  (goto-char (point-min))
+			  (while (looking-at ";*[ \t]*\\(commentary[: \t]*\\)?\n")
+			    (delete-region (match-beginning 0)
+					   (match-end 0)))
+			  (uncomment-region (point-min) (point-max))
+			  (goto-char (point-max))
+			  (while (progn (forward-line -1)
+					(looking-at "[ \t]*\n"))
+			    (delete-region (match-beginning 0)
+					   (match-end 0)))
+			  (save-buffer))))))
+		 (vers (or (archive-contents--strip-rcs-id (lm-header "package-version"))
+			   (archive-contents--strip-rcs-id (lm-header "version"))
+			   (error "Missing version number in %s" file)))
 		 (requires-str (lm-header "package-requires"))
 		 (req (if requires-str
 			  (mapcar 'archive-contents--convert-require
 				  (car (read-from-string requires-str))))))
-            (push (cons (intern pkg)
-                        (vector (version-to-list vers)
-				req
-                                desc
-                                'single))
-                  packages))))
-       ((pred (string-match "\\.elc\\'")) nil)
-       ((pred (string-match "-readme\\.txt\\'")) nil)
-       (t
-        (message "Unknown file %s" file))))
+	    (push (cons (intern pkg)
+			(vector (version-to-list vers) req desc 'single))
+		  packages)
+	    (rename-file file (concat (or (file-name-directory file) "")
+				      pkg "-" vers ".el"))))
+	 ((not (or (string-match "\\.elc\\'" file)
+		   (string-match "-readme\\.txt\\'" file)))
+	  (message "Unknown file %s" file)))
+	;; Error handler
+	(error (message (cadr v)))))
     (with-current-buffer (find-file-noselect "archive-contents")
       (erase-buffer)
       (pp (nreverse packages) (current-buffer))
       (save-buffer))))
+
+;; Local Variables:
+;; no-byte-compile: t
+;; lexical-binding: t
+;; End:
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
