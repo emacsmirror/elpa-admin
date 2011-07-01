@@ -76,10 +76,9 @@ Otherwise return nil."
 		    packages)))
 	;; Error handler
 	(error (message "%s" (cadr v)))))
-    (with-current-buffer (find-file-noselect "archive-contents")
-      (erase-buffer)
+    (with-temp-buffer
       (pp (nreverse packages) (current-buffer))
-      (save-buffer))))
+      (write-region nil nil "archive-contents"))))
 
 (defun archive--simple-package-p (dir pkg)
   "Test whether DIR contains a simple package named PKG.
@@ -117,7 +116,7 @@ Otherwise, return nil."
 Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and write the
 package commentary to PKG-readme.txt.  Return the descriptor."
   ;; Write the readme file.
-  (with-current-buffer (find-file-noselect (concat pkg "-readme.txt"))
+  (with-temp-buffer
     (erase-buffer)
     (emacs-lisp-mode)
     (insert (or commentary
@@ -133,7 +132,7 @@ package commentary to PKG-readme.txt.  Return the descriptor."
 		  (looking-at "[ \t]*\n"))
       (delete-region (match-beginning 0)
 		     (match-end 0)))
-    (save-buffer))
+    (write-region nil nil (concat pkg "-readme.txt")))
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
   (rename-file (expand-file-name (concat pkg ".el") dir)
 	       (concat pkg "-" vers ".el"))
