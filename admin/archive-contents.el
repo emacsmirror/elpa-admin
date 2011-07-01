@@ -71,8 +71,8 @@ Otherwise return nil."
 			     (nth 1 exp) file)))
 	    (push (cons (intern pkg)
 			(vector (version-to-list vers) req (nth 3 exp) 'tar))
-		  packages))
-	  (rename-file file (concat pkg "-" vers)))
+		  packages)
+	    (rename-file file (concat pkg "-" vers))))
 	 ;; Simple package
 	 ((string-match "\\([^/]+\\)\\.el\\'" file)
 	  (let* ((pkg (match-string 1 file))
