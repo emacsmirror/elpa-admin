@@ -46,11 +46,13 @@ Otherwise return nil."
       (error nil))))
 
 (defun archive--delete-elc-files (dir)
-  "Recursively delete all .elc files in DIR."
+  "Recursively delete all .elc files in DIR.
+Delete backup files also."
   (dolist (f (directory-files dir t archive-re-no-dot))
     (cond ((file-directory-p f)
 	   (archive--delete-elc-files f))
-	  ((string-match "\\.elc\\'" f)
+	  ((or (string-match "\\.elc\\'" f)
+	       (backup-file-name-p f))
 	   (delete-file f)))))
 
 (defun batch-make-archive ()
