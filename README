@@ -12,8 +12,7 @@ for testing purposes).
 
 * DIRECTORY LAYOUT
 
-** admin/    -- scripts for deploying the package archive.
-                See the DEPLOYMENT section for details.
+** admin/    -- scripts for administering the package archive.
 ** html/     -- HTML for the elpa.gnu.org website.
 ** packages/ -- source code for the packages.
 
@@ -21,60 +20,52 @@ for testing purposes).
 * PACKAGES
 
 ** Contents of the packages/ directory:
-
-This directory holds the package sources.  Unlike the deployed package
-archive, multi-file packages are present here as directories, not tar
-files.  So, edits to the sources can be easily managed by Bzr.
-
-*** Package sources
-In the form of *.el files for simple (1-file) packages, or
-subdirectories for multi-file packages.
+This directory holds the package sources, with one subdirectory for
+each package.
 
 ** To add a package:
 
-*** Add a simple (1-file) package as packages/NAME-VERSION.el.
+*** Add a simple (1-file) package as packages/NAME/NAME.el.
 
-*** Add a multi-file package a directory, packages/NAME-VERSION.
+*** Add a multi-file package as a directory, packages/NAME.
 
-*** Commit your changes
-This is done the usual way ("bzr add", "bzr commit", etc).
+*** Commit your changes the usual way ("bzr add", "bzr commit", etc).
 
 Changes in the Bzr repository do not immediately propagate to the
 user-facing archive (what users see when they do `M-x list-packages').
-That is done by deploying the archive (see below).
+That is done by deploying the archive.
 
 
 * DEPLOYMENT
 
-** The package-update.sh script
+** To use the package repository as a "site installation" of packages:
 
-Use the script admin/package-update.sh to deploy a partial or full
-copy of the package archive.  To run a partial deployment:
+  make site
 
-  /PATH/TO/admin/package-update.sh DEST
+This compiles and generates autoloads for all the packages in the
+packages/ directory, and creates a site/ directory containing symlinks
+to the package directories.
 
-This deploys the packages in packages/ to DEST/packages.
+Now you have to add this site/ directory to `package-directory-list',
+and all the packages will be available.
 
-To run a full deployment:
+** To deploy the package repository as a remotely-accessible archive:
 
-  /PATH/TO/admin/package-update.sh DEST 1
+  make archive
 
-A full deployment additionally copies the admin scripts to DEST/admin,
-creates a full tarball in DEST/packages/emacs-packages-latest.tgz, and
+or
+
+  make archive-full
+
+This deploys the packages to the archive/ directory.  Unlike "make
+site", this makes a full copy of the packages, and tars up multi-file
+packages.
+
+A full deployment also copies the admin scripts to archive/admin, and
 fetches externally hosted packages (currently, the Org daily builds)
 and adds them to the archive.
 
-The package-update.sh script only works if it lives in a bzr
-repository.  It uses `bzr export' to deploy from the repository to the
-destination directory.  If you have uncommitted changes in the working
-copy, those changes are not deployed.
-
-You can view the deployment log at DEST/update-log.
-
-The other scripts in the admin/ subdirectory are used for fetching the
-Org dailies.
-
-** Accessing a deployed archive
+** To access a deployed archive
 
 To access the archive via HTPP, have a symlink (say) /var/www/packages
 pointing to DEST/packages, and set up Emacs with
@@ -94,13 +85,13 @@ logging in (login access set up by FSF admins), and
 su elpa
 cd ~elpa/elpa
 bzr up
-./admin/package-update /home/elpa/staging/ 1
 
-The symlink /var/www/packages points to /home/elpa/staging/packages.
+Then make a full archive deployment, as discussed above.  The symlink
+/var/www/packages points to the staging package directory under
+/home/elpa/.
 
-The Org mode dailies are fetched and added by the script
-admin/org-synch.sh, which is run as a cron job (we also run this
-script during deployment).
+The Org mode dailies are also fetched and added by the script
+admin/org-synch.sh, run as a cron job.
 
 
 This file is part of GNU Emacs.
