@@ -45,13 +45,15 @@ Otherwise return nil."
 	    str)
       (error nil))))
 
-(defun archive--delete-elc-files (dir)
+(defun archive--delete-elc-files (dir &optional only-orphans)
   "Recursively delete all .elc files in DIR.
 Delete backup files also."
   (dolist (f (directory-files dir t archive-re-no-dot))
     (cond ((file-directory-p f)
 	   (archive--delete-elc-files f))
-	  ((or (string-match "\\.elc\\'" f)
+	  ((or (and (string-match "\\.elc\\'" f)
+                    (not (and only-orphans
+                              (file-readable-p (replace-match ".el" t t f)))))
 	       (backup-file-name-p f))
 	   (delete-file f)))))
 
@@ -91,9 +93,13 @@ requirements, and COMMENTARY is the package commentary.
 Otherwise, return nil."
   (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
 	 (mainfile (expand-file-name (concat pkg ".el") dir))
+         (files (directory-files dir nil archive-re-no-dot))
 	 version description req commentary)
+    (dolist (file (prog1 files (setq files ())))
+      (unless (string-match "\\.elc\\'" file)
+        (push file files)))
     (when (and (or (not (file-exists-p pkg-file))
-		   (= (length (directory-files dir nil archive-re-no-dot)) 2))
+		   (= (length files) 2))
 	       (file-exists-p mainfile))
       (with-temp-buffer
 	(insert-file-contents mainfile)
@@ -103,7 +109,8 @@ Otherwise, return nil."
 	       (setq description (match-string 1))
 	       (setq version
 		     (or (archive--strip-rcs-id (lm-header "package-version"))
-			 (archive--strip-rcs-id (lm-header "version")))))
+			 (archive--strip-rcs-id (lm-header "version"))
+                         "0.0")))
 	     (progn
 	       ;; Grab the other fields, which are not mandatory.
 	       (let ((requires-str (lm-header "package-requires")))
@@ -182,9 +189,9 @@ PKG-readme.txt.  Return the descriptor."
 	    ;; Omit autoloads and .elc files from the package.
 	    (if (file-exists-p autoloads-file)
 		(delete-file autoloads-file))
-	    (archive--delete-elc-files dir)
+	    (archive--delete-elc-files dir 'only-orphans)
 	    ;; Test whether this is a simple or multi-file package.
-	    (setq simple-p (archive--simple-package-p dir pkg))
+            (setq simple-p (archive--simple-package-p dir pkg))
 	    (if simple-p
 		(progn
 		  (apply 'archive--write-pkg-file dir pkg simple-p)
@@ -195,9 +202,11 @@ PKG-readme.txt.  Return the descriptor."
 				(expand-file-name (concat pkg "-" version)
 						  site-dir)
 				t)
-	    (package-generate-autoloads pkg dir)
+            (let ((make-backup-files nil))
+              (package-generate-autoloads pkg dir))
 	    (let ((load-path (cons dir load-path)))
-	      (byte-recompile-directory dir 0 t))))
+              ;; FIXME: Don't compile the -pkg.el files!
+	      (byte-recompile-directory dir 0))))
      ;; Error handler
      (error (message "%s" (cadr v))))))
 
