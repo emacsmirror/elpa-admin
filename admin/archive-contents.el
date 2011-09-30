@@ -148,6 +148,12 @@ package commentary to PKG-readme.txt.  Return the descriptor."
   (delete-directory dir t)
   (cons (intern pkg) (vector (version-to-list vers) req desc 'single)))
 
+(defun archive--make-changelog (dir)
+  "Export Bzr log info of DIR into a ChangeLog file."
+  (let ((default-directory (file-name-as-directory (expand-file-name dir))))
+    (call-process "bzr" nil '(:file "ChangeLog") nil
+                  "log" "--gnu-changelog" ".")))
+
 (defun archive--process-multi-file-package (dir pkg)
   "Deploy the contents of DIR into the archive as a multi-file package.
 Rename DIR/ to PKG-VERS/, and write the package commentary to
@@ -156,6 +162,7 @@ PKG-readme.txt.  Return the descriptor."
 	 (vers (nth 2 exp))
 	 (req (mapcar 'archive--convert-require (nth 4 exp)))
 	 (readme (expand-file-name "README" dir)))
+    (archive--make-changelog dir)
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
@@ -184,7 +191,8 @@ PKG-readme.txt.  Return the descriptor."
 	(if (not (file-directory-p dir))
 	    (error "Skipping non-package file %s" dir)
 	  (let* ((pkg (file-name-nondirectory dir))
-		 (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir))
+		 (autoloads-file (expand-file-name
+                                  (concat pkg "-autoloads.el") dir))
 		 simple-p version)
 	    ;; Omit autoloads and .elc files from the package.
 	    (if (file-exists-p autoloads-file)
