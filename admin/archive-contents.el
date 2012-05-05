@@ -104,7 +104,7 @@ Otherwise, return nil."
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-	(and (looking-at ";;;.*---[ \t]*\\(.*\\)\\(-\\*-.*-\\*-[ \t]*\\)?$")
+	(and (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$")
 	     (progn
 	       (setq description (match-string 1))
 	       (setq version
