@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.
 
-;; Copyright (C) 2011  Free Software Foundation, Inc
+;; Copyright (C) 2011, 2012  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'lisp-mnt)
+(require 'package)
 
 (defconst archive-contents-subdirectory-regexp
   "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)")
@@ -187,7 +188,7 @@ PKG-readme.txt.  Return the descriptor."
   (setq package-dir (expand-file-name package-dir default-directory))
   (setq site-dir (expand-file-name site-dir default-directory))
   (dolist (dir (directory-files package-dir t archive-re-no-dot))
-   (condition-case v
+    (condition-case v
 	(if (not (file-directory-p dir))
 	    (error "Skipping non-package file %s" dir)
 	  (let* ((pkg (file-name-nondirectory dir))
@@ -217,6 +218,16 @@ PKG-readme.txt.  Return the descriptor."
 	      (byte-recompile-directory dir 0))))
      ;; Error handler
      (error (message "%s" (cadr v))))))
+
+(defun batch-make-site-package (sdir)
+  (let* ((dest (car (file-attributes sdir)))
+         (pkg (file-name-nondirectory (directory-file-name (or dest sdir))))
+         (dir (or dest sdir)))
+    (let ((make-backup-files nil))
+      (package-generate-autoloads pkg dir))
+    (let ((load-path (cons dir load-path)))
+      ;; FIXME: Don't compile the -pkg.el files!
+      (byte-recompile-directory dir 0))))
 
 (defun archive--write-pkg-file (pkg-dir name version desc requires &rest ignored)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
