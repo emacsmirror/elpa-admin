@@ -21,6 +21,7 @@
 
 ;;; Code:
 
+(eval-when-compile (require 'cl))
 (require 'lisp-mnt)
 (require 'package)
 
@@ -252,9 +253,109 @@ PKG-readme.txt.  Return the descriptor."
      nil
      pkg-file)))
 
+;;; Make the HTML pages for online browsing.
+
+(defun archive--html-header (title)
+  (format "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">
+<html>
+<head>
+  <title>%s</title>
+  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">
+</head>
+<body>
+<h1 align=\"center\">%s</h1>"
+          title title))
+
+(defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
+  (setq bytes (/ bytes 1024.0))
+  (let ((units '(;; "B"
+                 "kB" "MB" "GB" "TB")))
+    (while (>= bytes 1024)
+      (setq bytes (/ bytes 1024.0))
+      (setq units (cdr units)))
+    (cond
+     ;; ((integerp bytes) (format "%4d%s" bytes (car units)))
+     ((>= bytes 100) (format "%4.0f%s" bytes (car units)))
+     ((>= bytes 10) (format "%4.1f%s" bytes (car units)))
+     (t (format "%4.2f%s" bytes (car units))))))
+
+(defun archive--html-make-pkg (pkg files)
+  (let ((name (symbol-name (car pkg)))
+        (latest (package-version-join (aref (cdr pkg) 0)))
+        (desc (aref (cdr pkg) 2)))
+    ;; FIXME: Add maintainer info.
+    (with-temp-buffer
+      (insert (archive--html-header (format "GNU ELPA - %s" name)))
+      (insert (format "<p>Description: %s</p>\n" desc))
+      (let* ((file (cdr (assoc latest files)))
+             (attrs (file-attributes file)))
+        (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
+                        file file
+                        (format-time-string "%Y-%b-%d" (nth 5 attrs))
+                        (archive--html-bytes-format (nth 7 attrs)))))
+      ;; FIXME: This URL is wrong for Org.
+      (let ((repurl (concat "http://bzr.sv.gnu.org/lh/emacs/elpa/files/head:/packages/" name)))
+        (insert (format "<p>Repository: <a href=%S>%s</a></p>" repurl repurl)))
+      (let ((readme (concat name "-readme.txt"))
+            (end (copy-marker (point) t)))
+        (when (file-readable-p readme)
+          (insert "<p>Full description:<pre>\n")
+          (insert-file-contents readme)
+          (goto-char end)
+          (insert "\n</pre></p>")))
+      (unless (< (length files) 2)
+        (insert (format "<p>Old versions:<table cellpadding=\"3\" border=\"1\">\n"))
+        (dolist (file files)
+          (unless (equal (pop file) latest)
+            (let ((attrs (file-attributes file)))
+              (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
+                              file file
+                              (format-time-string "%Y-%b-%d" (nth 5 attrs))
+                              (archive--html-bytes-format (nth 7 attrs)))))))
+        (insert "</table></body>\n"))
+      (write-region (point-min) (point-max) (concat name ".html")))))
+
+(defun archive--html-make-index (pkgs)
+  (with-temp-buffer
+    (insert (archive--html-header "GNU ELPA Packages"))
+    (insert "<table cellpadding=\"3\" border=\"1\">\n")
+    (insert "<tr><th>Package</th><th>Version</th><th>Description</th></tr>\n")
+    (dolist (pkg pkgs)
+      (insert (format "<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td></tr>\n"
+                      (car pkg) (car pkg)
+                      (package-version-join (aref (cdr pkg) 0))
+                      (aref (cdr pkg) 2))))
+    (insert "</table></body>\n")
+    (write-region (point-min) (point-max) "index.html")))
+
+(defun batch-html-make-index ()
+  (let ((packages (make-hash-table :test #'equal))
+        (archive-contents
+         (with-temp-buffer
+           (insert-file-contents "archive-contents")
+           (goto-char (point-min))
+           ;; Skip the first element which is a version number.
+           (cdr (read (current-buffer))))))
+    (dolist (file (directory-files default-directory nil))
+      (cond
+       ((member file '("." ".." "elpa.rss" "index.html" "archive-contents")))
+       ((string-match "\\.html\\'" file))
+       ((string-match "-readme\\.txt\\'" file)
+        (let ((name (substring file 0 (match-beginning 0))))
+          (puthash name (gethash name packages) packages)))
+       ((string-match "-\\([0-9][^-]*\\)\\.\\(tar\\|el\\)\\'" file)
+        (let ((name (substring file 0 (match-beginning 0)))
+              (version (match-string 1 file)))
+          (push (cons version file) (gethash name packages))))
+       (t (message "Unknown file %S" file))))
+    (dolist (pkg archive-contents)
+      (archive--html-make-pkg pkg (gethash (symbol-name (car pkg)) packages)))
+    ;; FIXME: Add (old?) packages that are in `packages' but not in
+    ;; archive-contents.
+    (archive--html-make-index archive-contents)))
+        
 
 ;; Local Variables:
-;; no-byte-compile: t
 ;; lexical-binding: t
 ;; End:
 
