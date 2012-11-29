@@ -76,7 +76,7 @@ Delete backup files also."
 	      ;; Test whether this is a simple or multi-file package.
 	      (setq simple-p (archive--simple-package-p dir pkg))
 	      (push (if simple-p
-			(apply 'archive--process-simple-package
+			(apply #'archive--process-simple-package
 			       dir pkg simple-p)
 		      (archive--process-multi-file-package dir pkg))
 		    packages)))
@@ -85,6 +85,41 @@ Delete backup files also."
     (with-temp-buffer
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
+
+(defun batch-prepare-packages ()
+  "Prepare the `packages' directory inside the Bzr checkout.
+Expects to be called from within the `packages' directory.
+\"Prepare\" here is for subsequent construction of the packages and archive,
+so it is meant to refresh any generated files we may need.
+Currently only refreshes the ChangeLog files."
+  (let* ((wit ".changelog-witness")
+         (prevno (or (with-temp-buffer
+                       (ignore-errors (insert-file-contents wit))
+                       (when (looking-at "[1-9][0-9]*\\'")
+                         (string-to-number (match-string 0))))
+                     1))
+         (new-revno
+          (or (with-temp-buffer
+                (call-process "bzr" nil '(t) nil "revno")
+                (goto-char (point-min))
+                (when (looking-at "[1-9][0-9]*$")
+                  (string-to-number (match-string 0))))
+              (error "bzr revno did not return a number as expected")))
+         (pkgs '()))
+    (unless (= prevno new-revno)
+      (with-temp-buffer
+        (unless (zerop (call-process "bzr" nil '(t) nil "log" "-v"
+                                     (format "-r%d.." (1+ prevno))))
+          (error "Error signaled by bzr log -v -r%d.." (1+ prevno)))
+        (goto-char (point-min))
+        (while (re-search-forward "^  packages/\\([-[:alnum:]]+\\)/" nil t)
+          (cl-pushnew (match-string 1) pkgs :test #'equal))))
+    (dolist (pkg pkgs)
+      (condition-case v
+          (if (file-directory-p pkg)
+              (archive--make-changelog pkg))
+        (error (message "%s" (cadr v)))))
+    (write-region (number-to-string new-revno) nil wit nil 'quiet)))
 
 (defun archive--simple-package-p (dir pkg)
   "Test whether DIR contains a simple package named PKG.
@@ -100,27 +135,32 @@ Otherwise, return nil."
     (dolist (file (prog1 files (setq files ())))
       (unless (string-match "\\.elc\\'" file)
         (push file files)))
-    (when (and (or (not (file-exists-p pkg-file))
-		   (= (length files) 2))
-	       (file-exists-p mainfile))
+    (setq files (delete (concat pkg "-pkg.el") files))
+    (setq files (delete (concat pkg "-autoloads.el") files))
+    (setq files (delete "ChangeLog" files))
+    (cond
+     ((and (or (not (file-exists-p pkg-file))
+               (= (length files) 1))
+           (file-exists-p mainfile))
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-	(and (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$")
-	     (progn
-	       (setq description (match-string 1))
-	       (setq version
-		     (or (archive--strip-rcs-id (lm-header "package-version"))
-			 (archive--strip-rcs-id (lm-header "version"))
-                         "0.0")))
-	     (progn
-	       ;; Grab the other fields, which are not mandatory.
-	       (let ((requires-str (lm-header "package-requires")))
-		 (if requires-str
-		     (setq req (mapcar 'archive--convert-require
-				       (car (read-from-string requires-str))))))
-	       (setq commentary (lm-commentary))
-	       (list version description req commentary)))))))
+	(if (not (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$"))
+            (error "Can't parse first line of %s" mainfile)
+          (setq description (match-string 1))
+          (setq version
+                (or (archive--strip-rcs-id (lm-header "package-version"))
+                    (archive--strip-rcs-id (lm-header "version"))
+                    (error "Missing `version' header")))
+          ;; Grab the other fields, which are not mandatory.
+          (let ((requires-str (lm-header "package-requires")))
+            (if requires-str
+                (setq req (mapcar 'archive--convert-require
+                                  (car (read-from-string requires-str))))))
+          (setq commentary (lm-commentary))
+          (list version description req commentary))))
+     ((not (file-exists-p pkg-file))
+      (error "Can find single file nor package desc file in %s" dir)))))
 
 (defun archive--process-simple-package (dir pkg vers desc req commentary)
   "Deploy the contents of DIR into the archive as a simple package.
@@ -147,14 +187,39 @@ package commentary to PKG-readme.txt.  Return the descriptor."
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
   (rename-file (expand-file-name (concat pkg ".el") dir)
 	       (concat pkg "-" vers ".el"))
+  ;; Add the content of the ChangeLog.
+  (let ((cl (expand-file-name "ChangeLog" dir)))
+    (with-current-buffer (find-file-noselect (concat pkg "-" vers ".el"))
+      (goto-char (point-max))
+      (re-search-backward "^;;;.*ends here")
+      (re-search-backward "^(provide")
+      (skip-chars-backward " \t\n")
+      (insert "\n")
+      (let ((start (point)))
+        (insert-file-contents cl)
+        (unless (bolp) (insert "\n"))
+        (comment-region start (point)))
+      (save-buffer)
+      (kill-buffer)))
   (delete-directory dir t)
   (cons (intern pkg) (vector (version-to-list vers) req desc 'single)))
 
 (defun archive--make-changelog (dir)
   "Export Bzr log info of DIR into a ChangeLog file."
+  (message "Refreshing ChangeLog in %S" dir)
   (let ((default-directory (file-name-as-directory (expand-file-name dir))))
-    (call-process "bzr" nil '(:file "ChangeLog") nil
-                  "log" "--gnu-changelog" ".")))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (let ((coding-system-for-read 'binary)
+            (coding-system-for-write 'binary))
+        (if (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
+        (let ((old-md5 (md5 (current-buffer))))
+          (erase-buffer)
+          (call-process "bzr" nil (current-buffer) nil
+                        "log" "--gnu-changelog" ".")
+          (if (equal old-md5 (md5 (current-buffer)))
+              (message "ChangeLog's md5 unchanged for %S" dir)
+            (write-region (point-min) (point-max) "ChangeLog" nil 'quiet)))))))
 
 (defun archive--process-multi-file-package (dir pkg)
   "Deploy the contents of DIR into the archive as a multi-file package.
@@ -164,7 +229,6 @@ PKG-readme.txt.  Return the descriptor."
 	 (vers (nth 2 exp))
 	 (req (mapcar 'archive--convert-require (nth 4 exp)))
 	 (readme (expand-file-name "README" dir)))
-    (archive--make-changelog dir)
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
