@@ -65,7 +65,7 @@ Delete backup files also."
     (dolist (dir (directory-files default-directory nil archive-re-no-dot))
       (condition-case v
 	  (if (not (file-directory-p dir))
-	      (error "Skipping non-package file %s" dir)
+	      (message "Skipping non-package file %s" dir)
 	    (let* ((pkg (file-name-nondirectory dir))
 		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir))
 		   simple-p)
@@ -80,8 +80,7 @@ Delete backup files also."
 			       dir pkg simple-p)
 		      (archive--process-multi-file-package dir pkg))
 		    packages)))
-	;; Error handler
-	(error (message "%s" (cadr v)))))
+	(error (error "Error in %s: %S" dir v))))
     (with-temp-buffer
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
@@ -113,12 +112,12 @@ Currently only refreshes the ChangeLog files."
           (error "Error signaled by bzr log -v -r%d.." (1+ prevno)))
         (goto-char (point-min))
         (while (re-search-forward "^  packages/\\([-[:alnum:]]+\\)/" nil t)
-          (cl-pushnew (match-string 1) pkgs :test #'equal))))
+          (pushnew (match-string 1) pkgs :test #'equal))))
     (dolist (pkg pkgs)
       (condition-case v
           (if (file-directory-p pkg)
               (archive--make-changelog pkg))
-        (error (message "%s" (cadr v)))))
+        (error (message "Error: %S" v))))
     (write-region (number-to-string new-revno) nil wit nil 'quiet)))
 
 (defun archive--simple-package-p (dir pkg)
@@ -194,11 +193,15 @@ package commentary to PKG-readme.txt.  Return the descriptor."
       (re-search-backward "^;;;.*ends here")
       (re-search-backward "^(provide")
       (skip-chars-backward " \t\n")
-      (insert "\n")
-      (let ((start (point)))
+      (insert "\n\n;;;; ChangeLog:\n\n")
+      (let* ((start (point))
+             (end (copy-marker start t)))
         (insert-file-contents cl)
+        (goto-char end)
         (unless (bolp) (insert "\n"))
-        (comment-region start (point)))
+        (while (progn (forward-line -1) (>= (point) start))
+          (insert ";; ")))
+      (set (make-local-variable 'backup-inhibited) t)
       (save-buffer)
       (kill-buffer)))
   (delete-directory dir t)
@@ -253,36 +256,33 @@ PKG-readme.txt.  Return the descriptor."
   (setq package-dir (expand-file-name package-dir default-directory))
   (setq site-dir (expand-file-name site-dir default-directory))
   (dolist (dir (directory-files package-dir t archive-re-no-dot))
-    (condition-case v
-	(if (not (file-directory-p dir))
-	    (error "Skipping non-package file %s" dir)
-	  (let* ((pkg (file-name-nondirectory dir))
-		 (autoloads-file (expand-file-name
-                                  (concat pkg "-autoloads.el") dir))
-		 simple-p version)
-	    ;; Omit autoloads and .elc files from the package.
-	    (if (file-exists-p autoloads-file)
-		(delete-file autoloads-file))
-	    (archive--delete-elc-files dir 'only-orphans)
-	    ;; Test whether this is a simple or multi-file package.
-            (setq simple-p (archive--simple-package-p dir pkg))
-	    (if simple-p
-		(progn
-		  (apply 'archive--write-pkg-file dir pkg simple-p)
-		  (setq version (car simple-p)))
-	      (setq version
-		    (nth 2 (archive--multi-file-package-def dir pkg))))
-	    (make-symbolic-link (expand-file-name dir package-dir)
-				(expand-file-name (concat pkg "-" version)
-						  site-dir)
-				t)
-            (let ((make-backup-files nil))
-              (package-generate-autoloads pkg dir))
-	    (let ((load-path (cons dir load-path)))
-              ;; FIXME: Don't compile the -pkg.el files!
-	      (byte-recompile-directory dir 0))))
-     ;; Error handler
-     (error (message "%s" (cadr v))))))
+    (if (not (file-directory-p dir))
+        (message "Skipping non-package file %s" dir)
+      (let* ((pkg (file-name-nondirectory dir))
+             (autoloads-file (expand-file-name
+                              (concat pkg "-autoloads.el") dir))
+             simple-p version)
+        ;; Omit autoloads and .elc files from the package.
+        (if (file-exists-p autoloads-file)
+            (delete-file autoloads-file))
+        (archive--delete-elc-files dir 'only-orphans)
+        ;; Test whether this is a simple or multi-file package.
+        (setq simple-p (archive--simple-package-p dir pkg))
+        (if simple-p
+            (progn
+              (apply 'archive--write-pkg-file dir pkg simple-p)
+              (setq version (car simple-p)))
+          (setq version
+                (nth 2 (archive--multi-file-package-def dir pkg))))
+        (make-symbolic-link (expand-file-name dir package-dir)
+                            (expand-file-name (concat pkg "-" version)
+                                              site-dir)
+                            t)
+        (let ((make-backup-files nil))
+          (package-generate-autoloads pkg dir))
+        (let ((load-path (cons dir load-path)))
+          ;; FIXME: Don't compile the -pkg.el files!
+          (byte-recompile-directory dir 0))))))
 
 (defun batch-make-site-package (sdir)
   (let* ((dest (car (file-attributes sdir)))
