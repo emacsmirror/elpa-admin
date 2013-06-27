@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.
 
-;; Copyright (C) 2011, 2012  Free Software Foundation, Inc
+;; Copyright (C) 2011, 2012, 2013  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -132,7 +132,7 @@ Otherwise, return nil."
          (files (directory-files dir nil archive-re-no-dot))
 	 version description req commentary)
     (dolist (file (prog1 files (setq files ())))
-      (unless (string-match "\\.elc\\'" file)
+      (unless (string-match "\\(?:\\.elc\\|~\\)\\'" file)
         (push file files)))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
@@ -242,7 +242,7 @@ PKG-readme.txt.  Return the descriptor."
     (cons (intern pkg) (vector (version-to-list vers) req (nth 3 exp) 'tar))))
 
 (defun archive--multi-file-package-def (dir pkg)
-  "Reurn the `define-package' form in the file DIR/PKG-pkg.el."
+  "Return the `define-package' form in the file DIR/PKG-pkg.el."
   (let ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir)))
     (with-temp-buffer
       (unless (file-exists-p pkg-file)
@@ -284,6 +284,17 @@ PKG-readme.txt.  Return the descriptor."
           ;; FIXME: Don't compile the -pkg.el files!
           (byte-recompile-directory dir 0))))))
 
+(defun archive--refresh-pkg-file ()
+  (let* ((dir (directory-file-name default-directory))
+         (pkg (file-name-nondirectory dir))
+         (simple-p (archive--simple-package-p dir pkg)))
+    (if simple-p
+        (progn
+          ;; (message "Refreshing pkg description of %s" pkg)
+          (apply 'archive--write-pkg-file dir pkg simple-p))
+      ;; (message "Not refreshing pkg description of %s" pkg)
+      )))
+
 (defun batch-make-site-package (sdir)
   (let* ((dest (car (file-attributes sdir)))
          (pkg (file-name-nondirectory (directory-file-name (or dest sdir))))
@@ -297,6 +308,7 @@ PKG-readme.txt.  Return the descriptor."
 (defun archive--write-pkg-file (pkg-dir name version desc requires &rest ignored)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
+        (print-quoted t)
 	(print-length nil))
     (write-region
      (concat (format ";; Generated package description from %s.el\n"
