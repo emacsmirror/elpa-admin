@@ -118,12 +118,15 @@ nbc_els := $(foreach el, $(extra_els), \
 elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
-%.elc: %.el $(autoloads)
+%.elc: %.el
 	@echo 'EMACS -f batch-byte-compile $<'
 	@$(EMACS) --batch \
 	    --eval "(setq package-directory-list '(\"$(abspath packages)\"))" \
 	    --eval '(package-initialize)' \
 	    -L $(dir $@) -f batch-byte-compile $<
+
+.PHONY: elcs
+elcs: $(elcs)
 
 # Remove .elc files that don't have a corresponding .el file any more.
 extra_elcs := $(call SET-diff, $(current_elcs), $(naive_elcs))
@@ -145,5 +148,7 @@ $(extra_elcs):; rm $@
 # 	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
 # 	    --eval '(package-generate-description-file d "$(dir $@)")'
 
-
-all-in-place: $(extra_elcs) $(autoloads) $(elcs) # $(single_pkgs)
+.PHONY: all-in-place
+all-in-place: $(extra_elcs) $(autoloads) # $(single_pkgs)
+	# Do them in a sub-make, so that autoloads are done first.
+	$(MAKE) elcs
