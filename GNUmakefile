@@ -9,33 +9,15 @@ SITE_DIR=site
 
 all: all-in-place
 
-## Set up the source files for direct usage, by pointing
-## `package-directory-list' to the site/ directory.
-site: packages
-	mkdir -p $(SITE_DIR)
-	$(EMACS) -batch -l $(CURDIR)/admin/archive-contents.el \
-	  --eval "(batch-make-site-dir \"packages\" \"$(SITE_DIR)\")"
-
-site/%: do-it
-	$(EMACS) -batch -l $(CURDIR)/admin/archive-contents.el \
-	  --eval "(progn (setq debug-on-error t) (batch-make-site-package \"$@\"))"
-
 ## Deploy the package archive to archive/, with packages in
 ## archive/packages/:
 archive: archive-tmp
 	$(MAKE) $(MFLAGS) process-archive
 
-archive-tmp: packages changelogs
+archive-tmp: packages
 	-rm -r $(ARCHIVE_TMP)
 	mkdir -p $(ARCHIVE_TMP)
 	cp -a packages/. $(ARCHIVE_TMP)/packages
-
-# Refresh the ChangeLog files.  This needs to be done in
-# the source tree, because it needs the Bzr data!
-changelogs:
-	cd packages; \
-	$(EMACS) -batch -l $(CURDIR)/admin/archive-contents.el \
-			-f batch-prepare-packages
 
 process-archive:
 	# FIXME, we could probably speed this up significantly with
@@ -75,7 +57,7 @@ org-fetch: archive-tmp
 clean:
 	rm -rf archive $(ARCHIVE_TMP) $(SITE_DIR)
 
-########## Rules for in-place installation ##########
+########## Rules for in-place installation ####################################
 pkgs := $(foreach pkg, $(wildcard packages/*), \
           $(if $(shell [ -d "$(pkg)" ] && echo true), $(pkg)))
 
@@ -152,3 +134,7 @@ $(extra_elcs):; rm $@
 all-in-place: $(extra_elcs) $(autoloads) # $(single_pkgs)
 	# Do them in a sub-make, so that autoloads are done first.
 	$(MAKE) elcs
+
+
+############### Rules to prepare the externals ################################
+

@@ -1,4 +1,4 @@
-;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.
+;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2011, 2012, 2013  Free Software Foundation, Inc
 
@@ -24,6 +24,7 @@
 (eval-when-compile (require 'cl))
 (require 'lisp-mnt)
 (require 'package)
+(require 'pcase)
 
 (defconst archive-contents-subdirectory-regexp
   "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)")
@@ -86,7 +87,7 @@ Delete backup files also."
       (write-region nil nil "archive-contents"))))
 
 (defun batch-prepare-packages ()
-  "Prepare the `packages' directory inside the Bzr checkout.
+  "Prepare the `packages' directory inside the Git checkout.
 Expects to be called from within the `packages' directory.
 \"Prepare\" here is for subsequent construction of the packages and archive,
 so it is meant to refresh any generated files we may need.
@@ -218,6 +219,7 @@ package commentary to PKG-readme.txt.  Return the descriptor."
         (if (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
         (let ((old-md5 (md5 (current-buffer))))
           (erase-buffer)
+          ;; git --no-pager log --date=short --format="%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n" | sed 's/^        /\t/'
           (call-process "bzr" nil (current-buffer) nil
                         "log" "--gnu-changelog" ".")
           (if (equal old-md5 (md5 (current-buffer)))
@@ -355,40 +357,95 @@ PKG-readme.txt.  Return the descriptor."
      ((>= bytes 10) (format "%4.1f%s" bytes (car units)))
      (t (format "%4.2f%s" bytes (car units))))))
 
+(defun archive--get-prop (prop name srcdir mainsrcfile)
+  (let ((kprop (intern (format ":%s" (downcase prop)))))
+    (or
+     (let ((pkgdescfile (expand-file-name (format "%s-pkg.el" name)
+                                          srcdir)))
+       (when (file-readable-p pkgdescfile)
+         (with-temp-buffer
+           (insert-file-contents pkgdescfile)
+           (let ((desc (read (current-buffer))))
+             (plist-get (cdr desc) kprop)))))
+     (when (file-readable-p mainsrcfile)
+       (with-temp-buffer
+         (insert-file-contents mainsrcfile)
+         (lm-header prop))))))
+
+(defun archive--get-section (hsection fsection srcdir mainsrcfile)
+  (cond
+   ((file-readable-p (expand-file-name fsection srcdir))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name fsection srcdir))
+      (buffer-string)))
+   ((file-readable-p mainsrcfile)
+    (with-temp-buffer
+      (insert-file-contents mainsrcfile)
+      (let ((start (lm-section-start hsection)))
+        (when start
+          (insert
+           (prog1
+               (buffer-substring start (lm-section-end hsection))
+             (erase-buffer)))
+          (emacs-lisp-mode)
+          (goto-char (point-min))
+          (delete-region (point) (line-beginning-position 2))
+          (uncomment-region (point-min) (point-max))
+          (when (looking-at "^\\([ \t]*\n\\)+")
+            (replace-match ""))
+          (goto-char (point-max))
+          (skip-chars-backward " \t\n")
+          (delete-region (point) (point-max))
+          (buffer-string)))))))
+
+(defun archive--quote (txt)
+  (replace-regexp-in-string "<" "&lt"
+                            (replace-regexp-in-string "&" "&amp" txt)))
+
 (defun archive--html-make-pkg (pkg files)
-  (let ((name (symbol-name (car pkg)))
-        (latest (package-version-join (aref (cdr pkg) 0)))
-        (desc (aref (cdr pkg) 2)))
-    ;; FIXME: Add maintainer info.
+  (let* ((name (symbol-name (car pkg)))
+         (latest (package-version-join (aref (cdr pkg) 0)))
+         (srcdir (expand-file-name name "../../build/packages"))
+         (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
+         (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
       (insert (archive--html-header (format "GNU ELPA - %s" name)))
-      (insert (format "<p>Description: %s</p>\n" desc))
+      (insert (format "<p>Description: %s</p>\n" (archive--quote desc)))
       (let* ((file (cdr (assoc latest files)))
              (attrs (file-attributes file)))
         (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
-                        file file
+                        file (archive--quote file)
                         (format-time-string "%Y-%b-%d" (nth 5 attrs))
                         (archive--html-bytes-format (nth 7 attrs)))))
-      ;; FIXME: This URL is wrong for Org.
-      (let ((repurl (concat "http://bzr.sv.gnu.org/lh/emacs/elpa/files/head:/packages/" name)))
-        (insert (format "<p>Repository: <a href=%S>%s</a></p>" repurl repurl)))
-      (let ((readme (concat name "-readme.txt"))
-            (end (copy-marker (point) t)))
-        (when (file-readable-p readme)
-          (insert "<p>Full description:<pre>\n")
-          (insert-file-contents readme)
-          (goto-char end)
-          (insert "\n</pre></p>")))
+      (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
+        (when maint
+          (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
+      (let* ((urlkind "Origin")
+             (url
+              (or (archive--get-prop "URL" name srcdir mainsrcfile)
+                  (progn
+                    (setq urlkind "Repository")
+                    (concat "http://bzr.sv.gnu.org/lh/emacs/elpa/files/head:/packages/" name)))))
+        (insert (format "<p>%s: <a href=%S>%s</a></p>"
+                        urlkind url (archive--quote url))))
+      (let ((readme (archive--get-section "Commentary" "README" srcdir mainsrcfile)))
+        (when readme
+          (insert "<h2>Full description</h2><pre>\n" (archive--quote readme)
+                  "\n</pre>\n")))
       (unless (< (length files) 2)
-        (insert (format "<p>Old versions:<table cellpadding=\"3\" border=\"1\">\n"))
+        (insert (format "<h2>Old versions</h2><table cellpadding=\"3\" border=\"1\">\n"))
         (dolist (file files)
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
-                              file file
+                              file (archive--quote file)
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (archive--html-bytes-format (nth 7 attrs)))))))
-        (insert "</table></body>\n"))
+        (insert "</table>\n"))
+      (let ((news (archive--get-section "News" "NEWS" srcdir mainsrcfile)))
+        (when news
+          (insert "<h2>News</h2><pre>\n" (archive--quote news) "\n</pre>\n")))
+      (insert "</body>\n")
       (write-region (point-min) (point-max) (concat name ".html")))))
 
 (defun archive--html-make-index (pkgs)
@@ -429,11 +486,55 @@ PKG-readme.txt.  Return the descriptor."
     ;; FIXME: Add (old?) packages that are in `packages' but not in
     ;; archive-contents.
     (archive--html-make-index archive-contents)))
-        
 
-;; Local Variables:
-;; lexical-binding: t
-;; End:
+;;; Maintain external packages.
+
+(defun archive-add/remove-externals ()
+  (let ((exts (with-current-buffer (find-file-noselect "externals-list")
+                (goto-char (point-min))
+                (read (current-buffer)))))
+    (let ((default-directory (expand-file-name "packages/")))
+      ;; Remove "old/odd" externals.
+      (dolist (dir (directory-files "."))
+        (cond
+         ((member dir '("." "..")) nil)
+         ((assoc dir exts) nil)
+         ((file-directory-p (expand-file-name (format "%s/.git" dir)))
+          (let ((status
+                 (with-temp-buffer
+                   (let ((default-directory (file-name-as-directory
+                                             (expand-file-name dir))))
+                     (call-process "git" nil t nil "status" "--porcelain")
+                     (buffer-string)))))
+            (if (zerop (length status))
+                (progn (delete-directory dir 'recursive t)
+                       (message "Deleted all of %s" dir))
+              (message "Keeping leftover unclean %s:\n%s" dir status))))))
+      (pcase-dolist (`(,dir ,kind ,url) exts)
+        (cond
+         ((not (file-exists-p dir))
+          (let* ((branch (concat "externals/" dir))
+                 (output
+                  (with-temp-buffer
+                    ;; FIXME: Use git-new-workdir!
+                    (call-process "git" nil t nil "branch" "--track"
+                                  branch (concat "origin/" branch))
+                    (call-process "git" nil t nil "clone"
+                                  "--shared" "--branch" branch "../" dir)
+                    ;; (let ((default-directory (file-name-as-directory
+                    ;;                           (expand-file-name dir))))
+                    ;;   (call-process "git" nil t nil "branch"
+                    ;;                 "-m" branch "master"))
+                    (buffer-string))))
+            (message "Cloning branch %s:\n%s" dir output)))
+         ((not (file-directory-p (concat dir "/.git")))
+          (message "%s is in the way of an external, please remove!" dir))
+         (t
+          (let ((default-directory (expand-file-name dir)))
+            (with-temp-buffer
+              (call-process "git" nil t nil "pull")
+              (message "Updated %s:%s" dir (buffer-string))))
+          ))))))
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
