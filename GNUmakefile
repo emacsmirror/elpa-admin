@@ -1,6 +1,6 @@
 # Makefile for GNU Emacs Lisp Package Archive.
 
-EMACS=emacs
+EMACS=emacs --batch
 
 ARCHIVE_TMP=archive-tmp
 SITE_DIR=site
@@ -23,14 +23,16 @@ process-archive:
 	# FIXME, we could probably speed this up significantly with
 	# rules like "%.tar: ../%/ChangeLog" so we only rebuild the packages
 	# that have indeed changed.
-	cd $(ARCHIVE_TMP)/packages; $(EMACS) -batch -l $(CURDIR)/admin/archive-contents.el -f batch-make-archive
+	cd $(ARCHIVE_TMP)/packages; \
+	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
+	    -f batch-make-archive
 	@cd $(ARCHIVE_TMP)/packages; \
-	for pt in *; do \
-	    if [ -d $$pt ]; then \
-		echo "Creating tarball $${pt}.tar" && \
-		tar -cf $${pt}.tar $$pt --remove-files; \
-	    fi; \
-	done
+	  for pt in *; do \
+	      if [ -d $$pt ]; then \
+		  echo "Creating tarball $${pt}.tar" && \
+		  tar -cf $${pt}.tar $$pt --remove-files; \
+	      fi; \
+	  done
 	mkdir -p archive/packages
 	mv archive/packages archive/packages-old
 	mv $(ARCHIVE_TMP)/packages archive/packages
@@ -80,12 +82,11 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@echo 'EMACS -f package-generate-autoloads $@'
 	@cd $(dir $@); \
-	$(EMACS) --batch \
-	    -l $(CURDIR)/admin/archive-contents.el \
-	    --eval "(archive--refresh-pkg-file)" \
-	    --eval "(require 'package)" \
-	    --eval "(package-generate-autoloads '$$(basename $$(pwd)) \
-	                                        \"$$(pwd)\")"
+	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
+	      --eval "(archive--refresh-pkg-file)" \
+	      --eval "(require 'package)" \
+	      --eval "(package-generate-autoloads '$$(basename $$(pwd)) \
+	                                          \"$$(pwd)\")"
 
 # Put into elcs the set of elc files we need to keep up-to-date.
 # I.e. one for each .el file except for the -pkg.el, the -autoloads.el, and
@@ -102,7 +103,7 @@ elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
 %.elc: %.el
 	@echo 'EMACS -f batch-byte-compile $<'
-	@$(EMACS) --batch \
+	@$(EMACS) \
 	    --eval "(setq package-directory-list '(\"$(abspath packages)\"))" \
 	    --eval '(package-initialize)' \
 	    -L $(dir $@) -f batch-byte-compile $<
@@ -124,7 +125,7 @@ $(extra_elcs):; rm $@
 # #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 # %-pkg.el: %.el
 # 	@echo 'EMACS -f package-generate-description-file $@'
-# 	@$(EMACS) --batch \
+# 	@$(EMACS) \
 # 	    --eval '(require (quote package))' \
 # 	    --eval '(setq b (find-file-noselect "$<"))' \
 # 	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
@@ -138,3 +139,7 @@ all-in-place: $(extra_elcs) $(autoloads) # $(single_pkgs)
 
 ############### Rules to prepare the externals ################################
 
+.PHONY:
+externals:
+	$(EMACS) -l admin/archive-contents.el \
+	    -f archive-add/remove/update-externals
