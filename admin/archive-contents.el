@@ -207,7 +207,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
         (while (progn (forward-line -1) (>= (point) start))
           (insert ";; ")))
       (set (make-local-variable 'backup-inhibited) t)
-      (save-buffer)
+      (basic-save-buffer)               ;Less chatty than save-buffer.
       (kill-buffer)))
   (delete-directory dir t)
   (cons (intern pkg) (vector (version-to-list vers) req desc 'single)))

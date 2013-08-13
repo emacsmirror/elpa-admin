@@ -9,6 +9,25 @@ SITE_DIR=site
 
 all: all-in-place
 
+CR_EXCEPTIONS=copyright_exceptions
+.PHONY: check_copyrights
+check_copyrights:
+	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
+	@(cd packages;							\
+	export LANG=C;							\
+	find . -name '*.el' -print0 |					\
+	    xargs -0 grep -L 'Free Software Foundation, Inc' |		\
+	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';	\
+	find . -name '*.el' -print |					\
+	    while read f; do						\
+	        fquoted="$$(echo $$f|tr '|' '_')";			\
+	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'	\
+	            -e '/Free Software Foundation/d'			\
+	            -e "s|^\\(.*[Cc]opyright\\)|$$fquoted:\\1|p" 	\
+	           "$$f";						\
+	    done) | sort >$(CR_EXCEPTIONS)~
+	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
+
 ## Deploy the package archive to archive/, with packages in
 ## archive/packages/:
 archive: archive-tmp
@@ -46,6 +65,8 @@ archive-full: archive-tmp org-fetch
 	#mkdir -p archive/admin
 	#cp admin/* archive/admin/
 
+# FIXME: Turn it into an `external', which will require adding the notion of
+# "snapshot" packages.
 org-fetch: archive-tmp
 	cd $(ARCHIVE_TMP)/packages; \
 	pkgname=`curl -s http://orgmode.org/elpa/|perl -ne 'push @f, $$1 if m/(org-\d{8})\.tar/; END { @f = sort @f; print "$$f[-1]\n"}'`; \
