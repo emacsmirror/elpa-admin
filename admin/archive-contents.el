@@ -1,4 +1,4 @@
-;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.
+;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2011, 2012, 2013  Free Software Foundation, Inc
 
@@ -24,6 +24,7 @@
 (eval-when-compile (require 'cl))
 (require 'lisp-mnt)
 (require 'package)
+(require 'pcase)
 
 (defconst archive-contents-subdirectory-regexp
   "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)")
@@ -85,52 +86,76 @@ Delete backup files also."
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
 
-(defun batch-prepare-packages ()
-  "Prepare the `packages' directory inside the Bzr checkout.
+(defconst archive--revno-re "[0-9a-f]+")
+
+(defun archive-prepare-packages (srcdir)
+  "Prepare the `packages' directory inside the Git checkout.
 Expects to be called from within the `packages' directory.
 \"Prepare\" here is for subsequent construction of the packages and archive,
 so it is meant to refresh any generated files we may need.
 Currently only refreshes the ChangeLog files."
+  (setq srcdir (file-name-as-directory (expand-file-name srcdir)))
   (let* ((wit ".changelog-witness")
-         (prevno (or (with-temp-buffer
-                       (ignore-errors (insert-file-contents wit))
-                       (when (looking-at "[1-9][0-9]*\\'")
-                         (string-to-number (match-string 0))))
-                     1))
+         (prevno (with-temp-buffer
+                   (ignore-errors (insert-file-contents wit))
+                   (if (looking-at (concat archive--revno-re "$"))
+                       (match-string 0)
+                     (error "Can't find previous revision name"))))
          (new-revno
           (or (with-temp-buffer
-                (call-process "bzr" nil '(t) nil "revno")
-                (goto-char (point-min))
-                (when (looking-at "[1-9][0-9]*$")
-                  (string-to-number (match-string 0))))
-              (error "bzr revno did not return a number as expected")))
+                (let ((default-directory srcdir))
+                  (call-process "git" nil '(t) nil "rev-parse" "HEAD")
+                  (goto-char (point-min))
+                  (when (looking-at (concat archive--revno-re "$"))
+                    (match-string 0))))
+              (error "Couldn't find the current revision's name")))
          (pkgs '()))
-    (unless (= prevno new-revno)
+    (unless (equal prevno new-revno)
       (with-temp-buffer
-        (unless (zerop (call-process "bzr" nil '(t) nil "log" "-v"
-                                     (format "-r%d.." (1+ prevno))))
-          (error "Error signaled by bzr log -v -r%d.." (1+ prevno)))
+        (let ((default-directory srcdir))
+          (unless (zerop (call-process "git" nil '(t) nil "diff"
+                                       "--dirstat=cumulative,0"
+                                       prevno))
+            (error "Error signaled by git diff --dirstat %d" prevno)))
         (goto-char (point-min))
-        (while (re-search-forward "^  packages/\\([-[:alnum:]]+\\)/" nil t)
-          (pushnew (match-string 1) pkgs :test #'equal))))
-    (dolist (pkg pkgs)
-      (condition-case v
-          (if (file-directory-p pkg)
-              (archive--make-changelog pkg))
-        (error (message "Error: %S" v))))
-    (write-region (number-to-string new-revno) nil wit nil 'quiet)))
+        (while (re-search-forward "^[ \t.0-9%]* packages/\\([-[:alnum:]]+\\)/$"
+                                  nil t)
+          (push (match-string 1) pkgs))))
+    (let ((default-directory (expand-file-name "packages/")))
+      (dolist (pkg pkgs)
+        (condition-case v
+            (if (file-directory-p pkg)
+                (archive--make-changelog pkg (expand-file-name "packages/"
+                                                               srcdir)))
+          (error (message "Error: %S" v)))))
+    (write-region new-revno nil wit nil 'quiet)
+    ;; Also update the ChangeLog of external packages.
+    (let ((default-directory (expand-file-name "packages/")))
+      (dolist (dir (directory-files "."))
+        (and (not (member dir '("." "..")))
+             (file-directory-p dir)
+             (let ((index (expand-file-name
+                           (concat "packages/" dir "/.git/index")
+                           srcdir))
+                   (cl (expand-file-name "ChangeLog" dir)))
+               (and (file-exists-p index)
+                    (or (not (file-exists-p cl))
+                        (file-newer-than-file-p index cl))))
+             (archive--make-changelog
+              dir (expand-file-name "packages/" srcdir)))))
+    ))
 
 (defun archive--simple-package-p (dir pkg)
   "Test whether DIR contains a simple package named PKG.
-If so, return a list (VERSION DESCRIPTION REQ COMMENTARY), where
+If so, return a list (VERSION DESCRIPTION REQ), where
 VERSION is the version string of the simple package, DESCRIPTION
 is the brief description of the package, REQ is a list of
-requirements, and COMMENTARY is the package commentary.
+requirements.
 Otherwise, return nil."
   (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
 	 (mainfile (expand-file-name (concat pkg ".el") dir))
          (files (directory-files dir nil archive-re-no-dot))
-	 version description req commentary)
+	 version description req)
     (dolist (file (prog1 files (setq files ())))
       (unless (string-match "\\(?:\\.elc\\|~\\)\\'" file)
         (push file files)))
@@ -156,33 +181,13 @@ Otherwise, return nil."
             (if requires-str
                 (setq req (mapcar 'archive--convert-require
                                   (car (read-from-string requires-str))))))
-          (setq commentary (lm-commentary))
-          (list version description req commentary))))
+          (list version description req))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
-(defun archive--process-simple-package (dir pkg vers desc req commentary)
+(defun archive--process-simple-package (dir pkg vers desc req)
   "Deploy the contents of DIR into the archive as a simple package.
-Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and write the
-package commentary to PKG-readme.txt.  Return the descriptor."
-  ;; Write the readme file.
-  (with-temp-buffer
-    (erase-buffer)
-    (emacs-lisp-mode)
-    (insert (or commentary
-		(prog1 "No description"
-		  (message "Missing commentary in package %s" pkg))))
-    (goto-char (point-min))
-    (while (looking-at ";*[ \t]*\\(commentary[: \t]*\\)?\n")
-      (delete-region (match-beginning 0)
-		     (match-end 0)))
-    (uncomment-region (point-min) (point-max))
-    (goto-char (point-max))
-    (while (progn (forward-line -1)
-		  (looking-at "[ \t]*\n"))
-      (delete-region (match-beginning 0)
-		     (match-end 0)))
-    (write-region nil nil (concat pkg "-readme.txt")))
+Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
   (rename-file (expand-file-name (concat pkg ".el") dir)
 	       (concat pkg "-" vers ".el"))
@@ -202,13 +207,13 @@ package commentary to PKG-readme.txt.  Return the descriptor."
         (while (progn (forward-line -1) (>= (point) start))
           (insert ";; ")))
       (set (make-local-variable 'backup-inhibited) t)
-      (save-buffer)
+      (basic-save-buffer)               ;Less chatty than save-buffer.
       (kill-buffer)))
   (delete-directory dir t)
   (cons (intern pkg) (vector (version-to-list vers) req desc 'single)))
 
-(defun archive--make-changelog (dir)
-  "Export Bzr log info of DIR into a ChangeLog file."
+(defun archive--make-changelog (dir srcdir)
+  "Export Git log info of DIR into a ChangeLog file."
   (message "Refreshing ChangeLog in %S" dir)
   (let ((default-directory (file-name-as-directory (expand-file-name dir))))
     (with-temp-buffer
@@ -218,26 +223,29 @@ package commentary to PKG-readme.txt.  Return the descriptor."
         (if (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
         (let ((old-md5 (md5 (current-buffer))))
           (erase-buffer)
-          (call-process "bzr" nil (current-buffer) nil
-                        "log" "--gnu-changelog" ".")
+          (let ((default-directory
+                  (file-name-as-directory (expand-file-name dir srcdir))))
+            (call-process "git" nil (current-buffer) nil
+                          "log" "--date=short"
+                          "--format=%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n"
+                          "."))
+          (tabify (point-min) (point-max))
+          (goto-char (point-min))
+          (while (re-search-forward "\n\n\n+" nil t)
+            (replace-match "\n\n"))
           (if (equal old-md5 (md5 (current-buffer)))
               (message "ChangeLog's md5 unchanged for %S" dir)
             (write-region (point-min) (point-max) "ChangeLog" nil 'quiet)))))))
 
 (defun archive--process-multi-file-package (dir pkg)
   "Deploy the contents of DIR into the archive as a multi-file package.
-Rename DIR/ to PKG-VERS/, and write the package commentary to
-PKG-readme.txt.  Return the descriptor."
+Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let* ((exp (archive--multi-file-package-def dir pkg))
 	 (vers (nth 2 exp))
-	 (req (mapcar 'archive--convert-require (nth 4 exp)))
-	 (readme (expand-file-name "README" dir)))
+	 (req (mapcar 'archive--convert-require (nth 4 exp))))
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
-    ;; Write the readme file.
-    (when (file-exists-p readme)
-      (copy-file readme (concat pkg "-readme.txt") 'ok-if-already-exists))
     (rename-file dir (concat pkg "-" vers))
     (cons (intern pkg) (vector (version-to-list vers) req (nth 3 exp) 'tar))))
 
@@ -251,39 +259,6 @@ PKG-readme.txt.  Return the descriptor."
       (goto-char (point-min))
       (read (current-buffer)))))
 
-(defun batch-make-site-dir (package-dir site-dir)
-  (require 'package)
-  (setq package-dir (expand-file-name package-dir default-directory))
-  (setq site-dir (expand-file-name site-dir default-directory))
-  (dolist (dir (directory-files package-dir t archive-re-no-dot))
-    (if (not (file-directory-p dir))
-        (message "Skipping non-package file %s" dir)
-      (let* ((pkg (file-name-nondirectory dir))
-             (autoloads-file (expand-file-name
-                              (concat pkg "-autoloads.el") dir))
-             simple-p version)
-        ;; Omit autoloads and .elc files from the package.
-        (if (file-exists-p autoloads-file)
-            (delete-file autoloads-file))
-        (archive--delete-elc-files dir 'only-orphans)
-        ;; Test whether this is a simple or multi-file package.
-        (setq simple-p (archive--simple-package-p dir pkg))
-        (if simple-p
-            (progn
-              (apply 'archive--write-pkg-file dir pkg simple-p)
-              (setq version (car simple-p)))
-          (setq version
-                (nth 2 (archive--multi-file-package-def dir pkg))))
-        (make-symbolic-link (expand-file-name dir package-dir)
-                            (expand-file-name (concat pkg "-" version)
-                                              site-dir)
-                            t)
-        (let ((make-backup-files nil))
-          (package-generate-autoloads pkg dir))
-        (let ((load-path (cons dir load-path)))
-          ;; FIXME: Don't compile the -pkg.el files!
-          (byte-recompile-directory dir 0))))))
-
 (defun archive--refresh-pkg-file ()
   (let* ((dir (directory-file-name default-directory))
          (pkg (file-name-nondirectory dir))
@@ -294,16 +269,6 @@ PKG-readme.txt.  Return the descriptor."
           (apply 'archive--write-pkg-file dir pkg simple-p))
       ;; (message "Not refreshing pkg description of %s" pkg)
       )))
-
-(defun batch-make-site-package (sdir)
-  (let* ((dest (car (file-attributes sdir)))
-         (pkg (file-name-nondirectory (directory-file-name (or dest sdir))))
-         (dir (or dest sdir)))
-    (let ((make-backup-files nil))
-      (package-generate-autoloads pkg dir))
-    (let ((load-path (cons dir load-path)))
-      ;; FIXME: Don't compile the -pkg.el files!
-      (byte-recompile-directory dir 0))))
 
 (defun archive--write-pkg-file (pkg-dir name version desc requires &rest ignored)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
@@ -339,7 +304,7 @@ PKG-readme.txt.  Return the descriptor."
   <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">
 </head>
 <body>
-<h1 align=\"center\">%s</h1>"
+<h1 align=\"center\">%s</h1>\n"
           title title))
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
@@ -355,40 +320,114 @@ PKG-readme.txt.  Return the descriptor."
      ((>= bytes 10) (format "%4.1f%s" bytes (car units)))
      (t (format "%4.2f%s" bytes (car units))))))
 
+(defun archive--get-prop (prop name srcdir mainsrcfile)
+  (let ((kprop (intern (format ":%s" (downcase prop)))))
+    (or
+     (let ((pkgdescfile (expand-file-name (format "%s-pkg.el" name)
+                                          srcdir)))
+       (when (file-readable-p pkgdescfile)
+         (with-temp-buffer
+           (insert-file-contents pkgdescfile)
+           (let ((desc (read (current-buffer))))
+             (plist-get (cdr desc) kprop)))))
+     (when (file-readable-p mainsrcfile)
+       (with-temp-buffer
+         (insert-file-contents mainsrcfile)
+         (lm-header prop))))))
+
+(defun archive--get-section (hsection fsection srcdir mainsrcfile)
+  (cond
+   ((file-readable-p (expand-file-name fsection srcdir))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name fsection srcdir))
+      (buffer-string)))
+   ((file-readable-p mainsrcfile)
+    (with-temp-buffer
+      (insert-file-contents mainsrcfile)
+      (let ((start (lm-section-start hsection)))
+        (when start
+          (insert
+           (prog1
+               (buffer-substring start (lm-section-end hsection))
+             (erase-buffer)))
+          (emacs-lisp-mode)
+          (goto-char (point-min))
+          (delete-region (point) (line-beginning-position 2))
+          (uncomment-region (point-min) (point-max))
+          (when (looking-at "^\\([ \t]*\n\\)+")
+            (replace-match ""))
+          (goto-char (point-max))
+          (skip-chars-backward " \t\n")
+          (delete-region (point) (point-max))
+          (buffer-string)))))))
+
+(defun archive--quote (txt)
+  (replace-regexp-in-string "<" "&lt;"
+                            (replace-regexp-in-string "&" "&amp;" txt)))
+
+(defun archive--insert-repolinks (name srcdir mainsrcfile)
+  (let ((url (archive--get-prop "URL" name srcdir mainsrcfile)))
+    (if url
+        (insert (format "<p>Origin: <a href=%S>%s</a></p>\n"
+                        url (archive--quote url)))
+      (let* ((externals
+              (with-temp-buffer
+                (insert-file-contents
+                 (expand-file-name "../../../elpa/externals-list" srcdir))
+                (read (current-buffer))))
+             (external (eq :external (nth 1 (assoc name externals))))
+             (git-sv "http://git.savannah.gnu.org/")
+             (urls (if external
+                       '("cgit/emacs/elpa.git/?h=externals/"
+                         "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
+                     '("cgit/emacs/elpa.git/tree/packages/"
+                       "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
+        (insert (format
+                 (concat "<p>Browse repository: <a href=%S>%s</a>"
+                         " or <a href=%S>%s</a></p>\n")
+                 (concat git-sv (nth 0 urls) name)
+                 'CGit
+                 (concat git-sv (nth 1 urls) name)
+                 'Gitweb))))))
+
 (defun archive--html-make-pkg (pkg files)
-  (let ((name (symbol-name (car pkg)))
-        (latest (package-version-join (aref (cdr pkg) 0)))
-        (desc (aref (cdr pkg) 2)))
-    ;; FIXME: Add maintainer info.
+  (let* ((name (symbol-name (car pkg)))
+         (latest (package-version-join (aref (cdr pkg) 0)))
+         (srcdir (expand-file-name name "../../build/packages"))
+         (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
+         (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
       (insert (archive--html-header (format "GNU ELPA - %s" name)))
-      (insert (format "<p>Description: %s</p>\n" desc))
+      (insert (format "<p>Description: %s</p>\n" (archive--quote desc)))
       (let* ((file (cdr (assoc latest files)))
              (attrs (file-attributes file)))
         (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
-                        file file
+                        file (archive--quote file)
                         (format-time-string "%Y-%b-%d" (nth 5 attrs))
                         (archive--html-bytes-format (nth 7 attrs)))))
-      ;; FIXME: This URL is wrong for Org.
-      (let ((repurl (concat "http://bzr.sv.gnu.org/lh/emacs/elpa/files/head:/packages/" name)))
-        (insert (format "<p>Repository: <a href=%S>%s</a></p>" repurl repurl)))
-      (let ((readme (concat name "-readme.txt"))
-            (end (copy-marker (point) t)))
-        (when (file-readable-p readme)
-          (insert "<p>Full description:<pre>\n")
-          (insert-file-contents readme)
-          (goto-char end)
-          (insert "\n</pre></p>")))
+      (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
+        (when maint
+          (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
+      (archive--insert-repolinks name srcdir mainsrcfile)
+      (let ((readme (archive--get-section "Commentary" "README" srcdir mainsrcfile)))
+        (when readme
+          (write-region readme nil (concat name "-readme.txt"))
+          (insert "<h2>Full description</h2><pre>\n" (archive--quote readme)
+                  "\n</pre>\n")))
       (unless (< (length files) 2)
-        (insert (format "<p>Old versions:<table cellpadding=\"3\" border=\"1\">\n"))
+        (insert (format "<h2>Old versions</h2><table cellpadding=\"3\" border=\"1\">\n"))
         (dolist (file files)
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
-                              file file
+                              file (archive--quote file)
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (archive--html-bytes-format (nth 7 attrs)))))))
-        (insert "</table></body>\n"))
+        (insert "</table>\n"))
+      (let ((news (archive--get-section "News" "NEWS" srcdir mainsrcfile)))
+        (when news
+          (insert "<h2>News</h2><pre>\n" (archive--quote news) "\n</pre>\n")))
+      (insert "</body>\n")
       (write-region (point-min) (point-max) (concat name ".html")))))
 
 (defun archive--html-make-index (pkgs)
@@ -429,11 +468,57 @@ PKG-readme.txt.  Return the descriptor."
     ;; FIXME: Add (old?) packages that are in `packages' but not in
     ;; archive-contents.
     (archive--html-make-index archive-contents)))
-        
 
-;; Local Variables:
-;; lexical-binding: t
-;; End:
+;;; Maintain external packages.
+
+(defconst archive--elpa-git-url "git+ssh://git.sv.gnu.org/srv/git/emacs/elpa")
+
+(defun archive-add/remove/update-externals ()
+  (let ((exts (with-current-buffer (find-file-noselect "externals-list")
+                (goto-char (point-min))
+                (read (current-buffer)))))
+    (let ((default-directory (expand-file-name "packages/")))
+      ;; Remove "old/odd" externals.
+      (dolist (dir (directory-files "."))
+        (cond
+         ((member dir '("." "..")) nil)
+         ((assoc dir exts) nil)
+         ((file-directory-p (expand-file-name (format "%s/.git" dir)))
+          (let ((status
+                 (with-temp-buffer
+                   (let ((default-directory (file-name-as-directory
+                                             (expand-file-name dir))))
+                     (call-process "git" nil t nil "status" "--porcelain")
+                     (buffer-string)))))
+            (if (zerop (length status))
+                (progn (delete-directory dir 'recursive t)
+                       (message "Deleted all of %s" dir))
+              (message "Keeping leftover unclean %s:\n%s" dir status))))))
+      (pcase-dolist (`(,dir ,kind ,_url) exts)
+        (cond
+         ((eq kind :subtree) nil)       ;Nothing to do.
+         ((not (eq kind :external))
+          (message "Unknown external package kind `%S' for %s" kind dir))
+         ((not (file-exists-p dir))
+          (let* ((branch (concat "externals/" dir))
+                 (output
+                  (with-temp-buffer
+                    ;; FIXME: Use git-new-workdir!
+                    (call-process "git" nil t nil "clone"
+                                  "--reference" ".." "--branch" branch
+                                  archive--elpa-git-url dir)
+                    (buffer-string))))
+            (message "Cloning branch %s:\n%s" dir output)))
+         ((not (file-directory-p (concat dir "/.git")))
+          (message "%s is in the way of an external, please remove!" dir))
+         (t
+          (let ((default-directory (file-name-as-directory
+                                    (expand-file-name dir))))
+            (with-temp-buffer
+              (message "Running git pull in %S" default-directory)
+              (call-process "git" nil t nil "pull")
+              (message "Updated %s:%s" dir (buffer-string))))
+          ))))))
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
