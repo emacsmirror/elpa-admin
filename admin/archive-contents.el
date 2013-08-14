@@ -471,6 +471,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 ;;; Maintain external packages.
 
+(defconst archive--elpa-git-url "git+ssh://git.sv.gnu.org/srv/git/emacs/elpa")
+
 (defun archive-add/remove/update-externals ()
   (let ((exts (with-current-buffer (find-file-noselect "externals-list")
                 (goto-char (point-min))
@@ -502,17 +504,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                  (output
                   (with-temp-buffer
                     ;; FIXME: Use git-new-workdir!
-                    (call-process "git" nil t nil "branch" "--track"
-                                  branch (concat "origin/" branch))
                     (call-process "git" nil t nil "clone"
-                                  "--shared" "--branch" branch "../" dir)
-                    (let ((default-directory (file-name-as-directory
-                                              (expand-file-name dir))))
-                      ;; (call-process "git" nil t nil "branch"
-                      ;;               "-m" branch "master")
-                      (call-process "git" nil t nil "remote"
-                                    "set-url" "--push" "origin"
-                                    "git+ssh://git.sv.gnu.org/srv/git/emacs/elpa.git"))
+                                  "--reference" ".." "--branch" branch
+                                  archive--elpa-git-url dir)
                     (buffer-string))))
             (message "Cloning branch %s:\n%s" dir output)))
          ((not (file-directory-p (concat dir "/.git")))
