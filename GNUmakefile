@@ -13,8 +13,8 @@ CR_EXCEPTIONS=copyright_exceptions
 .PHONY: check_copyrights
 check_copyrights:
 	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
-	@(cd packages;							\
-	export LANG=C;							\
+	@export LANG=C;							\
+	(cd packages;							\
 	find . -name '*.el' -print0 |					\
 	    xargs -0 grep -L 'Free Software Foundation, Inc' |		\
 	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';	\
