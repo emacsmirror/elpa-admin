@@ -76,9 +76,10 @@ Delete backup files also."
 	      (archive--delete-elc-files dir)
 	      ;; Test whether this is a simple or multi-file package.
 	      (setq simple-p (archive--simple-package-p dir pkg))
-	      (push (if simple-p
+	      (push (if (car simple-p)
 			(apply #'archive--process-simple-package
-			       dir pkg simple-p)
+			       dir pkg (cdr simple-p))
+                      (apply 'archive--write-pkg-file dir pkg (cdr simple-p))
 		      (archive--process-multi-file-package dir pkg))
 		    packages)))
 	(error (error "Error in %s: %S" dir v))))
@@ -147,24 +148,20 @@ Currently only refreshes the ChangeLog files."
 
 (defun archive--simple-package-p (dir pkg)
   "Test whether DIR contains a simple package named PKG.
-If so, return a list (VERSION DESCRIPTION REQ), where
-VERSION is the version string of the simple package, DESCRIPTION
-is the brief description of the package, REQ is a list of
-requirements.
+Return a list (SIMPLE VERSION DESCRIPTION REQ), where
+SIMPLE is non-nil if the package is indeed simple;
+VERSION is the version string of the simple package;
+DESCRIPTION is the brief description of the package;
+REQ is a list of requirements.
 Otherwise, return nil."
   (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
 	 (mainfile (expand-file-name (concat pkg ".el") dir))
-         (files (directory-files dir nil archive-re-no-dot))
+         (files (directory-files dir nil "\\.el\\'"))
 	 version description req)
-    (dolist (file (prog1 files (setq files ())))
-      (unless (string-match "\\(?:\\.elc\\|~\\)\\'" file)
-        (push file files)))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
-    (setq files (delete "ChangeLog" files))
     (cond
-     ((and (or (not (file-exists-p pkg-file))
-               (= (length files) 1))
+     ((and (not (file-exists-p pkg-file))
            (file-exists-p mainfile))
       (with-temp-buffer
 	(insert-file-contents mainfile)
@@ -181,7 +178,7 @@ Otherwise, return nil."
             (if requires-str
                 (setq req (mapcar 'archive--convert-require
                                   (car (read-from-string requires-str))))))
-          (list version description req))))
+          (list (= (length files) 1) version description req))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
@@ -266,7 +263,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (if simple-p
         (progn
           ;; (message "Refreshing pkg description of %s" pkg)
-          (apply 'archive--write-pkg-file dir pkg simple-p))
+          (apply 'archive--write-pkg-file dir pkg (cdr simple-p)))
       ;; (message "Not refreshing pkg description of %s" pkg)
       )))
 
@@ -336,6 +333,13 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (lm-header prop))))))
 
 (defun archive--get-section (hsection fsection srcdir mainsrcfile)
+  (when (consp fsection)
+    (while (cdr-safe fsection)
+      (setq fsection
+            (if (file-readable-p (expand-file-name (car fsection) srcdir))
+                (car fsection)
+              (cdr fsection))))
+    (when (consp fsection) (setq fsection (car fsection))))
   (cond
    ((file-readable-p (expand-file-name fsection srcdir))
     (with-temp-buffer
@@ -409,7 +413,10 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (when maint
           (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
       (archive--insert-repolinks name srcdir mainsrcfile)
-      (let ((readme (archive--get-section "Commentary" "README" srcdir mainsrcfile)))
+      (let ((readme (archive--get-section "Commentary"
+                                          '("README" "README.rst" "README.md"
+                                            "README.org")
+                                          srcdir mainsrcfile)))
         (when readme
           (write-region readme nil (concat name "-readme.txt"))
           (insert "<h2>Full description</h2><pre>\n" (archive--quote readme)
@@ -471,7 +478,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 ;;; Maintain external packages.
 
-(defconst archive--elpa-git-url "git+ssh://git.sv.gnu.org/srv/git/emacs/elpa")
+(defconst archive--elpa-git-url "git://git.sv.gnu.org/emacs/elpa")
 
 (defun archive-add/remove/update-externals ()
   (let ((exts (with-current-buffer (find-file-noselect "externals-list")
