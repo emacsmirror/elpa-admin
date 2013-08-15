@@ -32,9 +32,16 @@
 (defconst archive-re-no-dot "\\`\\([^.]\\|\\.\\([^.]\\|\\..\\)\\).*"
   "Regular expression matching all files except \".\" and \"..\".")
 
+(defun archive--version-to-list (vers)
+  (when vers
+    (let ((l (version-to-list vers)))
+      ;; Signal an error for things like "1.02" which is parsed as "1.2".
+      (assert (equal vers (package-version-join l)))
+      l)))
+
 (defun archive--convert-require (elt)
   (list (car elt)
-	(version-to-list (car (cdr elt)))))
+	(archive--version-to-list (car (cdr elt)))))
 
 (defun archive--strip-rcs-id (str)
   "Strip RCS version ID from the version string STR.
@@ -44,7 +51,7 @@ Otherwise return nil."
     (when (string-match "\\`[ \t]*[$]Revision:[ \t]+" str)
       (setq str (substring str (match-end 0))))
     (condition-case nil
-	(if (version-to-list str)
+	(if (archive--version-to-list str)
 	    str)
       (error nil))))
 
@@ -79,10 +86,12 @@ Delete backup files also."
 	      (push (if (car simple-p)
 			(apply #'archive--process-simple-package
 			       dir pkg (cdr simple-p))
-                      (apply 'archive--write-pkg-file dir pkg (cdr simple-p))
+                      (if simple-p
+                          (apply #'archive--write-pkg-file
+                                 dir pkg (cdr simple-p)))
 		      (archive--process-multi-file-package dir pkg))
 		    packages)))
-	(error (error "Error in %s: %S" dir v))))
+	((debug error) (error "Error in %s: %S" dir v))))
     (with-temp-buffer
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
@@ -156,8 +165,7 @@ REQ is a list of requirements.
 Otherwise, return nil."
   (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
 	 (mainfile (expand-file-name (concat pkg ".el") dir))
-         (files (directory-files dir nil "\\.el\\'"))
-	 version description req)
+         (files (directory-files dir nil "\\.el\\'")))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
     (cond
@@ -168,17 +176,20 @@ Otherwise, return nil."
 	(goto-char (point-min))
 	(if (not (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$"))
             (error "Can't parse first line of %s" mainfile)
-          (setq description (match-string 1))
-          (setq version
-                (or (archive--strip-rcs-id (lm-header "package-version"))
-                    (archive--strip-rcs-id (lm-header "version"))
-                    (error "Missing `version' header")))
           ;; Grab the other fields, which are not mandatory.
-          (let ((requires-str (lm-header "package-requires")))
-            (if requires-str
-                (setq req (mapcar 'archive--convert-require
-                                  (car (read-from-string requires-str))))))
-          (list (= (length files) 1) version description req))))
+          (let* ((description (match-string 1))
+                 (version
+                  (or (archive--strip-rcs-id (lm-header "package-version"))
+                      (archive--strip-rcs-id (lm-header "version"))
+                      (error "Missing `version' header")))
+                 (requires-str (lm-header "package-requires"))
+                 (pt (lm-header "package-type"))
+                 (simple (if pt (equal pt "simple") (= (length files) 1)))
+                 (req
+                  (if requires-str
+                      (mapcar 'archive--convert-require
+                              (car (read-from-string requires-str))))))
+            (list simple version description req)))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
@@ -207,7 +218,8 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
       (basic-save-buffer)               ;Less chatty than save-buffer.
       (kill-buffer)))
   (delete-directory dir t)
-  (cons (intern pkg) (vector (version-to-list vers) req desc 'single)))
+  (cons (intern pkg) (vector (archive--version-to-list vers)
+                             req desc 'single)))
 
 (defun archive--make-changelog (dir srcdir)
   "Export Git log info of DIR into a ChangeLog file."
@@ -239,12 +251,18 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
 Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let* ((exp (archive--multi-file-package-def dir pkg))
 	 (vers (nth 2 exp))
-	 (req (mapcar 'archive--convert-require (nth 4 exp))))
+         (req-exp (nth 4 exp))
+	 (req (mapcar 'archive--convert-require
+                      (if (eq 'quote (car-safe req-exp)) (nth 1 req-exp)
+                        (when req-exp
+                          (error "REQ should be a quoted constant: %S"
+                                 req-exp))))))
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
     (rename-file dir (concat pkg "-" vers))
-    (cons (intern pkg) (vector (version-to-list vers) req (nth 3 exp) 'tar))))
+    (cons (intern pkg) (vector (archive--version-to-list vers)
+                               req (nth 3 exp) 'tar))))
 
 (defun archive--multi-file-package-def (dir pkg)
   "Return the `define-package' form in the file DIR/PKG-pkg.el."
