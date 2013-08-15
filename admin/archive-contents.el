@@ -413,13 +413,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (when maint
           (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
       (archive--insert-repolinks name srcdir mainsrcfile)
-      (let ((readme (archive--get-section "Commentary"
-                                          '("README" "README.rst" "README.md"
-                                            "README.org")
-                                          srcdir mainsrcfile)))
-        (when readme
-          (write-region readme nil (concat name "-readme.txt"))
-          (insert "<h2>Full description</h2><pre>\n" (archive--quote readme)
+      (let ((rm (archive--get-section
+                 "Commentary" '("README" "README.rst" "README.md" "README.org")
+                 srcdir mainsrcfile)))
+        (when rm
+          (write-region rm nil (concat name "-readme.txt"))
+          (insert "<h2>Full description</h2><pre>\n" (archive--quote rm)
                   "\n</pre>\n")))
       (unless (< (length files) 2)
         (insert (format "<h2>Old versions</h2><table cellpadding=\"3\" border=\"1\">\n"))
@@ -431,7 +430,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (archive--html-bytes-format (nth 7 attrs)))))))
         (insert "</table>\n"))
-      (let ((news (archive--get-section "News" "NEWS" srcdir mainsrcfile)))
+      (let ((news (archive--get-section
+                   "News" '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org")
+                   srcdir mainsrcfile)))
         (when news
           (insert "<h2>News</h2><pre>\n" (archive--quote news) "\n</pre>\n")))
       (insert "</body>\n")
