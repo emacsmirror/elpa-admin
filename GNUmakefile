@@ -106,7 +106,7 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
 	      --eval "(archive--refresh-pkg-file)" \
 	      --eval "(require 'package)" \
-	      --eval "(package-generate-autoloads '$$(basename $$(pwd)) \
+	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
 	                                          \"$$(pwd)\")"
 
 # Put into elcs the set of elc files we need to keep up-to-date.
