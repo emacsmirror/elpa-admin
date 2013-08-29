@@ -29,25 +29,22 @@ each package.
 
 *** Add a multi-file package as a directory, packages/NAME.
 
-*** Commit your changes the usual way ("bzr add", "bzr commit", etc).
+*** Commit your changes the usual way ("git add", "git commit", etc).
 
-Changes in the Bzr repository do not immediately propagate to the
+Changes in the Git repository do not immediately propagate to the
 user-facing archive (what users see when they do `M-x list-packages').
 That is done by deploying the archive.
 
 
 * DEPLOYMENT
 
-** To use the package repository as a "site installation" of packages:
+** To deploy the package repository locally:
 
-  make site
+  make
 
 This compiles and generates autoloads for all the packages in the
-packages/ directory, and creates a site/ directory containing symlinks
-to the package directories.
-
-Now you have to add this site/ directory to `package-directory-list',
-and all the packages will be available.
+packages/ directory. The resulting archive is the same packages/
+directory.
 
 ** To deploy the package repository as a remotely-accessible archive:
 
@@ -67,7 +64,7 @@ and adds them to the archive.
 
 ** To access a deployed archive
 
-To access the archive via HTPP, have a symlink (say) /var/www/packages
+To access the archive via HTTP, have a symlink (say) /var/www/packages
 pointing to DEST/packages, and set up Emacs with
 
   (setq package-archives '(("new-elpa" . "http://foo.com/packages")))
@@ -75,7 +72,7 @@ pointing to DEST/packages, and set up Emacs with
 You can also access the archive via normal file access.  Such "local
 archives" are useful for debugging:
 
-  (setq package-archives '(("local-elpa" . "DEST/packages")))
+  (setq package-archives '(("local-elpa" . ".../elpa/packages")))
 
 ** Notes specific to elpa.gnu.org
 
