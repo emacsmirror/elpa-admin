@@ -36,7 +36,8 @@
   (when vers
     (let ((l (version-to-list vers)))
       ;; Signal an error for things like "1.02" which is parsed as "1.2".
-      (assert (equal vers (package-version-join l)))
+      (assert (equal vers (package-version-join l)) nil
+              "Unsupported version syntax %S" vers)
       l)))
 
 (defun archive--convert-require (elt)
@@ -51,9 +52,9 @@ Otherwise return nil."
     (when (string-match "\\`[ \t]*[$]Revision:[ \t]+" str)
       (setq str (substring str (match-end 0))))
     (condition-case nil
-	(if (archive--version-to-list str)
-	    str)
-      (error nil))))
+        (if (archive--version-to-list str)
+            str)
+      (error str))))
 
 (defun archive--delete-elc-files (dir &optional only-orphans)
   "Recursively delete all .elc files in DIR.

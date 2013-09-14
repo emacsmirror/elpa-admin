@@ -42,15 +42,21 @@ process-archive:
 	# FIXME, we could probably speed this up significantly with
 	# rules like "%.tar: ../%/ChangeLog" so we only rebuild the packages
 	# that have indeed changed.
-	cd $(ARCHIVE_TMP)/packages; \
-	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
-	    -f batch-make-archive
-	@cd $(ARCHIVE_TMP)/packages; \
-	  for pt in *; do \
-	      if [ -d $$pt ]; then \
-		  echo "Creating tarball $${pt}.tar" && \
-		  tar -cf $${pt}.tar $$pt --remove-files; \
-	      fi; \
+	cd $(ARCHIVE_TMP)/packages;				\
+	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
+	           -f batch-make-archive
+	@cd $(ARCHIVE_TMP)/packages;				\
+	  for pt in *; do					\
+	      if [ -f "$${pt}/.elpaignore" ]; then		\
+		  ignore="$${pt}/.elpaignore";			\
+	      else						\
+		  ignore="/dev/null";				\
+	      fi;						\
+	      if [ -d $$pt ]; then				\
+		  echo "Creating tarball $${pt}.tar" &&		\
+		  tar -cf $${pt}.tar $$pt -X "$$ignore";	\
+		  rm -r $${pt}; 				\
+	      fi;						\
 	  done
 	mkdir -p archive/packages
 	mv archive/packages archive/packages-old
