@@ -187,7 +187,7 @@ Otherwise, return nil."
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
-                 (url (or (lm-homepage)
+                 (url (or (lm-header "url")
                           (format "http://elpa.gnu.org/packages/%s.html" pkg)))
                  (req
                   (if requires-str
@@ -452,7 +452,11 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (archive--insert-repolinks name srcdir mainsrcfile
                                  (cdr (assoc :url (aref (cdr pkg) 4))))
       (let ((rm (archive--get-section
-                 "Commentary" '("README" "README.rst" "README.md" "README.org")
+                 "Commentary" '("README" "README.rst"
+                                ;; Most README.md files seem to be currently
+                                ;; worse than the Commentary: section :-(
+                                ;; "README.md"
+                                "README.org")
                  srcdir mainsrcfile)))
         (when rm
           (write-region rm nil (concat name "-readme.txt"))
