@@ -158,11 +158,12 @@ Currently only refreshes the ChangeLog files."
 
 (defun archive--simple-package-p (dir pkg)
   "Test whether DIR contains a simple package named PKG.
-Return a list (SIMPLE VERSION DESCRIPTION REQ), where
+Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS), where
 SIMPLE is non-nil if the package is indeed simple;
 VERSION is the version string of the simple package;
 DESCRIPTION is the brief description of the package;
-REQ is a list of requirements.
+REQ is a list of requirements;
+EXTRAS is an alist with additional metadata.
 Otherwise, return nil."
   (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
 	 (mainfile (expand-file-name (concat pkg ".el") dir))
@@ -186,15 +187,17 @@ Otherwise, return nil."
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
+                 (url (or (lm-homepage)
+                          (format "http://elpa.gnu.org/packages/%s.html" pkg)))
                  (req
                   (if requires-str
                       (mapcar 'archive--convert-require
                               (car (read-from-string requires-str))))))
-            (list simple version description req)))))
+            (list simple version description req (list (cons :url url)))))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
-(defun archive--process-simple-package (dir pkg vers desc req)
+(defun archive--process-simple-package (dir pkg vers desc req extras)
   "Deploy the contents of DIR into the archive as a simple package.
 Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
@@ -220,7 +223,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
       (kill-buffer)))
   (delete-directory dir t)
   (cons (intern pkg) (vector (archive--version-to-list vers)
-                             req desc 'single)))
+                             req desc 'single extras)))
 
 (defun archive--make-changelog (dir srcdir)
   "Export Git log info of DIR into a ChangeLog file."
@@ -247,6 +250,19 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
               (message "ChangeLog's md5 unchanged for %S" dir)
             (write-region (point-min) (point-max) "ChangeLog" nil 'quiet)))))))
 
+(defun archive--alist-to-plist (alist)
+  (apply #'nconc (mapcar (lambda (pair) (list (car pair) (cdr pair))) alist)))
+
+(defun archive--plist-to-alist (plist)
+  (let (alist)
+    (while plist
+      (let ((value (cadr plist)))
+        (when value
+          (push (cons (car plist) value)
+                alist)))
+      (setq plist (cddr plist)))
+    alist))
+
 (defun archive--process-multi-file-package (dir pkg)
   "Deploy the contents of DIR into the archive as a multi-file package.
 Rename DIR/ to PKG-VERS/, and return the descriptor."
@@ -257,13 +273,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                       (if (eq 'quote (car-safe req-exp)) (nth 1 req-exp)
                         (when req-exp
                           (error "REQ should be a quoted constant: %S"
-                                 req-exp))))))
+                                 req-exp)))))
+         (extras (archive--plist-to-alist (nthcdr 5 exp))))
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
     (rename-file dir (concat pkg "-" vers))
     (cons (intern pkg) (vector (archive--version-to-list vers)
-                               req (nth 3 exp) 'tar))))
+                               req (nth 3 exp) 'tar extras))))
 
 (defun archive--multi-file-package-def (dir pkg)
   "Return the `define-package' form in the file DIR/PKG-pkg.el."
@@ -286,7 +303,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       ;; (message "Not refreshing pkg description of %s" pkg)
       )))
 
-(defun archive--write-pkg-file (pkg-dir name version desc requires &rest ignored)
+(defun archive--write-pkg-file (pkg-dir name version desc requires extras)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
         (print-quoted t)
@@ -295,17 +312,19 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      (concat (format ";; Generated package description from %s.el\n"
 		     name)
 	     (prin1-to-string
-	      (list 'define-package
-		    name
-		    version
-		    desc
-		    (list 'quote
-			  ;; Turn version lists into string form.
-			  (mapcar
-			   (lambda (elt)
-			     (list (car elt)
-				   (package-version-join (cadr elt))))
-			   requires))))
+              (nconc
+               (list 'define-package
+                     name
+                     version
+                     desc
+                     (list 'quote
+                           ;; Turn version lists into string form.
+                           (mapcar
+                            (lambda (elt)
+                              (list (car elt)
+                                    (package-version-join (cadr elt))))
+                            requires)))
+               (archive--alist-to-plist extras)))
 	     "\n")
      nil
      pkg-file)))
@@ -388,30 +407,29 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (replace-regexp-in-string "<" "&lt;"
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
-(defun archive--insert-repolinks (name srcdir mainsrcfile)
-  (let ((url (archive--get-prop "URL" name srcdir mainsrcfile)))
-    (if url
-        (insert (format "<p>Origin: <a href=%S>%s</a></p>\n"
-                        url (archive--quote url)))
-      (let* ((externals
-              (with-temp-buffer
-                (insert-file-contents
-                 (expand-file-name "../../../elpa/externals-list" srcdir))
-                (read (current-buffer))))
-             (external (eq :external (nth 1 (assoc name externals))))
-             (git-sv "http://git.savannah.gnu.org/")
-             (urls (if external
-                       '("cgit/emacs/elpa.git/?h=externals/"
-                         "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
-                     '("cgit/emacs/elpa.git/tree/packages/"
-                       "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
-        (insert (format
-                 (concat "<p>Browse repository: <a href=%S>%s</a>"
-                         " or <a href=%S>%s</a></p>\n")
-                 (concat git-sv (nth 0 urls) name)
-                 'CGit
-                 (concat git-sv (nth 1 urls) name)
-                 'Gitweb))))))
+(defun archive--insert-repolinks (name srcdir mainsrcfile url)
+  (if url
+      (insert (format "<p>Origin: <a href=%S>%s</a></p>\n"
+                      url (archive--quote url)))
+    (let* ((externals
+            (with-temp-buffer
+              (insert-file-contents
+               (expand-file-name "../../../elpa/externals-list" srcdir))
+              (read (current-buffer))))
+           (external (eq :external (nth 1 (assoc name externals))))
+           (git-sv "http://git.savannah.gnu.org/")
+           (urls (if external
+                     '("cgit/emacs/elpa.git/?h=externals/"
+                       "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
+                   '("cgit/emacs/elpa.git/tree/packages/"
+                     "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
+      (insert (format
+               (concat "<p>Browse repository: <a href=%S>%s</a>"
+                       " or <a href=%S>%s</a></p>\n")
+               (concat git-sv (nth 0 urls) name)
+               'CGit
+               (concat git-sv (nth 1 urls) name)
+               'Gitweb)))))
 
 (defun archive--html-make-pkg (pkg files)
   (let* ((name (symbol-name (car pkg)))
@@ -431,7 +449,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
         (when maint
           (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
-      (archive--insert-repolinks name srcdir mainsrcfile)
+      (archive--insert-repolinks name srcdir mainsrcfile
+                                 (cdr (assoc :url (aref (cdr pkg) 4))))
       (let ((rm (archive--get-section
                  "Commentary" '("README" "README.rst" "README.md" "README.org")
                  srcdir mainsrcfile)))
