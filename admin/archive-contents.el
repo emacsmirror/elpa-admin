@@ -187,13 +187,18 @@ Otherwise, return nil."
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
+                 (keywords (split-string (or (lm-header "keywords") "")
+                                         "," t "[ ]+"))
                  (url (or (lm-header "url")
                           (format "http://elpa.gnu.org/packages/%s.html" pkg)))
                  (req
                   (if requires-str
                       (mapcar 'archive--convert-require
                               (car (read-from-string requires-str))))))
-            (list simple version description req (list (cons :url url)))))))
+            (list simple version description req
+                  ;; extra parameters
+                  (list (cons :url url)
+                        (cons :keywords keywords)))))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
