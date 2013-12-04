@@ -187,8 +187,7 @@ Otherwise, return nil."
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
-                 (keywords (split-string (or (lm-header "keywords") "")
-                                         "," t "[ ]+"))
+                 (keywords (lm-keywords-list))
                  (url (or (lm-header "url")
                           (format "http://elpa.gnu.org/packages/%s.html" pkg)))
                  (req
