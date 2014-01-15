@@ -197,7 +197,7 @@ Otherwise, return nil."
             (list simple version description req
                   ;; extra parameters
                   (list (cons :url url)
-                        (cons :keywords keywords)))))))
+                        (cons :keywords (list 'quote keywords))))))))
      ((not (file-exists-p pkg-file))
       (error "Can find single file nor package desc file in %s" dir)))))
 
