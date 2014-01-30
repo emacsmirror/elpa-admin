@@ -1,4 +1,4 @@
-Copyright (C) 2010-2011 Free Software Foundation, Inc.
+Copyright (C) 2010-2011, 2014 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
@@ -23,44 +23,112 @@ for testing purposes).
 This directory holds the package sources, with one subdirectory for
 each package.
 
+Each directory in here corresponds to a package, which can be
+either a single-file package or a multifile package.
+
+A nightly cron job refreshes the GNU ELPA archive from this repository.
+
+This cron job only creates a new package when the "version" (as specified in
+the "Version:" header) of a package is modified.  This means that you can
+safely work on the next version here without worrying about the unstable
+code making it to GNU ELPA, and simply update the "version" when you want to
+release the new code.
+
 ** To add a package:
 
 *** Add a simple (1-file) package as packages/NAME/NAME.el.
 
+The file needs to follow the usual coding conventions (most importantly
+start with ";;; <file> --- <description>") and have a "Version:" and
+"Maintainer:" pseudo-header.
+
 *** Add a multi-file package as a directory, packages/NAME.
+
+It needs to have a file named packages/NAME/NAME.el which follows the same
+rules as above.
 
 *** Commit your changes the usual way ("git add", "git commit", etc).
 
 Changes in the Git repository do not immediately propagate to the
 user-facing archive (what users see when they do `M-x list-packages').
-That is done by deploying the archive.
+That is done by deploying the archive, which happens automatically
+once a day, and the changes are only reflected when the "Version:"
+header changes.
 
+** Format
+
+Each package should follow the ELPA packaging conventions, but there are
+some differences due to the way the deployment script creates the packages
+and the web-pages from this source code:
+- Multi-file packages put the package metadata in the main <pkg>.el file
+  in the format used for single-file packages: the <pkg>-pkg.el file is
+  auto-generated from it.
+- Every package should have both a "Version:" *and* a "Maintainer:".
+- the "URL:" header can be used to specify the home page
+  of the package, if it's maintained externally.
+- A "News:" section (or "NEWS" file) can/should be used to list the
+  user-visible changes of each version.
+- The "Package-Type:" header can be used to force the type of package
+  created (can be either `simple' for single-file packages or `multi' for
+  tarballs).  By default the type is decided based on whether there are
+  several Elisp files in the source.
+- If you want some files to not be included in the tarball, you can
+  put a `.elpaignore' file in the root of your package directory, where you
+  can list patterns of files to ignore (this file is passed to tar's -X).
+
+** External branches
+
+Some packages are maintained in external branches.  These should be
+appropriately listed in the `externals-list' file.
+There are two different cases: subtrees and externals.
+
+In both cases, a copy of the code is kept in the `elpa' repository and
+should be sync'd with the upstream every once in a while.  This copy may
+include local changes, tho ideally these should be kept to a minimum.
+
+In the `subtree' case, the copy of the code is kept here in the
+corresponding `packages/<pkg>' directory.  You should be able to "git
+merge -s subtree" from the upstream branch.
+
+In the `external' case, the copy of the code is not kept here but in the
+`externals/<pkg>' branch in the `elpa' repository.
+You can check out all the external packages into the `packages' directory
+with the command:
+
+   make externals
+
+** Public incubation
+
+If you want to develop a package publicly prior to its first release (to
+benefit from others' feedback, primarily), but not in an external repo,
+you can push to an "ephemeral" branch -- subject to rebase and eventual
+removal upon finishing merge -- for the duration of the incubation.
 
 * DEPLOYMENT
 
-** To deploy the package repository locally:
+** To install all the packages "in place":
 
-  make
+   make externals
+   make
 
 This compiles and generates autoloads for all the packages in the
-packages/ directory. The resulting archive is the same packages/
-directory.
+packages/ directory.  You can then add that directory, e.g. with:
+
+(eval-after-load 'package
+  '(add-to-list 'package-directory-list ".../elpa/packages"))
 
 ** To deploy the package repository as a remotely-accessible archive:
 
-  make archive
+   git clone .../elpa
+   mkdir build
+   cd build
+   ln -s ../elpa/admin
+   ln -s ../elpa/GNUmakefile
+   admin/update-archive.sh
 
-or
-
-  make archive-full
-
-This deploys the packages to the archive/ directory.  Unlike "make
-site", this makes a full copy of the packages, and tars up multi-file
-packages.
-
-A full deployment also copies the admin scripts to archive/admin, and
-fetches externally hosted packages (currently, the Org daily builds)
-and adds them to the archive.
+This deploys the packages to the staging/ directory (sibling of "build").
+Unlike "make", this makes a full copy of the packages, tars up
+multi-file packages, and doesn't byte-compile any files.
 
 ** To access a deployed archive
 
@@ -77,13 +145,14 @@ archives" are useful for debugging:
 ** Notes specific to elpa.gnu.org
 
 The way things are set up on this machine, we refresh the archive by
-logging in (login access set up by FSF admins), and
+a cron job.  You can do it by hand by logging in (access set up by FSF
+admins), and
 
-su elpa
-cd ~elpa/elpa
-bzr up
+   su elpa
+   cd ~elpa/build
+   admin/update-archive.sh
 
-Then make a full archive deployment, as discussed above.  The symlink
+Which makes a full archive deployment, as discussed above.  The symlink
 /var/www/packages points to the staging package directory under
 /home/elpa/.
 
