@@ -101,8 +101,11 @@ with the command:
 
 If you want to develop a package publicly prior to its first release (to
 benefit from others' feedback, primarily), but not in an external repo,
-you can push to an "ephemeral" branch -- subject to rebase and eventual
-removal upon finishing merge -- for the duration of the incubation.
+you have 2 choices:
+- you can simply put "Version: -1" to indicate that this should not be
+  released.
+- or you can push to an "ephemeral" branch -- subject to rebase and eventual
+  removal upon finishing merge -- for the duration of the incubation.
 
 * DEPLOYMENT
 
@@ -122,6 +125,7 @@ packages/ directory.  You can then add that directory, e.g. with:
    git clone .../elpa
    mkdir build
    cd build
+   (cd ../elpa; git log --format=%H | tail -n 1) >.changelog-witness
    ln -s ../elpa/admin
    ln -s ../elpa/GNUmakefile
    admin/update-archive.sh

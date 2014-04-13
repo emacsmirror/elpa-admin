@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011, 2012, 2013  Free Software Foundation, Inc
+;; Copyright (C) 2011-2014  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -76,22 +76,27 @@ Delete backup files also."
 	  (if (not (file-directory-p dir))
 	      (message "Skipping non-package file %s" dir)
 	    (let* ((pkg (file-name-nondirectory dir))
-		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir))
-		   simple-p)
+		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir)))
 	      ;; Omit autoloads and .elc files from the package.
 	      (if (file-exists-p autoloads-file)
 		  (delete-file autoloads-file))
 	      (archive--delete-elc-files dir)
-	      ;; Test whether this is a simple or multi-file package.
-	      (setq simple-p (archive--simple-package-p dir pkg))
-	      (push (if (car simple-p)
-			(apply #'archive--process-simple-package
-			       dir pkg (cdr simple-p))
-                      (if simple-p
-                          (apply #'archive--write-pkg-file
-                                 dir pkg (cdr simple-p)))
-		      (archive--process-multi-file-package dir pkg))
-		    packages)))
+	      (let ((metadata (archive--metadata dir pkg)))
+                ;; (nth 1 metadata) is nil for "org" which is the only package
+                ;; still using the "org-pkg.el file to specify the metadata.
+                (if (and (nth 1 metadata)
+                         (< (string-to-number (nth 1 metadata)) 0))
+                    (progn ;; Negative version: don't publish this package yet!
+                      (message "Package %s not released yet!" dir)
+                      (delete-directory dir 'recursive))
+                  (push (if (car metadata)
+                            (apply #'archive--process-simple-package
+                                   dir pkg (cdr metadata))
+                          (if (nth 1 metadata)
+                              (apply #'archive--write-pkg-file
+                                     dir pkg (cdr metadata)))
+                          (archive--process-multi-file-package dir pkg))
+                        packages)))))
 	((debug error) (error "Error in %s: %S" dir v))))
     (with-temp-buffer
       (pp (nreverse packages) (current-buffer))
@@ -108,7 +113,7 @@ Currently only refreshes the ChangeLog files."
   (setq srcdir (file-name-as-directory (expand-file-name srcdir)))
   (let* ((wit ".changelog-witness")
          (prevno (with-temp-buffer
-                   (ignore-errors (insert-file-contents wit))
+                   (insert-file-contents wit)
                    (if (looking-at (concat archive--revno-re "$"))
                        (match-string 0)
                      (error "Can't find previous revision name"))))
@@ -156,23 +161,21 @@ Currently only refreshes the ChangeLog files."
               dir (expand-file-name "packages/" srcdir)))))
     ))
 
-(defun archive--simple-package-p (dir pkg)
-  "Test whether DIR contains a simple package named PKG.
-Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS), where
-SIMPLE is non-nil if the package is indeed simple;
+(defun archive--metadata (dir pkg)
+  "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS),
+where SIMPLE is non-nil if the package is simple;
 VERSION is the version string of the simple package;
 DESCRIPTION is the brief description of the package;
 REQ is a list of requirements;
 EXTRAS is an alist with additional metadata.
-Otherwise, return nil."
-  (let* ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir))
-	 (mainfile (expand-file-name (concat pkg ".el") dir))
+
+PKG is the name of the package and DIR is the directory where it is."
+  (let* ((mainfile (expand-file-name (concat pkg ".el") dir))
          (files (directory-files dir nil "\\.el\\'")))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
     (cond
-     ((and (not (file-exists-p pkg-file))
-           (file-exists-p mainfile))
+     ((file-exists-p mainfile)
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
@@ -183,7 +186,8 @@ Otherwise, return nil."
                  (version
                   (or (archive--strip-rcs-id (lm-header "package-version"))
                       (archive--strip-rcs-id (lm-header "version"))
-                      (error "Missing `version' header")))
+                      (unless (equal pkg "org")
+                        (error "Missing `version' header"))))
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
@@ -197,9 +201,9 @@ Otherwise, return nil."
             (list simple version description req
                   ;; extra parameters
                   (list (cons :url url)
-                        (cons :keywords (list 'quote keywords))))))))
-     ((not (file-exists-p pkg-file))
-      (error "Can find single file nor package desc file in %s" dir)))))
+                        (cons :keywords keywords)))))))
+     (t
+      (error "Can find main file %s file in %s" mainfile dir)))))
 
 (defun archive--process-simple-package (dir pkg vers desc req extras)
   "Deploy the contents of DIR into the archive as a simple package.
@@ -217,7 +221,9 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
       (insert "\n\n;;;; ChangeLog:\n\n")
       (let* ((start (point))
              (end (copy-marker start t)))
-        (insert-file-contents cl)
+        (condition-case nil
+            (insert-file-contents cl)
+          (file-error (message "Can't find %S's ChangeLog file" pkg)))
         (goto-char end)
         (unless (bolp) (insert "\n"))
         (while (progn (forward-line -1) (>= (point) start))
@@ -254,15 +260,24 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
               (message "ChangeLog's md5 unchanged for %S" dir)
             (write-region (point-min) (point-max) "ChangeLog" nil 'quiet)))))))
 
-(defun archive--alist-to-plist (alist)
-  (apply #'nconc (mapcar (lambda (pair) (list (car pair) (cdr pair))) alist)))
+(defun archive--alist-to-plist-args (alist)
+  (mapcar (lambda (x)
+            (if (and (not (consp x))
+                     (or (keywordp x)
+                         (not (symbolp x))
+                         (memq x '(nil t))))
+                x `',x))
+          (apply #'nconc
+                 (mapcar (lambda (pair) (list (car pair) (cdr pair))) alist))))
 
-(defun archive--plist-to-alist (plist)
+(defun archive--plist-args-to-alist (plist)
   (let (alist)
     (while plist
       (let ((value (cadr plist)))
         (when value
-          (push (cons (car plist) value)
+          (cl-assert (keywordp (car plist)))
+          (push (cons (car plist)
+                      (if (eq 'quote (car-safe value)) (cadr value) value))
                 alist)))
       (setq plist (cddr plist)))
     alist))
@@ -278,7 +293,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                         (when req-exp
                           (error "REQ should be a quoted constant: %S"
                                  req-exp)))))
-         (extras (archive--plist-to-alist (nthcdr 5 exp))))
+         (extras (archive--plist-args-to-alist (nthcdr 5 exp))))
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
@@ -298,14 +313,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 (defun archive--refresh-pkg-file ()
   (let* ((dir (directory-file-name default-directory))
-         (pkg (file-name-nondirectory dir))
-         (simple-p (archive--simple-package-p dir pkg)))
-    (if simple-p
-        (progn
-          ;; (message "Refreshing pkg description of %s" pkg)
-          (apply 'archive--write-pkg-file dir pkg (cdr simple-p)))
-      ;; (message "Not refreshing pkg description of %s" pkg)
-      )))
+         (pkg (file-name-nondirectory dir)))
+    (apply #'archive--write-pkg-file dir pkg
+           (cdr (archive--metadata dir pkg)))))
 
 (defun archive--write-pkg-file (pkg-dir name version desc requires extras)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
@@ -328,7 +338,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                               (list (car elt)
                                     (package-version-join (cadr elt))))
                             requires)))
-               (archive--alist-to-plist extras)))
+               (archive--alist-to-plist-args extras)))
 	     "\n")
      nil
      pkg-file)))
