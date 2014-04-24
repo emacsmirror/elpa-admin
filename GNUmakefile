@@ -107,7 +107,7 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 
 $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
-	@echo 'EMACS -f package-generate-autoloads $@'
+	@echo 'Generating autoloads for $@'
 	@cd $(dir $@); \
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
 	      --eval "(archive--refresh-pkg-file)" \
@@ -129,7 +129,7 @@ elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
 %.elc: %.el
-	@echo 'EMACS -f batch-byte-compile $<'
+	@echo 'Byte compiling $<'
 	@$(EMACS) \
 	    --eval "(setq package-directory-list nil package-user-dir \"$(abspath packages)\")" \
 	    --eval '(package-initialize)' \
@@ -151,7 +151,7 @@ $(extra_elcs):; rm $@
 #                   $(pkg)/$(notdir $(pkg))-pkg.el))
 # #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 # %-pkg.el: %.el
-# 	@echo 'EMACS -f package-generate-description-file $@'
+# 	@echo 'Generating description file $@'
 # 	@$(EMACS) \
 # 	    --eval '(require (quote package))' \
 # 	    --eval '(setq b (find-file-noselect "$<"))' \
