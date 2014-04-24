@@ -131,7 +131,7 @@ elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 %.elc: %.el
 	@echo 'EMACS -f batch-byte-compile $<'
 	@$(EMACS) \
-	    --eval "(setq package-directory-list '(\"$(abspath packages)\"))" \
+	    --eval "(setq package-directory-list nil package-user-dir \"$(abspath packages)\")" \
 	    --eval '(package-initialize)' \
 	    -L $(dir $@) -f batch-byte-compile $<
 
