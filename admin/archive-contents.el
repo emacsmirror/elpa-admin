@@ -161,6 +161,9 @@ Currently only refreshes the ChangeLog files."
               dir (expand-file-name "packages/" srcdir)))))
     ))
 
+(defconst archive-default-url-format "http://elpa.gnu.org/packages/%s.html")
+(defconst archive-default-url-re (format archive-default-url-format ".*"))
+
 (defun archive--metadata (dir pkg)
   "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS),
 where SIMPLE is non-nil if the package is simple;
@@ -193,7 +196,7 @@ PKG is the name of the package and DIR is the directory where it is."
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
                  (keywords (lm-keywords-list))
                  (url (or (lm-header "url")
-                          (format "http://elpa.gnu.org/packages/%s.html" pkg)))
+                          (format archive-default-url-format pkg)))
                  (req
                   (if requires-str
                       (mapcar 'archive--convert-require
@@ -422,28 +425,30 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
 (defun archive--insert-repolinks (name srcdir mainsrcfile url)
-  (if url
-      (insert (format "<p>Origin: <a href=%S>%s</a></p>\n"
-                      url (archive--quote url)))
-    (let* ((externals
-            (with-temp-buffer
-              (insert-file-contents
-               (expand-file-name "../../../elpa/externals-list" srcdir))
-              (read (current-buffer))))
-           (external (eq :external (nth 1 (assoc name externals))))
-           (git-sv "http://git.savannah.gnu.org/")
-           (urls (if external
-                     '("cgit/emacs/elpa.git/?h=externals/"
-                       "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
-                   '("cgit/emacs/elpa.git/tree/packages/"
-                     "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
-      (insert (format
-               (concat "<p>Browse repository: <a href=%S>%s</a>"
-                       " or <a href=%S>%s</a></p>\n")
-               (concat git-sv (nth 0 urls) name)
-               'CGit
-               (concat git-sv (nth 1 urls) name)
-               'Gitweb)))))
+  (when url
+    (insert (format "<p>Home page: <a href=%S>%s</a></p>\n"
+                    url (archive--quote url)))
+    (when (string-match archive-default-url-re url)
+      (setq url nil)))
+  (let* ((externals
+          (with-temp-buffer
+            (insert-file-contents
+             (expand-file-name "../../../elpa/externals-list" srcdir))
+            (read (current-buffer))))
+         (external (eq :external (nth 1 (assoc name externals))))
+         (git-sv "http://git.savannah.gnu.org/")
+         (urls (if external
+                   '("cgit/emacs/elpa.git/?h=externals/"
+                     "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
+                 '("cgit/emacs/elpa.git/tree/packages/"
+                   "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
+    (insert (format
+             (concat (format "<p>Browse %srepository: " (if url "ELPA's " ""))
+                     "<a href=%S>%s</a> or <a href=%S>%s</a></p>\n")
+             (concat git-sv (nth 0 urls) name)
+             'CGit
+             (concat git-sv (nth 1 urls) name)
+             'Gitweb))))
 
 (defun archive--html-make-pkg (pkg files)
   (let* ((name (symbol-name (car pkg)))
