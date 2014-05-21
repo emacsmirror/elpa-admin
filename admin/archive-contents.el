@@ -574,7 +574,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                   (with-temp-buffer
                     ;; FIXME: Use git-new-workdir!
                     (call-process "git" nil t nil "clone"
-                                  "--reference" ".." "--branch" branch
+                                  "--reference" ".." "--single-branch"
+                                  "--branch" branch
                                   archive--elpa-git-url dir)
                     (buffer-string))))
             (message "Cloning branch %s:\n%s" dir output)))
