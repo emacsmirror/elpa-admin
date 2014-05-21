@@ -55,7 +55,7 @@ process-archive:
 	      if [ -d $$pt ]; then				\
 		  echo "Creating tarball $${pt}.tar" &&		\
 		  tar -cf $${pt}.tar $$pt -X "$$ignore";	\
-		  rm -r $${pt}; 				\
+		  rm -rf $${pt}; 				\
 	      fi;						\
 	  done
 	mkdir -p archive/packages
