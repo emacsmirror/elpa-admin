@@ -102,8 +102,8 @@ with the command:
 If you want to develop a package publicly prior to its first release (to
 benefit from others' feedback, primarily), but not in an external repo,
 you have 2 choices:
-- you can simply put "Version: -1" to indicate that this should not be
-  released.
+- you can simply put "Version: 0" to indicate that this should not be
+  released yet.
 - or you can push to an "ephemeral" branch -- subject to rebase and eventual
   removal upon finishing merge -- for the duration of the incubation.
 

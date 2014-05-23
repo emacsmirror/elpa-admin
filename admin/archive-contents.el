@@ -44,18 +44,6 @@
   (list (car elt)
 	(archive--version-to-list (car (cdr elt)))))
 
-(defun archive--strip-rcs-id (str)
-  "Strip RCS version ID from the version string STR.
-If the result looks like a dotted numeric version, return it.
-Otherwise return nil."
-  (when str
-    (when (string-match "\\`[ \t]*[$]Revision:[ \t]+" str)
-      (setq str (substring str (match-end 0))))
-    (condition-case nil
-        (if (archive--version-to-list str)
-            str)
-      (error str))))
-
 (defun archive--delete-elc-files (dir &optional only-orphans)
   "Recursively delete all .elc files in DIR.
 Delete backup files also."
@@ -85,7 +73,9 @@ Delete backup files also."
                 ;; (nth 1 metadata) is nil for "org" which is the only package
                 ;; still using the "org-pkg.el file to specify the metadata.
                 (if (and (nth 1 metadata)
-                         (< (string-to-number (nth 1 metadata)) 0))
+                         (or (equal (nth 1 metadata) "0")
+                             ;; Old deprecated convention.
+                             (< (string-to-number (nth 1 metadata)) 0)))
                     (progn ;; Negative version: don't publish this package yet!
                       (message "Package %s not released yet!" dir)
                       (delete-directory dir 'recursive))
@@ -186,11 +176,13 @@ PKG is the name of the package and DIR is the directory where it is."
             (error "Can't parse first line of %s" mainfile)
           ;; Grab the other fields, which are not mandatory.
           (let* ((description (match-string 1))
+                 (pv )
                  (version
-                  (or (archive--strip-rcs-id (lm-header "package-version"))
-                      (archive--strip-rcs-id (lm-header "version"))
+                  (or (lm-header "package-version")
+                      (lm-header "version")
                       (unless (equal pkg "org")
                         (error "Missing `version' header"))))
+                 (_ (archive--version-to-list version)) ; Sanity check!
                  (requires-str (lm-header "package-requires"))
                  (pt (lm-header "package-type"))
                  (simple (if pt (equal pt "simple") (= (length files) 1)))
@@ -403,6 +395,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
    ((file-readable-p mainsrcfile)
     (with-temp-buffer
       (insert-file-contents mainsrcfile)
+      (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
       (let ((start (lm-section-start hsection)))
         (when start
           (insert
@@ -459,17 +452,24 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (with-temp-buffer
       (insert (archive--html-header (format "GNU ELPA - %s" name)))
       (insert (format "<p>Description: %s</p>\n" (archive--quote desc)))
-      (let* ((file (cdr (assoc latest files)))
-             (attrs (file-attributes file)))
-        (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
-                        file (archive--quote file)
-                        (format-time-string "%Y-%b-%d" (nth 5 attrs))
-                        (archive--html-bytes-format (nth 7 attrs)))))
+      (if (zerop (length latest))
+          (insert "<p>This package "
+                  (if files "is not in GNU ELPA any more"
+                    "has not been released yet")
+                  ".</p>\n")
+        (let* ((file (cdr (assoc latest files)))
+               (attrs (file-attributes file)))
+          (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
+                          file (archive--quote file)
+                          (format-time-string "%Y-%b-%d" (nth 5 attrs))
+                          (archive--html-bytes-format (nth 7 attrs))))))
       (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
         (when maint
           (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
-      (archive--insert-repolinks name srcdir mainsrcfile
-                                 (cdr (assoc :url (aref (cdr pkg) 4))))
+      (archive--insert-repolinks
+       name srcdir mainsrcfile
+       (or (cdr (assoc :url (aref (cdr pkg) 4)))
+           (archive--get-prop "URL" name srcdir mainsrcfile)))
       (let ((rm (archive--get-section
                  "Commentary" '("README" "README.rst"
                                 ;; Most README.md files seem to be currently
@@ -481,7 +481,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           (write-region rm nil (concat name "-readme.txt"))
           (insert "<h2>Full description</h2><pre>\n" (archive--quote rm)
                   "\n</pre>\n")))
-      (unless (< (length files) 2)
+      (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table cellpadding=\"3\" border=\"1\">\n"))
         (dolist (file files)
           (unless (equal (pop file) latest)
@@ -520,6 +520,10 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
            (goto-char (point-min))
            ;; Skip the first element which is a version number.
            (cdr (read (current-buffer))))))
+    (dolist (subdir (directory-files "../../build/packages" nil))
+      (cond
+       ((member subdir '("." ".." "elpa.rss" "index.html" "archive-contents")))
+       (t (puthash subdir nil packages))))
     (dolist (file (directory-files default-directory nil))
       (cond
        ((member file '("." ".." "elpa.rss" "index.html" "archive-contents")))
@@ -532,10 +536,20 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
               (version (match-string 1 file)))
           (push (cons version file) (gethash name packages))))
        (t (message "Unknown file %S" file))))
-    (dolist (pkg archive-contents)
-      (archive--html-make-pkg pkg (gethash (symbol-name (car pkg)) packages)))
-    ;; FIXME: Add (old?) packages that are in `packages' but not in
-    ;; archive-contents.
+    (maphash (lambda (pkg-name files)
+               (archive--html-make-pkg
+                (let ((pkg (intern pkg-name)))
+                  (or (assq pkg archive-contents)
+                      ;; Add entries for packages that are either not yet
+                      ;; released or not released any more.
+                      ;; FIXME: Get actual description!
+                      (let ((entry (cons pkg (vector nil nil "" nil nil))))
+                        (setq archive-contents
+                              ;; Add entry at the end.
+                              (nconc archive-contents (list entry)))
+                        entry)))
+                files))
+             packages)
     (archive--html-make-index archive-contents)))
 
 ;;; Maintain external packages.
