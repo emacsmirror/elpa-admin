@@ -102,7 +102,7 @@ You can check out a specific external PACKAGE into the `packages'
 directory with these commands:
 
    cd packages
-   git clone --reference .. --single-branch --branch externals/PACKAGE git://git.sv.gnu.org/srv/git/emacs/elpa PACKAGE
+   git clone --reference .. --single-branch --branch externals/PACKAGE $(git config remote.origin.url) PACKAGE
 
 If you already have a packages/PACKAGE directory with a previous
 checkout, you can update it like this:
