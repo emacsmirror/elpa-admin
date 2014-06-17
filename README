@@ -92,10 +92,23 @@ merge -s subtree" from the upstream branch.
 
 In the `external' case, the copy of the code is not kept here but in the
 `externals/<pkg>' branch in the `elpa' repository.
+
 You can check out all the external packages into the `packages' directory
 with the command:
 
    make externals
+
+You can check out a specific external PACKAGE into the `packages'
+directory with these commands:
+
+   cd packages
+   git clone --reference .. --single-branch --branch externals/PACKAGE git://git.sv.gnu.org/srv/git/emacs/elpa PACKAGE
+
+If you already have a packages/PACKAGE directory with a previous
+checkout, you can update it like this:
+
+   cd packages/PACKAGE
+   git pull
 
 ** Public incubation
 
