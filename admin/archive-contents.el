@@ -69,7 +69,10 @@ Delete backup files also."
 	      (if (file-exists-p autoloads-file)
 		  (delete-file autoloads-file))
 	      (archive--delete-elc-files dir)
-	      (let ((metadata (archive--metadata dir pkg)))
+	      (let ((metadata (or (with-demoted-errors
+                                    ;;(format "batch-make-archive %s: %%s" dir)
+                                    (archive--metadata dir pkg))
+                                  '(nil "0"))))
                 ;; (nth 1 metadata) is nil for "org" which is the only package
                 ;; still using the "org-pkg.el file to specify the metadata.
                 (if (and (nth 1 metadata)
