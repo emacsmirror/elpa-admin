@@ -15,10 +15,10 @@ check_copyrights:
 	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
 	@export LANG=C;							\
 	(cd packages;							\
-	find . -name '*.el' -print0 |					\
+	find . -name '.git' -prune -o -name '*.el' -print0 |		\
 	    xargs -0 grep -L 'Free Software Foundation, Inc' |		\
 	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';	\
-	find . -name '*.el' -print |					\
+	find . -name '.git' -prune -o -name '*.el' -print |		\
 	    while read f; do						\
 	        fquoted="$$(echo $$f|tr '|' '_')";			\
 	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'	\
