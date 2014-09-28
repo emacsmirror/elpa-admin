@@ -167,7 +167,7 @@ EXTRAS is an alist with additional metadata.
 
 PKG is the name of the package and DIR is the directory where it is."
   (let* ((mainfile (expand-file-name (concat pkg ".el") dir))
-         (files (directory-files dir nil "\\.el\\'")))
+         (files (directory-files dir nil "\\`dir\\'\\|\\.el\\'")))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
     (cond
@@ -201,7 +201,7 @@ PKG is the name of the package and DIR is the directory where it is."
                   (list (cons :url url)
                         (cons :keywords keywords)))))))
      (t
-      (error "Can find main file %s file in %s" mainfile dir)))))
+      (error "Can't find main file %s file in %s" mainfile dir)))))
 
 (defun archive--process-simple-package (dir pkg vers desc req extras)
   "Deploy the contents of DIR into the archive as a simple package.
