@@ -145,21 +145,19 @@ $(extra_elcs):; rm $@
 
 # # Put into single_pkgs the set of -pkg.el files we need to keep up-to-date.
 # # I.e. all the -pkg.el files for the single-file packages.
-# single_pkgs:=$(foreach pkg, $(pkgs), \
-#                $(word $(words $(call FILTER-nonsrc, \
-#                                      $(wildcard $(pkg)/*.el))), \
-#                   $(pkg)/$(notdir $(pkg))-pkg.el))
-# #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
-# %-pkg.el: %.el
-# 	@echo 'Generating description file $@'
-# 	@$(EMACS) \
-# 	    --eval '(require (quote package))' \
-# 	    --eval '(setq b (find-file-noselect "$<"))' \
-# 	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
-# 	    --eval '(package-generate-description-file d "$(dir $@)")'
+pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
+#$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
+%-pkg.el: %.el
+	@echo 'Generating description file $@'
+	$(EMACS) \
+	    --eval '(require (quote package))' \
+	    --eval '(setq b (find-file-noselect "$<"))' \
+	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
+	    --eval '(package-generate-description-file d "$@")'
 
 .PHONY: all-in-place
-all-in-place: $(extra_elcs) $(autoloads) # $(single_pkgs)
+all-in-place: $(extra_elcs) $(autoloads) $(pkg_descs)
+	echo Descs = $(pkg_descs)
 	# Do them in a sub-make, so that autoloads are done first.
 	$(MAKE) elcs
 
