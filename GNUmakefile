@@ -149,7 +149,7 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 %-pkg.el: %.el
 	@echo 'Generating description file $@'
-	$(EMACS) \
+	@$(EMACS) \
 	    --eval '(require (quote package))' \
 	    --eval '(setq b (find-file-noselect "$<"))' \
 	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
@@ -157,7 +157,6 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 
 .PHONY: all-in-place
 all-in-place: $(extra_elcs) $(autoloads) $(pkg_descs)
-	echo Descs = $(pkg_descs)
 	# Do them in a sub-make, so that autoloads are done first.
 	$(MAKE) elcs
 
