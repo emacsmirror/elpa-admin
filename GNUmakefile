@@ -105,6 +105,18 @@ endef
 # Compute the set of autolods files and their dependencies.
 autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 
+# FIXME: In 99% of the cases, autoloads can be generated in any order.
+# But the `names' package is an exception because it sets up an advice that
+# changes the way autload.el operates, and that advice is needed when creating
+# the autoloads file of packages that use `names', such as `aggressive-indent'.
+# The right solution is to check the Package-Requires and create the autoloads
+# files in topological order, but for now we'll just do it the ad-hoc way
+# add hand-made dependencies between autoloads files, and explicitly
+# load the names-autoloads file when building autoloads files.
+
+packages/aggressive-indent/aggressive-indent-autoloads.el: \
+    packages/names/names-autoloads.el
+
 $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@echo 'Generating autoloads for $@'
@@ -112,6 +124,7 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
 	      --eval "(archive--refresh-pkg-file)" \
 	      --eval "(require 'package)" \
+	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
 	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
 	                                          \"$$(pwd)\")"
 
