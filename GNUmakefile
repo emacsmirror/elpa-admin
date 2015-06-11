@@ -15,7 +15,9 @@ check_copyrights:
 	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
 	@export LANG=C;							\
 	(cd packages;							\
-	find . -name '.git' -prune -o -name '*.el' -print0 |		\
+	find . -name '.git' -prune -o					\
+	       -name 'test' -prune -o					\
+	       -name '*.el' -print0 |					\
 	    xargs -0 grep -L 'Free Software Foundation, Inc' |		\
 	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';	\
 	find . -name '.git' -prune -o -name '*.el' -print |		\
