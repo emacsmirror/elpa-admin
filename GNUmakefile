@@ -13,7 +13,7 @@ CR_EXCEPTIONS=copyright_exceptions
 .PHONY: check_copyrights
 check_copyrights:
 	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
-	@export LANG=C;							\
+	@export LC_ALL=C;						\
 	(cd packages;							\
 	find . -name '.git' -prune -o					\
 	       -name 'test' -prune -o					\
