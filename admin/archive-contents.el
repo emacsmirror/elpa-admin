@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2014  Free Software Foundation, Inc
+;; Copyright (C) 2011-2015  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -531,6 +531,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (cond
        ((member file '("." ".." "elpa.rss" "index.html" "archive-contents")))
        ((string-match "\\.html\\'" file))
+       ((string-match "\\.sig\\'" file))
        ((string-match "-readme\\.txt\\'" file)
         (let ((name (substring file 0 (match-beginning 0))))
           (puthash name (gethash name packages) packages)))
@@ -592,6 +593,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let ((default-directory (expand-file-name "packages/")))
     (dolist (dir (directory-files "."))
       (cond
+       ((or (not (file-directory-p dir)) (file-symlink-p dir))
+        ;; We only add/remove plain directories in elpa/packages (not symlinks).
+        nil)
        ((member dir '("." "..")) nil)
        ((assoc dir externals-list) nil)
        ((file-directory-p (expand-file-name (format "%s/.git" dir)))
@@ -698,7 +702,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
            (pcase file-pattern
              ((pred (stringp)) (cons file-pattern ""))
              (`(,file ,dest . ,_) (cons file dest))
-             (t (error "Unrecognized file format for package %s: %S"
+             (_ (error "Unrecognized file format for package %s: %S"
                        name file-pattern))))
          (if (stringp file-patterns)
              ;; Files may be just a string, normalize.
