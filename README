@@ -86,9 +86,27 @@ In both cases, a copy of the code is kept in the `elpa' repository and
 should be sync'd with the upstream every once in a while.  This copy may
 include local changes, tho ideally these should be kept to a minimum.
 
+*** Subtrees
+
 In the `subtree' case, the copy of the code is kept here in the
-corresponding `packages/<pkg>' directory.  You should be able to "git
-merge -s subtree" from the upstream branch.
+corresponding `packages/<pkg>' directory.  You should be able to use:
+
+    git subtree add --prefix=packages/<pkg> <remote-repo> <remote-branch>
+
+to add your package from some remote repo, and then
+
+    git subtree pull --prefix=packages/<pkg> <remote-repo> <remote-branch>
+
+whenever you want to update it.  On older git versions you can try "git
+merge -s subtree".
+
+When you're adding and pulling, DO NOT --SQUASH!!
+
+Don't worry about flooding elpa.git's commit log with your package's
+commit messages.  Your package is part of elpa.git.  Squashing
+doesn't help and only gets in the way.
+
+*** Externals
 
 In the `external' case, the copy of the code is not kept here but in the
 `externals/<pkg>' branch in the `elpa' repository.
