@@ -589,7 +589,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                     "existing checkout.") reference)))))
 
 (defun archive--cleanup-packages (externals-list)
-  "Cleanup packages not registered in the EXTERNALS-LIST."
+  "Remove subdirectories of `packages/' that do not correspond to known packages.
+This is any subdirectory inside `packages/' that's not under
+version control nor listed in EXTERNALS-LIST."
   (let ((default-directory (expand-file-name "packages/")))
     (dolist (dir (directory-files "."))
       (cond
@@ -609,6 +611,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
               (progn (delete-directory dir 'recursive t)
                      (message "Deleted all of %s" dir))
             (message "Keeping leftover unclean %s:\n%s" dir status))))
+       ;; Check if `dir' is under version control.
        ((not (zerop (call-process "git" nil nil nil
                                   "ls-files" "--error-unmatch" dir)))
         (message "Deleted untracked package %s" dir)
@@ -721,6 +724,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
            file dest emacs-repo-root package-root exclude-regexp))))))
 
 (defun archive-add/remove/update-externals ()
+  "Remove non-package directories and fetch external packages."
   (let ((externals-list
          (with-current-buffer (find-file-noselect "externals-list")
            (read (buffer-string)))))
