@@ -39,9 +39,9 @@ release the new code.
 *** Add a simple (1-file) package as packages/<pkg-name>/<pkg-name>.el.
 
 The file needs to follow the usual coding conventions (most
-importantly start with ";;; <file> --- <description>") as well as the
-package headers required by package.el (see the "Format" subsection
-below).
+importantly start with ";;; <file> --- <description>") and have a
+"Version:" and "Maintainer:" pseudo-header (see the "Format"
+subsection below).
 
 For some examples, see
     (info "(elisp) Simple Packages")
