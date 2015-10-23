@@ -2,7 +2,7 @@ Copyright (C) 2010-2011, 2014 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
-This branch contains the sources, deployment scripts, and auxilliary
+This branch contains the sources, deployment scripts, and auxiliary
 files for the Emacs Lisp package archive (elpa.gnu.org).
 
 This file explains the branch layout, how to add and edit packages,
@@ -134,7 +134,7 @@ simply commit further changes to it here.  Of course, this may trigger
 merge conflicts when you do a "subtree pull" in the future, so it's
 best to avoid these local changes.
 
-If someone makes changes to your package on here elpa.git and you want
+If someone makes changes to your package here on elpa.git and you want
 to push them to your remote, it's easiest to just copy these changes
 over to the remote repo.  Trying to push a subtree with git is likely
 to induce headache.
