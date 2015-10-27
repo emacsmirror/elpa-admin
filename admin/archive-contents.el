@@ -344,14 +344,30 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 ;;; Make the HTML pages for online browsing.
 
 (defun archive--html-header (title)
-  (format "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">
+  (format "<!DOCTYPE HTML PUBLIC>
 <html>
-<head>
-  <title>%s</title>
-  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">
-</head>
-<body>
-<h1 align=\"center\">%s</h1>\n"
+    <head>
+        <title>%s</title>
+        <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">
+        <link rel=\"shortcut icon\" type=\"image/png\" href=\"../favicon.png\">
+        <link rel=\"stylesheet\" href=\"//code.cdn.mozilla.net/fonts/fira.css\">
+        <link rel=\"stylesheet\" type=\"text/css\" href=\"../layout.css\">
+        <script src=\"../javascript/jquery.min.js\" type=\"text/javascript\"></script>
+        <script src=\"../javascript/jquery.filtertable.min.js\" type=\"text/javascript\"></script>
+        <script src=\"../javascript/package-search.js\" type=\"text/javascript\"></script>
+        <meta name=\"viewport\" content=\"initial-scale=1.0,maximum-scale=1.0,width=device-width\" />
+    </head>
+    <body>
+
+        <div class=\"wrapper\">
+
+            <div class=\"header small\">
+                <div class=\"container\">
+                    <h1>Package list</h1>
+                </div>
+            </div>
+
+            <div class=\"container\">\n"
           title title))
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
@@ -485,7 +501,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           (insert "<h2>Full description</h2><pre>\n" (archive--quote rm)
                   "\n</pre>\n")))
       (unless (< (length files) (if (zerop (length latest)) 1 2))
-        (insert (format "<h2>Old versions</h2><table cellpadding=\"3\" border=\"1\">\n"))
+        (insert (format "<h2>Old versions</h2><table>\n"))
         (dolist (file files)
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
@@ -505,14 +521,27 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun archive--html-make-index (pkgs)
   (with-temp-buffer
     (insert (archive--html-header "GNU ELPA Packages"))
-    (insert "<table cellpadding=\"3\" border=\"1\">\n")
+    (insert "<table>\n")
     (insert "<tr><th>Package</th><th>Version</th><th>Description</th></tr>\n")
     (dolist (pkg pkgs)
       (insert (format "<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td></tr>\n"
                       (car pkg) (car pkg)
                       (package-version-join (aref (cdr pkg) 0))
                       (aref (cdr pkg) 2))))
-    (insert "</table></body>\n")
+    (insert "                </table>
+            </div>
+            <div class=\"push\"></div>
+        </div>
+
+        <div class=\"footer\">
+            <div class=\"container\">
+                <p>
+                    Copyright 2015 Free Software Foundation, Inc.
+                </p>
+            </div>
+        </div>
+
+</body>\n")
     (write-region (point-min) (point-max) "index.html")))
 
 (defun batch-html-make-index ()
