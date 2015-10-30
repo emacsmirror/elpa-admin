@@ -363,12 +363,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
             <div class=\"header small\">
                 <div class=\"container\">
-                    <h1>Package list</h1>
+                    <h1>%s</h1>
                 </div>
             </div>
 
             <div class=\"container\">\n"
-          title title))
+          title title title))
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
   (setq bytes (/ bytes 1024.0))
