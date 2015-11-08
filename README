@@ -145,7 +145,7 @@ upstream every once in a while.  This copy may include local changes,
 although these should be kept to a minimum.
 
 If know you don't want a local package, but don't know which of these
-two options you prefere, then use a subtree.
+two options you prefer, then use a subtree.
 
 *** Subtrees
 
@@ -169,7 +169,7 @@ them here, simply do:
 On older git versions "git subtree" might not be available.  You can
 try "git merge -s subtree", or just update git.
 
-- <remote-repo> is the remote's url.  If you've previously used "git
+- <remote-repo> is the remote's URL.  If you've previously used "git
   remote add", then this can be the remote's name.
 - <remote-branch> is the branch you want to pull (probably "master").
 
