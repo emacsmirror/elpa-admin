@@ -14,7 +14,7 @@ CR_EXCEPTIONS=copyright_exceptions
 check_copyrights:
 	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
 	@export LC_ALL=C;						\
-	(cd packages;							\
+	(cd packages &&							\
 	find . -name '.git' -prune -o					\
 	       -name 'test' -prune -o					\
 	       -name '*.el' -print0 |					\
@@ -40,14 +40,21 @@ archive-tmp: packages
 	mkdir -p $(ARCHIVE_TMP)
 	cp -a packages/. $(ARCHIVE_TMP)/packages
 
+# Use && after the cd commands, not ;, to ensure the build fails
+# immediately if the directory $(ARCHIVE_TMP)/packages does not exist.
+# For process-archive this is crucial; otherwise batch-make-archive in
+# archive-contents.el will interpret directories in the current
+# directory as unreleased packages, and recursively delete them,
+# including .git.  Prior to using &&, running "make process-archive"
+# could silently delete all local git history!
 process-archive:
 	# FIXME, we could probably speed this up significantly with
 	# rules like "%.tar: ../%/ChangeLog" so we only rebuild the packages
 	# that have indeed changed.
-	cd $(ARCHIVE_TMP)/packages;				\
+	cd $(ARCHIVE_TMP)/packages &&				\
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
 	           -f batch-make-archive
-	@cd $(ARCHIVE_TMP)/packages;				\
+	@cd $(ARCHIVE_TMP)/packages &&				\
 	  for pt in *; do					\
 	      if [ -f "$${pt}/.elpaignore" ]; then		\
 		  ignore="$${pt}/.elpaignore";			\
@@ -76,7 +83,7 @@ archive-full: archive-tmp org-fetch
 # FIXME: Turn it into an `external', which will require adding the notion of
 # "snapshot" packages.
 org-fetch: archive-tmp
-	cd $(ARCHIVE_TMP)/packages; \
+	cd $(ARCHIVE_TMP)/packages && \
 	pkgname=`curl -s http://orgmode.org/elpa/|perl -ne 'push @f, $$1 if m/(org-\d{8})\.tar/; END { @f = sort @f; print "$$f[-1]\n"}'`; \
 	wget -q http://orgmode.org/elpa/$${pkgname}.tar -O $${pkgname}.tar; \
 	if [ -f $${pkgname}.tar ]; then \
@@ -123,7 +130,7 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@echo 'Generating autoloads for $@'
-	@cd $(dir $@); \
+	@cd $(dir $@) && \
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
 	      --eval "(archive--refresh-pkg-file)" \
 	      --eval "(require 'package)" \
