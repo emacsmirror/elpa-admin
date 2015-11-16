@@ -207,8 +207,9 @@ PKG is the name of the package and DIR is the directory where it is."
   "Deploy the contents of DIR into the archive as a simple package.
 Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
-  (rename-file (expand-file-name (concat pkg ".el") dir)
-	       (concat pkg "-" vers ".el"))
+  (let ((src (expand-file-name (concat pkg ".el") dir)))
+    (funcall (if (file-symlink-p src) #'copy-file #'rename-file)
+	     src (concat pkg "-" vers ".el")))
   ;; Add the content of the ChangeLog.
   (let ((cl (expand-file-name "ChangeLog" dir)))
     (with-current-buffer (find-file-noselect (concat pkg "-" vers ".el"))
@@ -645,9 +646,9 @@ version control nor listed in EXTERNALS-LIST."
   "Return non-nil if DEST is an empty variant."
   (member dest (list "" "." nil)))
 
-(defun archive--core-package-copy-file
+(defun archive--core-package-link-file
     (source dest emacs-repo-root package-root exclude-regexp)
-  "Copy file from SOURCE to DEST ensuring subdirectories."
+  "Link file from SOURCE to DEST ensuring subdirectories."
   (unless (string-match-p exclude-regexp source)
     (let* ((absolute-package-file-name
             (expand-file-name dest package-root))
@@ -656,14 +657,18 @@ version control nor listed in EXTERNALS-LIST."
            (directory (file-name-directory absolute-package-file-name)))
       (unless (file-directory-p directory)
         (make-directory directory t))
-      (copy-file absolute-core-file-name absolute-package-file-name))
+      (condition-case nil
+	  (make-symbolic-link absolute-core-file-name
+			      absolute-package-file-name t)
+	(file-error
+	 (copy-file absolute-core-file-name absolute-package-file-name))))
     (message "  %s -> %s" source (if (archive--core-package-empty-dest-p dest)
                                      (file-name-nondirectory source)
                                    dest))))
 
-(defun archive--core-package-copy-directory
+(defun archive--core-package-link-directory
     (source dest emacs-repo-root package-root exclude-regexp)
-  "Copy directory files from SOURCE to DEST ensuring subdirectories."
+  "Link directory files from SOURCE to DEST ensuring subdirectories."
   (let ((stack (list source))
         (base source)
         (absolute-source))
@@ -678,12 +683,12 @@ version control nor listed in EXTERNALS-LIST."
                (source-sans-base (substring source (length base)))
                (package-file-name
                 (if (archive--core-package-empty-dest-p dest)
-                    ;; Copy to root with it's original filename.
+                    ;; Link to root with its original filename.
                     source-sans-base
                   (concat
                    ;; Prepend the destination, allowing for directory rename.
                    (file-name-as-directory dest) source-sans-base))))
-          (archive--core-package-copy-file
+          (archive--core-package-link-file
            source package-file-name
            emacs-repo-root package-root exclude-regexp))))))
 
@@ -711,16 +716,16 @@ version control nor listed in EXTERNALS-LIST."
              ;; Files may be just a string, normalize.
              (list file-patterns)
            file-patterns))))
-    (message "Copying files for package: %s" name)
+    (message "Linking files for package: %s" name)
     (when (file-directory-p package-root)
       (delete-directory package-root t))
     (make-directory package-root t)
     (dolist (file-pattern file-patterns)
       (pcase-let* ((`(,file . ,dest) file-pattern))
         (if (file-directory-p (expand-file-name file emacs-repo-root))
-            (archive--core-package-copy-directory
+            (archive--core-package-link-directory
              file dest emacs-repo-root package-root exclude-regexp)
-          (archive--core-package-copy-file
+          (archive--core-package-link-file
            file dest emacs-repo-root package-root exclude-regexp))))))
 
 (defun archive-add/remove/update-externals ()
