@@ -63,7 +63,7 @@ process-archive:
 	      fi;						\
 	      if [ -d $$pt ]; then				\
 		  echo "Creating tarball $${pt}.tar" &&		\
-		  tar -cf $${pt}.tar $$pt --exclude-vcs -X "$$ignore";	\
+		  tar -chf $${pt}.tar $$pt --exclude-vcs -X "$$ignore";	\
 		  rm -rf $${pt}; 				\
 	      fi;						\
 	  done
