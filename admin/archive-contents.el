@@ -589,6 +589,17 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                     "Point EMACS_CLONE_REFERENCE environment variable to an "
                     "existing checkout.") reference)))))
 
+(defun archive--find-non-trivial-file (dir)
+  (catch 'found-important-file
+    (dolist (file (directory-files-recursively dir ".*"))
+      (unless (or (member file '("." ".."))
+                  (string-match "\\.elc\\'" file)
+                  (string-match "-autoloads.el\\'" file)
+                  (string-match "-pkg.el\\'" file)
+                  (file-symlink-p file))
+        (throw 'found-important-file file)))
+    nil))
+
 (defun archive--cleanup-packages (externals-list)
   "Remove subdirectories of `packages/' that do not correspond to known packages.
 This is any subdirectory inside `packages/' that's not under
@@ -615,8 +626,15 @@ version control nor listed in EXTERNALS-LIST."
        ;; Check if `dir' is under version control.
        ((not (zerop (call-process "git" nil nil nil
                                   "ls-files" "--error-unmatch" dir)))
-        (message "Deleted untracked package %s" dir)
-        (delete-directory dir 'recursive t))))))
+        ;; Not under version control.  Check if it only contains
+        ;; symlinks and generated files, in which case it is probably
+        ;; a leftover :core package that can safely be deleted.
+        (let ((file (archive--find-non-trivial-file dir)))
+          (if file
+              (message "Keeping %s for non-trivial file \"%s\"" dir file)
+            (progn
+              (message "Deleted untracked package %s" dir)
+              (delete-directory dir 'recursive t)))))))))
 
 (defun archive--external-package-sync (name)
   "Sync external package named NAME."
