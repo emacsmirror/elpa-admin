@@ -179,7 +179,6 @@ PKG is the name of the package and DIR is the directory where it is."
             (error "Can't parse first line of %s" mainfile)
           ;; Grab the other fields, which are not mandatory.
           (let* ((description (match-string 1))
-                 (pv )
                  (version
                   (or (lm-header "package-version")
                       (lm-header "version")
@@ -421,7 +420,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (replace-regexp-in-string "<" "&lt;"
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
-(defun archive--insert-repolinks (name srcdir mainsrcfile url)
+(defun archive--insert-repolinks (name srcdir _mainsrcfile url)
   (when url
     (insert (format "<p>Home page: <a href=%S>%s</a></p>\n"
                     url (archive--quote url)))
@@ -563,31 +562,21 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defconst archive--emacs-git-url "git://git.sv.gnu.org/emacs.git")
 
 (defun archive--sync-emacs-repo ()
-  "Clone and sync Emacs repository."
-  (let ((reference (expand-file-name
-                    (or (getenv "EMACS_CLONE_REFERENCE") "../emacs/master")))
-        (emacs-repo-root (expand-file-name "emacs")))
-    (when (and (file-exists-p emacs-repo-root)
-               (not (file-exists-p
-                     (expand-file-name "README" emacs-repo-root))))
-      (message "Cleaning stalled Emacs clone: %s" emacs-repo-root)
-      (delete-directory emacs-repo-root t))
-    (cond ((file-exists-p emacs-repo-root)
-           (let ((default-directory emacs-repo-root))
-             (message "Running git pull in %S" default-directory)
-             (call-process "git" nil t nil "pull")))
-          ((file-exists-p reference)
-           (message "Emacs repository reference found: %s" reference)
-           (call-process
-            "git" nil t nil
-            "clone" archive--emacs-git-url
-            "--reference" reference
-            emacs-repo-root))
-          (t
-           (error
-            (concat "Emacs repository not found at: %s\n"
-                    "Point EMACS_CLONE_REFERENCE environment variable to an "
-                    "existing checkout.") reference)))))
+  "Sync Emacs repository, if applicable.
+Return non-nil if there's an \"emacs\" repository present."
+  ;; Support for :core packages is important for elpa.gnu.org, but for other
+  ;; cases such as "in-place installation", it's rather secondary since
+  ;; those users can just as well use a development version of Emacs to get
+  ;; those packages.
+  ;; So make the handling of :core packages depend on whether or not the user
+  ;; has setup a clone of Emacs under the "emacs" subdirectory.
+  (let ((emacs-repo-root (expand-file-name "emacs")))
+    (if (not (file-directory-p emacs-repo-root))
+        (message "No \"emacs\" subdir: will skip :core packages")
+      (let ((default-directory emacs-repo-root))
+        (message "Running git pull in %S" default-directory)
+        (call-process "git" nil t nil "pull")
+        t))))
 
 (defun archive--find-non-trivial-file (dir)
   (catch 'found-important-file
@@ -600,15 +589,17 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (throw 'found-important-file file)))
     nil))
 
-(defun archive--cleanup-packages (externals-list)
+(defun archive--cleanup-packages (externals-list with-core)
   "Remove subdirectories of `packages/' that do not correspond to known packages.
 This is any subdirectory inside `packages/' that's not under
-version control nor listed in EXTERNALS-LIST."
+version control nor listed in EXTERNALS-LIST.
+If WITH-CORE is non-nil, it means we manage :core packages as well."
   (let ((default-directory (expand-file-name "packages/")))
     (dolist (dir (directory-files "."))
       (cond
        ((or (not (file-directory-p dir)) (file-symlink-p dir))
-        ;; We only add/remove plain directories in elpa/packages (not symlinks).
+        ;; We only add/remove plain directories in elpa/packages (not
+        ;; symlinks).
         nil)
        ((member dir '("." "..")) nil)
        ((assoc dir externals-list) nil)
@@ -624,8 +615,9 @@ version control nor listed in EXTERNALS-LIST."
                      (message "Deleted all of %s" dir))
             (message "Keeping leftover unclean %s:\n%s" dir status))))
        ;; Check if `dir' is under version control.
-       ((not (zerop (call-process "git" nil nil nil
-                                  "ls-files" "--error-unmatch" dir)))
+       ((and with-core
+             (not (zerop (call-process "git" nil nil nil
+                                       "ls-files" "--error-unmatch" dir))))
         ;; Not under version control.  Check if it only contains
         ;; symlinks and generated files, in which case it is probably
         ;; a leftover :core package that can safely be deleted.
@@ -751,14 +743,15 @@ version control nor listed in EXTERNALS-LIST."
   (let ((externals-list
          (with-current-buffer (find-file-noselect "externals-list")
            (read (buffer-string)))))
-    (archive--cleanup-packages externals-list)
-    (archive--sync-emacs-repo)
-    (pcase-dolist ((and definition `(,name ,kind ,_url)) externals-list)
-      (pcase kind
-        (`:subtree nil)               ;Nothing to do.
-        (`:external (archive--external-package-sync name))
-        (`:core (archive--core-package-sync definition))
-        (_ (message "Unknown external package kind `%S' for %s" kind name))))))
+    (let ((with-core (archive--sync-emacs-repo)))
+      (archive--cleanup-packages externals-list with-core)
+      (pcase-dolist ((and definition `(,name ,kind ,_url)) externals-list)
+        (pcase kind
+          (`:subtree nil)               ;Nothing to do.
+          (`:external (archive--external-package-sync name))
+          (`:core (when with-core (archive--core-package-sync definition)))
+          (_ (message "Unknown external package kind `%S' for %s"
+                      kind name)))))))
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here

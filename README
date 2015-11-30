@@ -1,4 +1,4 @@
-Copyright (C) 2010-2011, 2014 Free Software Foundation, Inc.
+Copyright (C) 2010-2011, 2014, 2015 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
@@ -237,6 +237,7 @@ packages/ directory.  You can then add that directory, e.g. with:
 ** To deploy the package repository as a remotely-accessible archive:
 
    git clone .../elpa
+   (cd elpa; git clone .../emacs)    #If you want to generate :core packages.
    mkdir build
    cd build
    (cd ../elpa; git log --format=%H | tail -n 1) >.changelog-witness
