@@ -572,7 +572,8 @@ Return non-nil if there's an \"emacs\" repository present."
   ;; has setup a clone of Emacs under the "emacs" subdirectory.
   (let ((emacs-repo-root (expand-file-name "emacs")))
     (if (not (file-directory-p emacs-repo-root))
-        (message "No \"emacs\" subdir: will skip :core packages")
+        (progn (message "No \"emacs\" subdir: will skip :core packages")
+               nil)
       (let ((default-directory emacs-repo-root))
         (message "Running git pull in %S" default-directory)
         (call-process "git" nil t nil "pull")
