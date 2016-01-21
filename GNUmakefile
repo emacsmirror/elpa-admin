@@ -1,4 +1,5 @@
 # Makefile for GNU Emacs Lisp Package Archive.
+#
 
 EMACS=emacs --batch
 
@@ -190,3 +191,31 @@ all-in-place: $(extra_elcs) $(autoloads) $(pkg_descs)
 externals:
 	$(EMACS) -l admin/archive-contents.el \
 	    -f archive-add/remove/update-externals
+
+
+
+
+################### Testing ###############
+
+PACKAGE_DIRS = $(shell find packages -maxdepth 1 -type d)
+PACKAGES=$(subst /,,$(subst packages,,$(PACKAGE_DIRS)))
+
+TOP =$(shell pwd)
+
+define test_template
+$(1)-test:
+	cd packages/$(1);\
+	$(EMACS) -l $(TOP)/admin/ert-support.el \
+		--eval "(ert-support-test-package \"$(TOP)\" '$(1))" \
+
+$(1)-test-log:
+	$(MAKE) $(1)-test > packages/$(1)/$(1).log 2>&1 || { stat=ERROR; }
+endef
+
+$(foreach package,$(PACKAGES),$(eval $(call test_template,$(package))))
+
+PACKAGES_TESTS=$(addsuffix -test-log,$(PACKAGES))
+PACKAGES_LOG=$(foreach package,$(PACKAGES),packages/$(package)/$(package).log)
+
+check: $(PACKAGES_TESTS)
+	$(EMACS) -l ert -f ert-summarize-tests-batch-and-exit $(PACKAGES_LOG)
