@@ -622,12 +622,13 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         ;; Not under version control.  Check if it only contains
         ;; symlinks and generated files, in which case it is probably
         ;; a leftover :core package that can safely be deleted.
-        (let ((file (archive--find-non-trivial-file dir)))
-          (if file
-              (message "Keeping %s for non-trivial file \"%s\"" dir file)
-            (progn
-              (message "Deleted untracked package %s" dir)
-              (delete-directory dir 'recursive t)))))))))
+        ;; (let ((file (archive--find-non-trivial-file dir)))
+        ;;   (if file
+        ;;       (message "Keeping %s for non-trivial file \"%s\"" dir file)
+        ;;     (progn
+        ;;       (message "Deleted untracked package %s" dir)
+        ;;       (delete-directory dir 'recursive t))))
+        )))))
 
 (defun archive--external-package-sync (name)
   "Sync external package named NAME."
