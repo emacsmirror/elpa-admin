@@ -1,4 +1,4 @@
-Copyright (C) 2010-2011, 2014 Free Software Foundation, Inc.
+Copyright (C) 2010-2011, 2014, 2015 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
@@ -34,7 +34,48 @@ safely work on the next version here without worrying about the unstable
 code making it to GNU ELPA, and simply update the "version" when you want to
 release the new code.
 
-** To add a package:
+** To add a package: (submission, submit)
+
+Adding a basic package is very simple. There are thorough
+instructional, but the gist is that you:
+
+1. Notify emacs-devel@gnu.org.
+2. Place all files inside `packages/<pkg-name>/'.
+3. `git add', `git commit' and `git push'.
+
+If you don't have push access to the repository, someone will do steps
+2 and 3 for you.
+
+*** Notify emacs-devel@gnu.org
+
+There is no approval process for GNU Elpa packages.  Still,
+you must send an email to emacs-devel for several reasons:
+
+- Notifying other developers;
+- Making sure the package doesn't break FSF rules;
+- Checking if the package is not reinventing the wheel;
+- Ensuring that first-time developers are doing it right.
+
+Before doing anything, please ensure your package follows the
+conventions described in the `** Format' section.  Then, send an email
+to the list with the subject:
+    [ELPA] New package: <pkg-name>
+
+Start your message with an explanation about the package.  A
+copy-paste of the package's Summary and Commentary is perfectly fine
+here, but you can write more or less than that if you'd like.
+
+At the bottom of the message contents include the changes you're going
+to make (the patch).  For a single-file package this can be the
+package file itself instead of the patch.  If you prefer (and if you
+have push access), you can push your changes to a branch called
+`scratch/<pkg-name>', and mention the branch in your message.
+
+After 48h, or once any issues have been addressed, someone will push
+your changes for you.  You should probably also subscribe to
+emacs-devel@gnu.org, since that's where we discuss about GNU Elpa, and
+to bug-gnu-emacs@gnu.org, since that's where people will report bugs
+about your package.
 
 *** Add a simple (1-file) package as packages/<pkg-name>/<pkg-name>.el.
 
@@ -88,12 +129,15 @@ and the web-pages from this source code:
 
 ** External branches
 
-The easiest way to maintain and develop GNU Elpa packages is to just
-edit them right here (in elpa.git).  However, some maintainers may
-prefer to use a dedicated repository or branch for the package.  There
-are two ways to do that: subtrees and externals.
+The above instructions are enough to add regular packages, those that
+are maintained primarily here in the repository.  The instructions
+below are for those maintainers who prefer to use a dedicated
+repository or branch for the package.
 
-Such packages should be listed in the `externals-list' file.
+There are two ways to do that: subtrees and externals.
+
+Either way, such packages should always be listed in the
+`externals-list' file.
 
 In both cases, a copy of the code is kept in the `elpa' repository
 (not necessarily in the master branch) and should be sync'd with the
@@ -101,7 +145,7 @@ upstream every once in a while.  This copy may include local changes,
 although these should be kept to a minimum.
 
 If know you don't want a local package, but don't know which of these
-two options you prefere, then use a subtree.
+two options you prefer, then use a subtree.
 
 *** Subtrees
 
@@ -125,7 +169,7 @@ them here, simply do:
 On older git versions "git subtree" might not be available.  You can
 try "git merge -s subtree", or just update git.
 
-- <remote-repo> is the remote's url.  If you've previously used "git
+- <remote-repo> is the remote's URL.  If you've previously used "git
   remote add", then this can be the remote's name.
 - <remote-branch> is the branch you want to pull (probably "master").
 
@@ -193,6 +237,7 @@ packages/ directory.  You can then add that directory, e.g. with:
 ** To deploy the package repository as a remotely-accessible archive:
 
    git clone .../elpa
+   (cd elpa; git clone .../emacs)    #If you want to generate :core packages.
    mkdir build
    cd build
    (cd ../elpa; git log --format=%H | tail -n 1) >.changelog-witness
