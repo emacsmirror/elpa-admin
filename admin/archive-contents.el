@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2014  Free Software Foundation, Inc
+;; Copyright (C) 2011-2015  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -179,7 +179,6 @@ PKG is the name of the package and DIR is the directory where it is."
             (error "Can't parse first line of %s" mainfile)
           ;; Grab the other fields, which are not mandatory.
           (let* ((description (match-string 1))
-                 (pv )
                  (version
                   (or (lm-header "package-version")
                       (lm-header "version")
@@ -207,8 +206,9 @@ PKG is the name of the package and DIR is the directory where it is."
   "Deploy the contents of DIR into the archive as a simple package.
 Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
   ;; Write DIR/foo.el to foo-VERS.el and delete DIR
-  (rename-file (expand-file-name (concat pkg ".el") dir)
-	       (concat pkg "-" vers ".el"))
+  (let ((src (expand-file-name (concat pkg ".el") dir)))
+    (funcall (if (file-symlink-p src) #'copy-file #'rename-file)
+	     src (concat pkg "-" vers ".el")))
   ;; Add the content of the ChangeLog.
   (let ((cl (expand-file-name "ChangeLog" dir)))
     (with-current-buffer (find-file-noselect (concat pkg "-" vers ".el"))
@@ -420,7 +420,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (replace-regexp-in-string "<" "&lt;"
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
-(defun archive--insert-repolinks (name srcdir mainsrcfile url)
+(defun archive--insert-repolinks (name srcdir _mainsrcfile url)
   (when url
     (insert (format "<p>Home page: <a href=%S>%s</a></p>\n"
                     url (archive--quote url)))
@@ -531,6 +531,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (cond
        ((member file '("." ".." "elpa.rss" "index.html" "archive-contents")))
        ((string-match "\\.html\\'" file))
+       ((string-match "\\.sig\\'" file))
        ((string-match "-readme\\.txt\\'" file)
         (let ((name (substring file 0 (match-beginning 0))))
           (puthash name (gethash name packages) packages)))
@@ -558,54 +559,201 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 ;;; Maintain external packages.
 
 (defconst archive--elpa-git-url "git://git.sv.gnu.org/emacs/elpa")
+(defconst archive--emacs-git-url "git://git.sv.gnu.org/emacs.git")
+
+(defun archive--sync-emacs-repo ()
+  "Sync Emacs repository, if applicable.
+Return non-nil if there's an \"emacs\" repository present."
+  ;; Support for :core packages is important for elpa.gnu.org, but for other
+  ;; cases such as "in-place installation", it's rather secondary since
+  ;; those users can just as well use a development version of Emacs to get
+  ;; those packages.
+  ;; So make the handling of :core packages depend on whether or not the user
+  ;; has setup a clone of Emacs under the "emacs" subdirectory.
+  (let ((emacs-repo-root (expand-file-name "emacs")))
+    (if (not (file-directory-p emacs-repo-root))
+        (progn (message "No \"emacs\" subdir: will skip :core packages")
+               nil)
+      (let ((default-directory emacs-repo-root))
+        (message "Running git pull in %S" default-directory)
+        (call-process "git" nil t nil "pull")
+        t))))
+
+(defun archive--find-non-trivial-file (dir)
+  (catch 'found-important-file
+    (dolist (file (directory-files-recursively dir ".*"))
+      (unless (or (member file '("." ".."))
+                  (string-match "\\.elc\\'" file)
+                  (string-match "-autoloads.el\\'" file)
+                  (string-match "-pkg.el\\'" file)
+                  (file-symlink-p file))
+        (throw 'found-important-file file)))
+    nil))
+
+(defun archive--cleanup-packages (externals-list with-core)
+  "Remove subdirectories of `packages/' that do not correspond to known packages.
+This is any subdirectory inside `packages/' that's not under
+version control nor listed in EXTERNALS-LIST.
+If WITH-CORE is non-nil, it means we manage :core packages as well."
+  (let ((default-directory (expand-file-name "packages/")))
+    (dolist (dir (directory-files "."))
+      (cond
+       ((or (not (file-directory-p dir)) (file-symlink-p dir))
+        ;; We only add/remove plain directories in elpa/packages (not
+        ;; symlinks).
+        nil)
+       ((member dir '("." "..")) nil)
+       ((assoc dir externals-list) nil)
+       ((file-directory-p (expand-file-name (format "%s/.git" dir)))
+        (let ((status
+               (with-temp-buffer
+                 (let ((default-directory (file-name-as-directory
+                                           (expand-file-name dir))))
+                   (call-process "git" nil t nil "status" "--porcelain")
+                   (buffer-string)))))
+          (if (zerop (length status))
+              (progn (delete-directory dir 'recursive t)
+                     (message "Deleted all of %s" dir))
+            (message "Keeping leftover unclean %s:\n%s" dir status))))
+       ;; Check if `dir' is under version control.
+       ((and with-core
+             (not (zerop (call-process "git" nil nil nil
+                                       "ls-files" "--error-unmatch" dir))))
+        ;; Not under version control.  Check if it only contains
+        ;; symlinks and generated files, in which case it is probably
+        ;; a leftover :core package that can safely be deleted.
+        ;; (let ((file (archive--find-non-trivial-file dir)))
+        ;;   (if file
+        ;;       (message "Keeping %s for non-trivial file \"%s\"" dir file)
+        ;;     (progn
+        ;;       (message "Deleted untracked package %s" dir)
+        ;;       (delete-directory dir 'recursive t))))
+        )))))
+
+(defun archive--external-package-sync (name)
+  "Sync external package named NAME."
+  (let ((default-directory (expand-file-name "packages/")))
+    (cond ((not (file-exists-p name))
+           (let* ((branch (concat "externals/" name))
+                  (output
+                   (with-temp-buffer
+                     ;; FIXME: Use git-new-workdir!
+                     (call-process "git" nil t nil "clone"
+                                   "--reference" ".." "--single-branch"
+                                   "--branch" branch
+                                   archive--elpa-git-url name)
+                     (buffer-string))))
+             (message "Cloning branch %s:\n%s" name output)))
+          ((not (file-directory-p (concat name "/.git")))
+           (message "%s is in the way of an external, please remove!" name))
+          (t
+           (let ((default-directory (file-name-as-directory
+                                     (expand-file-name name))))
+             (with-temp-buffer
+               (message "Running git pull in %S" default-directory)
+               (call-process "git" nil t nil "pull")
+               (message "Updated %s:%s" name (buffer-string))))))))
+
+(defun archive--core-package-empty-dest-p (dest)
+  "Return non-nil if DEST is an empty variant."
+  (member dest (list "" "." nil)))
+
+(defun archive--core-package-link-file
+    (source dest emacs-repo-root package-root exclude-regexp)
+  "Link file from SOURCE to DEST ensuring subdirectories."
+  (unless (string-match-p exclude-regexp source)
+    (let* ((absolute-package-file-name
+            (expand-file-name dest package-root))
+           (absolute-core-file-name
+            (expand-file-name source emacs-repo-root))
+           (directory (file-name-directory absolute-package-file-name)))
+      (unless (file-directory-p directory)
+        (make-directory directory t))
+      (condition-case nil
+	  (make-symbolic-link absolute-core-file-name
+			      absolute-package-file-name t)
+	(file-error
+	 (copy-file absolute-core-file-name absolute-package-file-name))))
+    (message "  %s -> %s" source (if (archive--core-package-empty-dest-p dest)
+                                     (file-name-nondirectory source)
+                                   dest))))
+
+(defun archive--core-package-link-directory
+    (source dest emacs-repo-root package-root exclude-regexp)
+  "Link directory files from SOURCE to DEST ensuring subdirectories."
+  (let ((stack (list source))
+        (base source)
+        (absolute-source))
+    (while stack
+      (setq source (pop stack)
+            absolute-source (expand-file-name source emacs-repo-root))
+      (if (file-directory-p absolute-source)
+          (dolist (file (directory-files absolute-source))
+            (unless (member file (list "." ".."))
+              (push (concat (file-name-as-directory source) file) stack)))
+        (let* ((base (file-name-as-directory base))
+               (source-sans-base (substring source (length base)))
+               (package-file-name
+                (if (archive--core-package-empty-dest-p dest)
+                    ;; Link to root with its original filename.
+                    source-sans-base
+                  (concat
+                   ;; Prepend the destination, allowing for directory rename.
+                   (file-name-as-directory dest) source-sans-base))))
+          (archive--core-package-link-file
+           source package-file-name
+           emacs-repo-root package-root exclude-regexp))))))
+
+(defun archive--core-package-sync (definition)
+  "Sync core package from DEFINITION."
+  (pcase-let*
+      ((`(,name . (:core ,file-patterns :excludes ,excludes)) definition)
+       (emacs-repo-root (expand-file-name "emacs"))
+       (package-root (expand-file-name name "packages"))
+       (default-directory package-root)
+       (exclude-regexp
+        (mapconcat #'identity
+                   (mapcar #'wildcard-to-regexp
+                           (append '("*.elc" "*~") excludes nil))
+                   "\\|"))
+       (file-patterns
+        (mapcar
+         (lambda (file-pattern)
+           (pcase file-pattern
+             ((pred (stringp)) (cons file-pattern ""))
+             (`(,file ,dest . ,_) (cons file dest))
+             (_ (error "Unrecognized file format for package %s: %S"
+                       name file-pattern))))
+         (if (stringp file-patterns)
+             ;; Files may be just a string, normalize.
+             (list file-patterns)
+           file-patterns))))
+    (message "Linking files for package: %s" name)
+    (when (file-directory-p package-root)
+      (delete-directory package-root t))
+    (make-directory package-root t)
+    (dolist (file-pattern file-patterns)
+      (pcase-let* ((`(,file . ,dest) file-pattern))
+        (if (file-directory-p (expand-file-name file emacs-repo-root))
+            (archive--core-package-link-directory
+             file dest emacs-repo-root package-root exclude-regexp)
+          (archive--core-package-link-file
+           file dest emacs-repo-root package-root exclude-regexp))))))
 
 (defun archive-add/remove/update-externals ()
-  (let ((exts (with-current-buffer (find-file-noselect "externals-list")
-                (goto-char (point-min))
-                (read (current-buffer)))))
-    (let ((default-directory (expand-file-name "packages/")))
-      ;; Remove "old/odd" externals.
-      (dolist (dir (directory-files "."))
-        (cond
-         ((member dir '("." "..")) nil)
-         ((assoc dir exts) nil)
-         ((file-directory-p (expand-file-name (format "%s/.git" dir)))
-          (let ((status
-                 (with-temp-buffer
-                   (let ((default-directory (file-name-as-directory
-                                             (expand-file-name dir))))
-                     (call-process "git" nil t nil "status" "--porcelain")
-                     (buffer-string)))))
-            (if (zerop (length status))
-                (progn (delete-directory dir 'recursive t)
-                       (message "Deleted all of %s" dir))
-              (message "Keeping leftover unclean %s:\n%s" dir status))))))
-      (pcase-dolist (`(,dir ,kind ,_url) exts)
-        (cond
-         ((eq kind :subtree) nil)       ;Nothing to do.
-         ((not (eq kind :external))
-          (message "Unknown external package kind `%S' for %s" kind dir))
-         ((not (file-exists-p dir))
-          (let* ((branch (concat "externals/" dir))
-                 (output
-                  (with-temp-buffer
-                    ;; FIXME: Use git-new-workdir!
-                    (call-process "git" nil t nil "clone"
-                                  "--reference" ".." "--single-branch"
-                                  "--branch" branch
-                                  archive--elpa-git-url dir)
-                    (buffer-string))))
-            (message "Cloning branch %s:\n%s" dir output)))
-         ((not (file-directory-p (concat dir "/.git")))
-          (message "%s is in the way of an external, please remove!" dir))
-         (t
-          (let ((default-directory (file-name-as-directory
-                                    (expand-file-name dir))))
-            (with-temp-buffer
-              (message "Running git pull in %S" default-directory)
-              (call-process "git" nil t nil "pull")
-              (message "Updated %s:%s" dir (buffer-string))))
-          ))))))
+  "Remove non-package directories and fetch external packages."
+  (let ((externals-list
+         (with-current-buffer (find-file-noselect "externals-list")
+           (read (buffer-string)))))
+    (let ((with-core (archive--sync-emacs-repo)))
+      (archive--cleanup-packages externals-list with-core)
+      (pcase-dolist ((and definition `(,name ,kind ,_url)) externals-list)
+        (pcase kind
+          (`:subtree nil)               ;Nothing to do.
+          (`:external (archive--external-package-sync name))
+          (`:core (when with-core (archive--core-package-sync definition)))
+          (_ (message "Unknown external package kind `%S' for %s"
+                      kind name)))))))
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
