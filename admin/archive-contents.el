@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2015  Free Software Foundation, Inc
+;; Copyright (C) 2011-2016  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -556,6 +556,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
              packages)
     (archive--html-make-index archive-contents)))
 
+(defun archive--pull (dirname)
+  (let ((default-directory (file-name-as-directory
+                            (expand-file-name dirname))))
+    (with-temp-buffer
+      (message "Running git pull in %S" default-directory)
+      (call-process "git" nil t nil "pull")
+      (message "Updated %s:\n%s" dirname (buffer-string)))))
+
 ;;; Maintain external packages.
 
 (defconst archive--elpa-git-url "git://git.sv.gnu.org/emacs/elpa")
@@ -574,10 +582,8 @@ Return non-nil if there's an \"emacs\" repository present."
     (if (not (file-directory-p emacs-repo-root))
         (progn (message "No \"emacs\" subdir: will skip :core packages")
                nil)
-      (let ((default-directory emacs-repo-root))
-        (message "Running git pull in %S" default-directory)
-        (call-process "git" nil t nil "pull")
-        t))))
+      (archive--pull emacs-repo-root)
+      t)))
 
 (defun archive--find-non-trivial-file (dir)
   (catch 'found-important-file
@@ -637,7 +643,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
            (let* ((branch (concat "externals/" name))
                   (output
                    (with-temp-buffer
-                     ;; FIXME: Use git-new-workdir!
+                     ;; FIXME: Use `git worktree'!
                      (call-process "git" nil t nil "clone"
                                    "--reference" ".." "--single-branch"
                                    "--branch" branch
@@ -646,13 +652,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (message "Cloning branch %s:\n%s" name output)))
           ((not (file-directory-p (concat name "/.git")))
            (message "%s is in the way of an external, please remove!" name))
-          (t
-           (let ((default-directory (file-name-as-directory
-                                     (expand-file-name name))))
-             (with-temp-buffer
-               (message "Running git pull in %S" default-directory)
-               (call-process "git" nil t nil "pull")
-               (message "Updated %s:%s" name (buffer-string))))))))
+          (t (archive--pull name)))))
 
 (defun archive--core-package-empty-dest-p (dest)
   "Return non-nil if DEST is an empty variant."
