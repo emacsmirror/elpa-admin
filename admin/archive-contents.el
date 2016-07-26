@@ -604,7 +604,13 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (let ((default-directory (expand-file-name "packages/")))
     (dolist (dir (directory-files "."))
       (cond
-       ((or (not (file-directory-p dir)) (file-symlink-p dir))
+       ((file-symlink-p dir)
+        ;; There are normally no such thing, but the user may elect to
+        ;; add symlinks to other projects.  If so, update them, as if they
+        ;; were "externals".
+        (when (file-directory-p (expand-file-name ".git" dir))
+          (archive--pull dir)))
+       ((or (not (file-directory-p dir)) )
         ;; We only add/remove plain directories in elpa/packages (not
         ;; symlinks).
         nil)
