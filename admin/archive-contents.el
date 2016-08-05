@@ -21,7 +21,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 (require 'lisp-mnt)
 (require 'package)
 (require 'pcase)
@@ -36,8 +36,8 @@
   (when vers
     (let ((l (version-to-list vers)))
       ;; Signal an error for things like "1.02" which is parsed as "1.2".
-      (assert (equal vers (package-version-join l)) nil
-              "Unsupported version syntax %S" vers)
+      (cl-assert (equal vers (package-version-join l)) nil
+                 "Unsupported version syntax %S" vers)
       l)))
 
 (defun archive--convert-require (elt)
