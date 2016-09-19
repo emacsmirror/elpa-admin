@@ -37,7 +37,7 @@ release the new code.
 ** To add a package: (submission, submit)
 
 Adding a basic package is very simple. There are thorough
-instructional, but the gist is that you:
+instructions below, but the gist of it is that you:
 
 1. Notify emacs-devel@gnu.org.
 2. Place all files inside `packages/<pkg-name>/'.
