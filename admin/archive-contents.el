@@ -438,7 +438,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 (defun archive--insert-repolinks (name srcdir _mainsrcfile url)
   (when url
-    (insert (format "<p>Home page: <a href=%S>%s</a></p>\n"
+    (insert (format "<dt>Home page</dt> <dd><a href=%S>%s</a></dd>\n"
                     url (archive--quote url)))
     (when (string-match archive-default-url-re url)
       (setq url nil)))
@@ -455,8 +455,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                  '("cgit/emacs/elpa.git/tree/packages/"
                    "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
     (insert (format
-             (concat (format "<p>Browse %srepository: " (if url "ELPA's " ""))
-                     "<a href=%S>%s</a> or <a href=%S>%s</a></p>\n")
+             (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
+                     "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
              (concat git-sv (nth 0 urls) name)
              'CGit
              (concat git-sv (nth 1 urls) name)
@@ -470,25 +470,31 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
       (insert (archive--html-header (format "GNU ELPA - %s" name)))
-      (insert (format "<p>Description: %s</p>\n" (archive--quote desc)))
+      (insert (format "<h2 class=\"package\">%s</h2>" name))
+      (insert "<dl>")
+      (insert (format "<dt>Description</dt><dd>%s</dd>\n" (archive--quote desc)))
       (if (zerop (length latest))
-          (insert "<p>This package "
+          (insert "<dd>This package "
                   (if files "is not in GNU ELPA any more"
                     "has not been released yet")
-                  ".</p>\n")
+                  ".</dd>\n")
         (let* ((file (cdr (assoc latest files)))
                (attrs (file-attributes file)))
-          (insert (format "<p>Latest: <a href=%S>%s</a>, %s, %s</p>\n"
+          (insert (format "<dt>Latest</dt> <dd><a href=%S>%s</a>, %s, %s</dd>\n"
                           file (archive--quote file)
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (archive--html-bytes-format (nth 7 attrs))))))
       (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
         (when maint
-          (insert (format "<p>Maintainer: %s</p>\n" (archive--quote maint)))))
+          (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (archive--quote maint)))))
       (archive--insert-repolinks
        name srcdir mainsrcfile
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
            (archive--get-prop "URL" name srcdir mainsrcfile)))
+      (insert "</dl>")
+      (insert (format "<p>To install this package, run in Emacs:</p>
+                       <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
+                      name))
       (let ((rm (archive--get-section
                  "Commentary" '("README" "README.rst"
                                 ;; Most README.md files seem to be currently
@@ -817,6 +823,6 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                          (sort (append exts core) #'string<)
                          ""))
       (save-buffer))))
-      
+
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
