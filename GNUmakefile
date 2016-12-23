@@ -144,9 +144,22 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 	                                          \"$$(pwd)\")"
 
 # Put into elcs the set of elc files we need to keep up-to-date.
-# I.e. one for each .el file except for the -pkg.el, the -autoloads.el, and
-# the .el files that are marked "no-byte-compile".
-els := $(call FILTER-nonsrc, $(wildcard packages/*/*.el))
+# I.e. one for each .el file in each package root, except for the -pkg.el,
+# the -autoloads.el, the .el files that are marked "no-byte-compile", and
+# files matching patterns in packages' .elpaignore files.
+included_els := $(shell \
+  for pt in packages/*; do				\
+      if [ -d $$pt ]; then				\
+          if [ -f "$${pt}/.elpaignore" ]; then		\
+              tar -ch $$pt/*.el --no-recursion		\
+                  --exclude-vcs -X "$${pt}/.elpaignore"	\
+                | tar --list;				\
+          else						\
+              ls -1 $$pt/*.el;				\
+          fi;						\
+      fi;						\
+  done)
+els := $(call FILTER-nonsrc, $(included_els))
 naive_elcs := $(patsubst %.el, %.elc, $(els))
 current_elcs := $(wildcard packages/*/*.elc)
 
@@ -184,9 +197,8 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 	    --eval '(package-generate-description-file d "$@")'
 
 .PHONY: all-in-place
-all-in-place: $(extra_elcs) $(autoloads) $(pkg_descs)
-	# Do them in a sub-make, so that autoloads are done first.
-	$(MAKE) elcs
+# Use order-only prerequisites, so that autoloads are done first.
+all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 
 
 ############### Rules to prepare the externals ################################
