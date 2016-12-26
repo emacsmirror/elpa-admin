@@ -150,13 +150,18 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 included_els := $(shell \
   for pt in packages/*; do				\
       if [ -d $$pt ]; then				\
-          if [ -f "$${pt}/.elpaignore" ]; then		\
-              tar -ch $$pt/*.el --no-recursion		\
-                  --exclude-vcs -X "$${pt}/.elpaignore"	\
+          prev=$$(pwd);					\
+          cd $$pt;					\
+          if [ -f .elpaignore ]; then			\
+              tar -ch *.el --no-recursion		\
+                  --exclude-vcs -X .elpaignore		\
                 | tar --list;				\
           else						\
-              ls -1 $$pt/*.el;				\
-          fi;						\
+              ls -1 *.el;				\
+          fi | while read line; 			\
+                   do echo "$${pt}/$${line}"; 		\
+               done;					\
+          cd $$prev;					\
       fi;						\
   done)
 els := $(call FILTER-nonsrc, $(included_els))
