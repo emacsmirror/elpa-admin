@@ -153,8 +153,8 @@ included_els := $(shell \
           prev=$$(pwd);					\
           cd $$pt;					\
           if [ -f .elpaignore ]; then			\
-              tar -ch *.el --no-recursion		\
-                  --exclude-vcs -X .elpaignore		\
+              tar -ch --no-recursion			\
+                  --exclude-vcs -X .elpaignore *.el	\
                 | tar --list;				\
           else						\
               ls -1 *.el;				\
