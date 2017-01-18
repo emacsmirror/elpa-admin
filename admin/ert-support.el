@@ -1,6 +1,6 @@
 ;; The contents of this file are subject to the GPL License, Version 3.0.
 
-;; Copyright (C) 2016, Free Software Foundation, Inc.
+;; Copyright (C) 2016-2017, Free Software Foundation, Inc.
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -18,37 +18,38 @@
 (defun ert-support-package-install (top-directory package)
   ;; blitz default value and set up from elpa.
   (setq package-archives
-        `(("local-elpa" . ,(concat top-directory "/archive/packages"))))
-  (setq package-user-dir
-        (make-temp-file "elpa-test" t))
+        `(("local-elpa"
+	   . ,(expand-file-name "archive/packages" top-directory)))
+	package-user-dir (make-temp-file "elpa-test" t))
   (package-initialize)
   (package-refresh-contents)
   (package-install package))
 
 (defun ert-support-test-find-tests (package-directory package)
-  (or
-   (directory-files package-directory nil ".*-test.el$")
-   (directory-files package-directory nil ".*-tests.el$")
-   (let ((dir-test
-          (concat package-directory "/test")))
-     (when (file-exists-p dir-test)
-       (directory-files dir-test)))
-   (let ((dir-tests
-          (concat package-directory "/tests")))
-     (when (file-exists-p dir-tests)
-       (directory-files dir-tests)))))
+  (append
+   `(,(expand-file-name
+       (concat (symbol-name package) "-autoloads.el") package-directory))
+   (or
+    (directory-files package-directory t ".*-test.el$")
+    (directory-files package-directory t ".*-tests.el$")
+    (let ((dir-test (expand-file-name "test" package-directory)))
+      (when (file-directory-p dir-test)
+	(directory-files dir-test t directory-files-no-dot-files-regexp)))
+    (let ((dir-tests (expand-file-name "tests" package-directory)))
+      (when (file-directory-p dir-tests)
+	(directory-files dir-tests t directory-files-no-dot-files-regexp))))))
 
 (defun ert-support-load-tests (package-directory package)
   (mapc
-   (lambda(file)
-     (message "Loading test file... %s" (concat package-directory file))
-     (load-file (concat package-directory file)))
+   (lambda (file)
+     (let ((force-load-messages t))
+       (load-file file)))
    (ert-support-test-find-tests package-directory package)))
 
 (defun ert-support-test-package (top-directory package)
   (ert-support-package-install top-directory package)
   (ert-support-load-tests
-   (concat top-directory "/packages/" (symbol-name package) "/")
+   (expand-file-name (concat "packages/" (symbol-name package)) top-directory)
    package)
 
   (ert-run-tests-batch-and-exit t))
