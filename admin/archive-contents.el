@@ -436,17 +436,19 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (replace-regexp-in-string "<" "&lt;"
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
+(defun archive--read-externals-list (&optional dir)
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "externals-list" dir))
+    (read (current-buffer))))
+
 (defun archive--insert-repolinks (name srcdir _mainsrcfile url)
   (when url
     (insert (format "<dt>Home page</dt> <dd><a href=%S>%s</a></dd>\n"
                     url (archive--quote url)))
     (when (string-match archive-default-url-re url)
       (setq url nil)))
-  (let* ((externals
-          (with-temp-buffer
-            (insert-file-contents
-             (expand-file-name "../../../elpa/externals-list" srcdir))
-            (read (current-buffer))))
+  (let* ((externals (archive--read-externals-list
+                     (expand-file-name "../../../elpa" srcdir)))
          (external (eq :external (nth 1 (assoc name externals))))
          (git-sv "http://git.savannah.gnu.org/")
          (urls (if external
@@ -787,9 +789,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun archive-add/remove/update-externals ()
   "Remove non-package directories and fetch external packages."
-  (let ((externals-list
-         (with-current-buffer (find-file-noselect "externals-list")
-           (read (buffer-string)))))
+  (let ((externals-list (archive--read-externals-list)))
     (let ((with-core (archive--sync-emacs-repo)))
       (archive--cleanup-packages externals-list with-core)
       (pcase-dolist ((and definition `(,name ,kind ,_url)) externals-list)
