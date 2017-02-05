@@ -804,7 +804,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun archive-gitignore-externals (elf gf)
   (let ((pkgs (cl-loop
-               for (name kind . _) in (read (find-file-noselect elf))
+               for (name kind . _) in (archive--read-externals-list
+                                       (file-name-directory elf))
                when (memq kind '(:external :core))
                collect name)))
     (with-current-buffer (find-file-noselect gf)
