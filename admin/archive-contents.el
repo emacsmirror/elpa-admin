@@ -299,15 +299,21 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (cons (intern pkg) (vector (archive--version-to-list vers)
                                req (nth 3 exp) 'tar extras))))
 
+(defun archive--form-from-file-contents (filename)
+  (with-temp-buffer
+    (insert-file-contents filename)
+    ;; This is unnecessary because ‘with-temp-buffer’ generates a new
+    ;; (empty) buffer, and ‘insert-file-contents’ inserts after point.
+    ;; In other words, point is alraedy at bob.
+    ;;- (goto-char (point-min))
+    (read (current-buffer))))
+
 (defun archive--multi-file-package-def (dir pkg)
   "Return the `define-package' form in the file DIR/PKG-pkg.el."
   (let ((pkg-file (expand-file-name (concat pkg "-pkg.el") dir)))
-    (with-temp-buffer
-      (unless (file-exists-p pkg-file)
-	(error "File not found: %s" pkg-file))
-      (insert-file-contents pkg-file)
-      (goto-char (point-min))
-      (read (current-buffer)))))
+    (unless (file-exists-p pkg-file)
+      (error "File not found: %s" pkg-file))
+    (archive--form-from-file-contents pkg-file)))
 
 (defun archive--refresh-pkg-file ()
   (let* ((dir (directory-file-name default-directory))
@@ -389,10 +395,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      (let ((pkgdescfile (expand-file-name (format "%s-pkg.el" name)
                                           srcdir)))
        (when (file-readable-p pkgdescfile)
-         (with-temp-buffer
-           (insert-file-contents pkgdescfile)
-           (let ((desc (read (current-buffer))))
-             (plist-get (cdr desc) kprop)))))
+         (let ((desc (archive--form-from-file-contents pkgdescfile)))
+           (plist-get (cdr desc) kprop))))
      (when (file-readable-p mainsrcfile)
        (with-temp-buffer
          (insert-file-contents mainsrcfile)
@@ -437,9 +441,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
 (defun archive--read-externals-list (&optional dir)
-  (with-temp-buffer
-    (insert-file-contents (expand-file-name "externals-list" dir))
-    (read (current-buffer))))
+  (archive--form-from-file-contents
+   (expand-file-name "externals-list" dir)))
 
 (defun archive--insert-repolinks (name srcdir _mainsrcfile url)
   (when url
@@ -559,11 +562,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun batch-html-make-index ()
   (let ((packages (make-hash-table :test #'equal))
         (archive-contents
-         (with-temp-buffer
-           (insert-file-contents "archive-contents")
-           (goto-char (point-min))
-           ;; Skip the first element which is a version number.
-           (cdr (read (current-buffer))))))
+         ;; Skip the first element which is a version number.
+         (cdr (archive--form-from-file-contents "archive-contents"))))
     (dolist (subdir (directory-files "../../build/packages" nil))
       (cond
        ((member subdir '("." ".." "elpa.rss" "index.html" "archive-contents")))
