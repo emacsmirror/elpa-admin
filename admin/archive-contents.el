@@ -95,6 +95,11 @@ Delete backup files also."
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
 
+(defun archive-call (destination program &rest args)
+  "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
+The INFILE and DISPLAY arguments are fixed as nil."
+  (apply #'call-process program nil destination nil args))
+
 (defconst archive--revno-re "[0-9a-f]+")
 
 (defun archive-prepare-packages (srcdir)
@@ -113,7 +118,7 @@ Currently only refreshes the ChangeLog files."
          (new-revno
           (or (with-temp-buffer
                 (let ((default-directory srcdir))
-                  (call-process "git" nil '(t) nil "rev-parse" "HEAD")
+                  (archive-call '(t) "git" "rev-parse" "HEAD")
                   (goto-char (point-min))
                   (when (looking-at (concat archive--revno-re "$"))
                     (match-string 0))))
@@ -122,7 +127,7 @@ Currently only refreshes the ChangeLog files."
     (unless (equal prevno new-revno)
       (with-temp-buffer
         (let ((default-directory srcdir))
-          (unless (zerop (call-process "git" nil '(t) nil "diff"
+          (unless (zerop (archive-call '(t) "git" "diff"
                                        "--dirstat=cumulative,0"
                                        prevno))
             (error "Error signaled by git diff --dirstat %d" prevno)))
@@ -246,8 +251,8 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
           (erase-buffer)
           (let ((default-directory
                   (file-name-as-directory (expand-file-name dir srcdir))))
-            (call-process "git" nil (current-buffer) nil
-                          "log" "--date=short"
+            (archive-call (current-buffer) ; hmm, why not use ‘t’ here? --ttn
+                          "git" "log" "--date=short"
                           "--format=%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n"
                           "."))
           (tabify (point-min) (point-max))
@@ -602,7 +607,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                             (expand-file-name dirname))))
     (with-temp-buffer
       (message "Running git pull in %S" default-directory)
-      (call-process "git" nil t nil "pull")
+      (archive-call t "git" "pull")
       (message "Updated %s:\n%s" dirname (buffer-string)))))
 
 ;;; Maintain external packages.
@@ -662,7 +667,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                (with-temp-buffer
                  (let ((default-directory (file-name-as-directory
                                            (expand-file-name dir))))
-                   (call-process "git" nil t nil "status" "--porcelain")
+                   (archive-call t "git" "status" "--porcelain")
                    (buffer-string)))))
           (if (zerop (length status))
               (progn (delete-directory dir 'recursive t)
@@ -670,8 +675,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
             (message "Keeping leftover unclean %s:\n%s" dir status))))
        ;; Check if `dir' is under version control.
        ((and with-core
-             (not (zerop (call-process "git" nil nil nil
-                                       "ls-files" "--error-unmatch" dir))))
+             (not (zerop (archive-call nil "git" "ls-files"
+                                       "--error-unmatch" dir))))
         ;; Not under version control.  Check if it only contains
         ;; symlinks and generated files, in which case it is probably
         ;; a leftover :core package that can safely be deleted.
@@ -691,7 +696,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                   (output
                    (with-temp-buffer
                      ;; FIXME: Use `git worktree'!
-                     (call-process "git" nil t nil "clone"
+                     (archive-call t "git" "clone"
                                    "--reference" ".." "--single-branch"
                                    "--branch" branch
                                    archive--elpa-git-url name)
