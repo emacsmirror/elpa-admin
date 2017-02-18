@@ -86,8 +86,7 @@ Delete backup files also."
                             (apply #'archive--process-simple-package
                                    dir pkg (cdr metadata))
                           (if (nth 1 metadata)
-                              (apply #'archive--write-pkg-file
-                                     dir pkg (cdr metadata)))
+                              (archive--write-pkg-file dir pkg metadata))
                           (archive--process-multi-file-package dir pkg))
                         packages)))))
 	((debug error) (error "Error in %s: %S" dir v))))
@@ -323,10 +322,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun archive--refresh-pkg-file ()
   (let* ((dir (directory-file-name default-directory))
          (pkg (file-name-nondirectory dir)))
-    (apply #'archive--write-pkg-file dir pkg
-           (cdr (archive--metadata dir pkg)))))
+    (archive--write-pkg-file dir pkg (archive--metadata dir pkg))))
 
-(defun archive--write-pkg-file (pkg-dir name version desc requires extras)
+(defun archive--write-pkg-file (pkg-dir name metadata)
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
         (print-quoted t)
@@ -335,19 +333,21 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      (concat (format ";; Generated package description from %s.el\n"
 		     name)
 	     (prin1-to-string
-              (nconc
-               (list 'define-package
-                     name
-                     version
-                     desc
-                     (list 'quote
-                           ;; Turn version lists into string form.
-                           (mapcar
-                            (lambda (elt)
-                              (list (car elt)
-                                    (package-version-join (cadr elt))))
-                            requires)))
-               (archive--alist-to-plist-args extras)))
+              (cl-destructuring-bind (version desc requires extras)
+                  (cdr metadata)
+                (nconc
+                 (list 'define-package
+                       name
+                       version
+                       desc
+                       (list 'quote
+                             ;; Turn version lists into string form.
+                             (mapcar
+                              (lambda (elt)
+                                (list (car elt)
+                                      (package-version-join (cadr elt))))
+                              requires)))
+                 (archive--alist-to-plist-args extras))))
 	     "\n")
      nil
      pkg-file)))
