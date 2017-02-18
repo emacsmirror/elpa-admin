@@ -66,8 +66,8 @@ Delete backup files also."
 	    (let* ((pkg (file-name-nondirectory dir))
 		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir)))
 	      ;; Omit autoloads and .elc files from the package.
-	      (if (file-exists-p autoloads-file)
-		  (delete-file autoloads-file))
+              (when (file-exists-p autoloads-file)
+                (delete-file autoloads-file))
 	      (archive--delete-elc-files dir)
 	      (let ((metadata (or (with-demoted-errors
                                     ;;(format "batch-make-archive %s: %%s" dir)
@@ -85,8 +85,8 @@ Delete backup files also."
                   (push (if (car metadata)
                             (apply #'archive--process-simple-package
                                    dir pkg (cdr metadata))
-                          (if (nth 1 metadata)
-                              (archive--write-pkg-file dir pkg metadata))
+                          (when (nth 1 metadata)
+                            (archive--write-pkg-file dir pkg metadata))
                           (archive--process-multi-file-package dir pkg))
                         packages)))))
 	((debug error) (error "Error in %s: %S" dir v))))
@@ -137,9 +137,9 @@ Currently only refreshes the ChangeLog files."
     (let ((default-directory (expand-file-name "packages/")))
       (dolist (pkg pkgs)
         (condition-case v
-            (if (file-directory-p pkg)
-                (archive--make-changelog pkg (expand-file-name "packages/"
-                                                               srcdir)))
+            (when (file-directory-p pkg)
+              (archive--make-changelog pkg (expand-file-name "packages/"
+                                                             srcdir)))
           (error (message "Error: %S" v)))))
     (write-region new-revno nil wit nil 'quiet)
     ;; Also update the ChangeLog of external packages.
@@ -196,9 +196,9 @@ PKG is the name of the package and DIR is the directory where it is."
                  (url (or (lm-header "url")
                           (format archive-default-url-format pkg)))
                  (req
-                  (if requires-str
-                      (mapcar 'archive--convert-require
-                              (car (read-from-string requires-str))))))
+                  (and requires-str
+                       (mapcar 'archive--convert-require
+                               (car (read-from-string requires-str))))))
             (list simple version description req
                   ;; extra parameters
                   (list (cons :url url)
@@ -245,7 +245,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
       (set-buffer-multibyte nil)
       (let ((coding-system-for-read 'binary)
             (coding-system-for-write 'binary))
-        (if (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
+        (when (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
         (let ((old-md5 (md5 (current-buffer))))
           (erase-buffer)
           (let ((default-directory
