@@ -44,6 +44,9 @@
   (list (car elt)
 	(archive--version-to-list (car (cdr elt)))))
 
+(defun archive--dirname (dir &optional base)
+  (file-name-as-directory (expand-file-name dir base)))
+
 (defun archive--delete-elc-files (dir &optional only-orphans)
   "Recursively delete all .elc files in DIR.
 Delete backup files also."
@@ -107,7 +110,7 @@ Expects to be called from within the `packages' directory.
 \"Prepare\" here is for subsequent construction of the packages and archive,
 so it is meant to refresh any generated files we may need.
 Currently only refreshes the ChangeLog files."
-  (setq srcdir (file-name-as-directory (expand-file-name srcdir)))
+  (setq srcdir (archive--dirname srcdir))
   (let* ((wit ".changelog-witness")
          (prevno (with-temp-buffer
                    (insert-file-contents wit)
@@ -240,7 +243,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
 (defun archive--make-changelog (dir srcdir)
   "Export Git log info of DIR into a ChangeLog file."
   (message "Refreshing ChangeLog in %S" dir)
-  (let ((default-directory (file-name-as-directory (expand-file-name dir))))
+  (let ((default-directory (archive--dirname dir)))
     (with-temp-buffer
       (set-buffer-multibyte nil)
       (let ((coding-system-for-read 'binary)
@@ -248,8 +251,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
         (when (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
         (let ((old-md5 (md5 (current-buffer))))
           (erase-buffer)
-          (let ((default-directory
-                  (file-name-as-directory (expand-file-name dir srcdir))))
+          (let ((default-directory (archive--dirname dir srcdir)))
             (archive-call (current-buffer) ; hmm, why not use ‘t’ here? --ttn
                           "git" "log" "--date=short"
                           "--format=%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n"
@@ -603,8 +605,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (archive--html-make-index archive-contents)))
 
 (defun archive--pull (dirname)
-  (let ((default-directory (file-name-as-directory
-                            (expand-file-name dirname))))
+  (let ((default-directory (archive--dirname dirname)))
     (with-temp-buffer
       (message "Running git pull in %S" default-directory)
       (archive-call t "git" "pull")
@@ -665,8 +666,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
        ((file-directory-p (expand-file-name (format "%s/.git" dir)))
         (let ((status
                (with-temp-buffer
-                 (let ((default-directory (file-name-as-directory
-                                           (expand-file-name dir))))
+                 (let ((default-directory (archive--dirname dir)))
                    (archive-call t "git" "status" "--porcelain")
                    (buffer-string)))))
           (if (zerop (length status))
