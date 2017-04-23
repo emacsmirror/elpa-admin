@@ -607,9 +607,19 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun archive--pull (dirname)
   (let ((default-directory (archive--dirname dirname)))
     (with-temp-buffer
-      (message "Running git pull in %S" default-directory)
-      (archive-call t "git" "pull")
-      (message "Updated %s:\n%s" dirname (buffer-string)))))
+      (cond
+       ((file-directory-p ".git")
+        (message "Running git pull in %S" default-directory)
+        (archive-call t "git" "pull"))
+       ((file-exists-p ".git")
+        (message "Updating worktree in %S" default-directory)
+        (archive-call t "git" "merge"))
+       (t (error "No .git in %S" default-directory)))
+      (message "Updated %s:%s%s" dirname
+               (if (and (eobp) (bolp)
+                        (eq (line-beginning-position 0) (point-min)))
+                   " " "\n")
+               (buffer-string)))))
 
 ;;; Maintain external packages.
 
@@ -688,6 +698,15 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         ;;       (delete-directory dir 'recursive t))))
         )))))
 
+(defvar archive--use-worktree nil)
+(defun archive--use-worktree-p ()
+  (unless archive--use-worktree
+    (setq archive--use-worktree
+          (list
+           (ignore-errors
+             (zerop (call-process "git" nil nil nil "worktree" "--help"))))))
+  (car archive--use-worktree))
+
 (defun archive--external-package-sync (name)
   "Sync external package named NAME."
   (let ((default-directory (expand-file-name "packages/")))
@@ -695,14 +714,17 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
            (let* ((branch (concat "externals/" name))
                   (output
                    (with-temp-buffer
-                     ;; FIXME: Use `git worktree'!
-                     (archive-call t "git" "clone"
-                                   "--reference" ".." "--single-branch"
-                                   "--branch" branch
-                                   archive--elpa-git-url name)
+                     (if (archive--use-worktree-p)
+                         (archive-call t "git" "worktree" "add"
+                                       "-b" branch
+                                       name (concat "origin/" branch))
+                       (archive-call t "git" "clone"
+                                     "--reference" ".." "--single-branch"
+                                     "--branch" branch
+                                     archive--elpa-git-url name))
                      (buffer-string))))
              (message "Cloning branch %s:\n%s" name output)))
-          ((not (file-directory-p (concat name "/.git")))
+          ((not (file-exists-p (concat name "/.git")))
            (message "%s is in the way of an external, please remove!" name))
           (t (archive--pull name)))))
 
