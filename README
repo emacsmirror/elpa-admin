@@ -194,6 +194,15 @@ help and only gets in the way.
 In the `external' case, the copy of the code is not kept here but in the
 `externals/<pkg-name>' branch in the `elpa' repository.
 
+To add a new externals package, first add this `elpa' repository as a
+new remote in your existing repository.  Then push a local branch to a
+new remote branch in `elpa', named externals/<pkgname>.  For example:
+
+   git push elpa master:externals/<pkgname>
+
+Then edit the `externals-list' file as mentioned above, and push that
+change to `elpa's master branch.
+
 You can check out all the external packages into the `packages' directory
 with the command:
 
