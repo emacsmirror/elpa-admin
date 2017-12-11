@@ -147,30 +147,22 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 # I.e. one for each .el file in each package root, except for the -pkg.el,
 # the -autoloads.el, the .el files that are marked "no-byte-compile", and
 # files matching patterns in packages' .elpaignore files.
-included_els := $(shell \
-  for pt in packages/*; do				\
-      if [ -d $$pt ]; then				\
-          prev=$$(pwd);					\
-          cd $$pt;					\
-          if [ -f .elpaignore ]; then			\
-              tar -ch --no-recursion			\
-                  --exclude-vcs -X .elpaignore *.el	\
-                | tar --list;				\
-          else						\
-              ls -1 *.el;				\
-          fi | while read line; 			\
-                   do echo "$${pt}/$${line}"; 		\
-               done;					\
-          cd $$prev;					\
-      fi;						\
-  done)
+included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
+                            --exclude-vcs packages 2>&1 | grep '\.el$$')
+
+# included_els := $(wildcard packages/*/*.el)
+
+# els := $(call FILTER-nonsrc, $(wildcard packages/*/*.el     \
+# 					packages/*/*/*.el   \
+# 					packages/*/*/*/*.el \
+# 	                                packages/*/*/*/*/*.el))
 els := $(call FILTER-nonsrc, $(included_els))
 naive_elcs := $(patsubst %.el, %.elc, $(els))
-current_elcs := $(wildcard packages/*/*.elc)
+current_elcs := $(shell find packages -name '*.elc' -print)
 
 extra_els := $(call SET-diff, $(els), $(patsubst %.elc, %.el, $(current_elcs)))
 nbc_els := $(foreach el, $(extra_els), \
-             $(if $(shell grep '^;.*no-byte-compile: t' "$(el)"), $(el)))
+             $(if $(shell grep '^;.*no-byte-compile: *t' "$(el)"), $(el)))
 elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
