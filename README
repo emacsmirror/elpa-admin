@@ -98,6 +98,16 @@ with the exception that it is not a tar package (it's a plain
 directory) and it must not contain a "<pkg-name>-pkg.el" file (this
 will be created for you).
 
+*** Check the copyright
+
+Now run `make check_copyrights`.
+
+That command does a very crude check to try and catch the files which lack the
+"copyright FSF" line (that's the role of the first `find`), and to catch the
+files which still have a "copyright <not-the-fsf>" somewhere.
+
+If your package fails that check, you need to update the $(CR_EXCEPTIONS) file.
+
 *** Commit your changes the usual way ("git add", "git commit", etc).
 
 Changes in the Git repository do not immediately propagate to the
