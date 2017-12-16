@@ -1,4 +1,4 @@
-Copyright (C) 2010-2011, 2014-2016 Free Software Foundation, Inc.
+Copyright (C) 2010-2011, 2014-2017 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
@@ -102,11 +102,15 @@ will be created for you).
 
 Now run `make check_copyrights`.
 
-That command does a very crude check to try and catch the files which lack the
-"copyright FSF" line (that's the role of the first `find`), and to catch the
-files which still have a "copyright <not-the-fsf>" somewhere.
+That command does a very crude check to try and catch the files which lack
+the usual license and copyright blurb (that's the role of the first `find`),
+and to catch the files which still have a "copyright <not-the-fsf>" somewhere.
 
-If your package fails that check, you need to update the $(CR_EXCEPTIONS) file.
+If your package fails that check, please fix the files accordingly.
+Of course, occasionally those checks misfire (for a few rare files which
+we admitted without their copyright being transferred to the FSF, or
+because the word "copyright" appears in the body of the file), in
+which case the right fix is to update the $(CR_EXCEPTIONS) file.
 
 *** Commit your changes the usual way ("git add", "git commit", etc).
 
