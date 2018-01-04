@@ -88,13 +88,13 @@ archive-full: archive-tmp org-fetch
 # FIXME: Turn it into an `external', which will require adding the notion of
 # "snapshot" packages.
 org-fetch: archive-tmp
-	cd $(ARCHIVE_TMP)/packages && \
+	-cd $(ARCHIVE_TMP)/packages && 													   \
 	pkgname=`curl -s http://orgmode.org/elpa/|perl -ne 'push @f, $$1 if m/(org-\d{8})\.tar/; END { @f = sort @f; print "$$f[-1]\n"}'`; \
-	wget -q http://orgmode.org/elpa/$${pkgname}.tar -O $${pkgname}.tar; \
-	if [ -f $${pkgname}.tar ]; then \
-		tar xf $${pkgname}.tar; \
-		rm -f $${pkgname}.tar; \
-		mv $${pkgname} org; \
+	wget -q http://orgmode.org/elpa/$${pkgname}.tar -O $${pkgname}.tar; 								   \
+	if [ -f $${pkgname}.tar ]; then 												   \
+		tar xf $${pkgname}.tar; 												   \
+		rm -f $${pkgname}.tar; 													   \
+		mv $${pkgname} org; 													   \
 	fi
 
 clean:
