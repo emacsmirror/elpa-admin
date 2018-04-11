@@ -10,6 +10,14 @@ and how to deploy the archive (either on elpa.gnu.org, or a local copy
 for testing purposes).
 
 
+* GETTING THE SOURCE
+
+Start with source that is cloned directly from Savannah.  See:
+
+https://savannah.gnu.org/git/?group=emacs
+
+and look for "ELPA".  Using a clone of a clone does not work.
+
 * DIRECTORY LAYOUT
 
 ** admin/    -- scripts for administering the package archive.
