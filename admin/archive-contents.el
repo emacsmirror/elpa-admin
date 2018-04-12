@@ -704,7 +704,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (setq archive--use-worktree
           (list
            (ignore-errors
-             (zerop (call-process "git" nil nil nil "worktree" "--help"))))))
+             (zerop (call-process "git" nil nil nil "worktree" "list"))))))
   (car archive--use-worktree))
 
 (defun archive--external-package-sync (name)
