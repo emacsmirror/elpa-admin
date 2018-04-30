@@ -1,4 +1,4 @@
-Copyright (C) 2010-2011, 2014-2017 Free Software Foundation, Inc.
+Copyright (C) 2010-2011, 2014-2018 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 
@@ -305,10 +305,6 @@ admins), and
 Which makes a full archive deployment, as discussed above.  The symlink
 /var/www/packages points to the staging package directory under
 /home/elpa/.
-
-The Org mode dailies are also fetched and added by the script
-admin/org-synch.sh, run as a cron job.
-
 
 This file is part of GNU Emacs.
 
