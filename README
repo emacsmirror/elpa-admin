@@ -267,7 +267,7 @@ packages/ directory.  You can then add that directory, e.g. with:
 
 ** To deploy the package repository as a remotely-accessible archive:
 
-   git clone .../elpa
+   git -c fetch.fsckObjects=false clone .../elpa
    (cd elpa; git clone .../emacs)    #If you want to generate :core packages.
    mkdir build
    cd build
@@ -278,7 +278,9 @@ packages/ directory.  You can then add that directory, e.g. with:
 
 This deploys the packages to the staging/ directory (sibling of "build").
 Unlike "make", this makes a full copy of the packages, tars up
-multi-file packages, and doesn't byte-compile any files.
+multi-file packages, and doesn't byte-compile any files.  The
+fetch.fsckObjects setting works around a glitch in the ELPA repository
+<https://debbugs.gnu.org/22690>.
 
 ** To access a deployed archive
 
