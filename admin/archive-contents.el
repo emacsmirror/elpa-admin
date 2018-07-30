@@ -460,15 +460,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let* ((externals (archive--read-externals-list
                      (expand-file-name "../../../elpa" srcdir)))
          (extern-desc (assoc name externals))
-         (external (eq :external (nth 1 extern-desc)))
          (git-sv "http://git.savannah.gnu.org/")
          (urls
           (if (eq (nth 1 extern-desc) :core)
-              (let ((files (nthcdr 2 extern-desc))
-                    (file (if (cdr files)
-                              (file-name-directory
-                               (try-completion "" (nthcdr 3 extern-desc)))
-                            (car files))))
+              (let* ((files (nthcdr 2 extern-desc))
+                     (file (if (cdr files)
+                               (file-name-directory
+                                (try-completion "" (nthcdr 3 extern-desc)))
+                             (car files))))
                 (mapcar (lambda (s) (concat s file))
                         '("cgit/emacs.git/tree/"
                           "gitweb/?p=emacs.git;a=tree;f=")))
@@ -477,7 +476,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                         '("cgit/emacs/elpa.git/?h=externals/"
                           "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/"))
                     '("cgit/emacs/elpa.git/tree/packages/"
-                      "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
+                      "gitweb/?p=emacs/elpa.git;a=tree;f=packages/")))))
     (insert (format
              (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
