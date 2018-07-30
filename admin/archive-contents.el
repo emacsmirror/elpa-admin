@@ -474,9 +474,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
             (mapcar (lambda (s) (concat s name))
                     (if (eq (nth 1 extern-desc) :external)
                         '("cgit/emacs/elpa.git/?h=externals/"
-                          "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/"))
-                    '("cgit/emacs/elpa.git/tree/packages/"
-                      "gitweb/?p=emacs/elpa.git;a=tree;f=packages/")))))
+                          "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
+                      '("cgit/emacs/elpa.git/tree/packages/"
+                        "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))))
     (insert (format
              (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
