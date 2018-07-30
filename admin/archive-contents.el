@@ -471,9 +471,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                              files)))
                 (mapcar (lambda (s) (concat s file))
                         `("cgit/emacs.git/tree/"
-                          (if (listp files)
-                              "gitweb/?p=emacs.git;a=tree;f="
-                            "gitweb/?p=emacs.git;a=blob;f="))))
+                          ,(if (listp files)
+                               "gitweb/?p=emacs.git;a=tree;f="
+                             "gitweb/?p=emacs.git;a=blob;f="))))
             (mapcar (lambda (s) (concat s name))
                     (if (eq (nth 1 extern-desc) :external)
                         '("cgit/emacs/elpa.git/?h=externals/"
