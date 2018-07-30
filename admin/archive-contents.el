@@ -463,11 +463,11 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (git-sv "http://git.savannah.gnu.org/")
          (urls
           (if (eq (nth 1 extern-desc) :core)
-              (let* ((files (nthcdr 2 extern-desc))
-                     (file (if (cdr files)
+              (let* ((files (nth 2 extern-desc))
+                     (file (if (listp files)
                                (file-name-directory
-                                (try-completion "" (nthcdr 3 extern-desc)))
-                             (car files))))
+                                (try-completion "" files))
+                             files)))
                 (mapcar (lambda (s) (concat s file))
                         '("cgit/emacs.git/tree/"
                           "gitweb/?p=emacs.git;a=tree;f=")))
