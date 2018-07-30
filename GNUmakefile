@@ -105,7 +105,10 @@ pkgs := $(foreach pkg, $(wildcard packages/*), \
           $(if $(shell [ -d "$(pkg)" ] && echo true), $(pkg)))
 
 define SET-diff
-$(shell echo "$(1)" "$(2)" "$(2)" | tr ' ' '\n' | sort | uniq -u)
+$(shell $(file > .tmp.setdiff, $(1))  \
+        $(file >> .tmp.setdiff, $(2)) \
+        $(file >> .tmp.setdiff, $(2)) \
+        tr ' ' '\n' < .tmp.setdiff | sort | uniq -u ; rm .tmp.setdiff)
 endef
 
 define FILTER-nonsrc

@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2017  Free Software Foundation, Inc
+;; Copyright (C) 2011-2018  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -459,19 +459,31 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (setq url nil)))
   (let* ((externals (archive--read-externals-list
                      (expand-file-name "../../../elpa" srcdir)))
-         (external (eq :external (nth 1 (assoc name externals))))
+         (extern-desc (assoc name externals))
+         (external (eq :external (nth 1 extern-desc)))
          (git-sv "http://git.savannah.gnu.org/")
-         (urls (if external
-                   '("cgit/emacs/elpa.git/?h=externals/"
-                     "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
-                 '("cgit/emacs/elpa.git/tree/packages/"
-                   "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
+         (urls
+          (if (eq (nth 1 extern-desc) :core)
+              (let ((files (nthcdr 2 extern-desc))
+                    (file (if (cdr files)
+                              (file-name-directory
+                               (try-completion "" (nthcdr 3 extern-desc)))
+                            (car files))))
+                (mapcar (lambda (s) (concat s file))
+                        '("cgit/emacs.git/tree/"
+                          "gitweb/?p=emacs.git;a=tree;f=")))
+            (mapcar (lambda (s) (concat s name))
+                    (if (eq (nth 1 extern-desc) :external)
+                        '("cgit/emacs/elpa.git/?h=externals/"
+                          "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/"))
+                    '("cgit/emacs/elpa.git/tree/packages/"
+                      "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))
     (insert (format
              (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
-             (concat git-sv (nth 0 urls) name)
+             (concat git-sv (nth 0 urls))
              'CGit
-             (concat git-sv (nth 1 urls) name)
+             (concat git-sv (nth 1 urls))
              'Gitweb))))
 
 (defun archive--html-make-pkg (pkg files)
