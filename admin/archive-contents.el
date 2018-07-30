@@ -465,12 +465,15 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           (if (eq (nth 1 extern-desc) :core)
               (let* ((files (nth 2 extern-desc))
                      (file (if (listp files)
-                               (file-name-directory
-                                (try-completion "" files))
+                               (directory-file-name
+                                (file-name-directory
+                                 (try-completion "" files)))
                              files)))
                 (mapcar (lambda (s) (concat s file))
-                        '("cgit/emacs.git/tree/"
-                          "gitweb/?p=emacs.git;a=tree;f=")))
+                        `("cgit/emacs.git/tree/"
+                          (if (listp files)
+                              "gitweb/?p=emacs.git;a=tree;f="
+                            "gitweb/?p=emacs.git;a=blob;f="))))
             (mapcar (lambda (s) (concat s name))
                     (if (eq (nth 1 extern-desc) :external)
                         '("cgit/emacs/elpa.git/?h=externals/"
