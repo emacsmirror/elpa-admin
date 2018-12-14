@@ -112,7 +112,7 @@ $(shell $(file > .tmp.setdiff, $(1))  \
 endef
 
 define FILTER-nonsrc
-$(filter-out %-autoloads.el %-pkg.el, $(1))
+$(filter-out %-autoloads.el %-pkg.el %/.dir-locals.el, $(1))
 endef
 
 define RULE-srcdeps
