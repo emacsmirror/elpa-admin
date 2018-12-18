@@ -234,10 +234,12 @@ new remote branch in `elpa.git', named externals/<pkgname>.  For example:
    git push elpa <mybranch>:externals/<pkgname>
 
 Then edit the `externals-list' file as mentioned above, and push that
-change to `elpa's master branch.
+change to `elpa's master branch.  After it's added to the `externals-list'
+file, the package can be maintained just by pushing changes to the
+`externals/<pkgname>` branch.
 
-You can check out all the external packages into the `packages' directory
-with the command:
+If you wish to check out all the external packages into the `packages'
+directory, you can run the command:
 
    make externals
 
