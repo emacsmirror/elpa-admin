@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2018  Free Software Foundation, Inc
+;; Copyright (C) 2011-2019  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -626,14 +626,20 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (message "Running git pull in %S" default-directory)
         (archive-call t "git" "pull"))
        ((file-exists-p ".git")
-        (message "Updating worktree in %S" default-directory)
-        (archive-call t "git" "merge"))
+        (unless (with-temp-buffer
+                  (archive-call t "git" "status" "--branch" "--porcelain=2")
+                  (goto-char (point-min))
+                  ;; Nothing to pull (nor push, actually).
+                  (search-forward "\n# branch.ab +0 -0" nil t))
+          (message "Updating worktree in %S" default-directory)
+          (archive-call t "git" "merge")))
        (t (error "No .git in %S" default-directory)))
-      (message "Updated %s:%s%s" dirname
-               (if (and (eobp) (bolp)
-                        (eq (line-beginning-position 0) (point-min)))
-                   " " "\n")
-               (buffer-string)))))
+      (unless (and (eobp) (bobp))
+        (message "Updated %s:%s%s" dirname
+                 (if (and (eobp) (bolp)
+                          (eq (line-beginning-position 0) (point-min)))
+                     " " "\n")
+                 (buffer-string))))))
 
 ;;; Maintain external packages.
 

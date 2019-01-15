@@ -229,7 +229,7 @@ In the `external' case, the copy of the code is not kept in `master` but in the
 
 To add a new externals package, first add this `elpa.git' repository as a
 new remote in your existing repository.  Then push a local branch to a
-new remote branch in `elpa.git', named externals/<pkgname>.  For example:
+new remote branch in `elpa.git', named `externals/<pkgname>`.  For example:
 
    git push elpa <mybranch>:externals/<pkgname>
 
