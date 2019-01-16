@@ -171,9 +171,11 @@ elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
 %.elc: %.el
 	@echo 'Byte compiling $<'
-	@$(EMACS) \
-	    --eval "(setq package-directory-list nil package-user-dir \"$(abspath packages)\")" \
-	    -f package-initialize \
+	@$(EMACS) 		  		       	       	     \
+	    --eval "(setq package-directory-list nil   	       	     \
+			  load-prefer-newer t			     \
+                          package-user-dir \"$(abspath packages)\")" \
+	    -f package-initialize 		       	       	     \
 	    -L $(dir $@) -f batch-byte-compile $<
 
 .PHONY: elcs
