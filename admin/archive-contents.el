@@ -41,8 +41,10 @@
       l)))
 
 (defun archive--convert-require (elt)
-  (list (car elt)
-	(archive--version-to-list (car (cdr elt)))))
+  (let ((vers (archive--version-to-list (car (cdr elt)))))
+    (if vers
+        (list (car elt) vers)
+      (list (car elt)))))
 
 (defun archive--dirname (dir &optional base)
   (file-name-as-directory (expand-file-name dir base)))
@@ -200,7 +202,7 @@ PKG is the name of the package and DIR is the directory where it is."
                           (format archive-default-url-format pkg)))
                  (req
                   (and requires-str
-                       (mapcar 'archive--convert-require
+                       (mapcar #'archive--convert-require
                                (car (read-from-string requires-str))))))
             (list simple version description req
                   ;; extra parameters
@@ -292,7 +294,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let* ((exp (archive--multi-file-package-def dir pkg))
 	 (vers (nth 2 exp))
          (req-exp (nth 4 exp))
-	 (req (mapcar 'archive--convert-require
+	 (req (mapcar #'archive--convert-require
                       (if (eq 'quote (car-safe req-exp)) (nth 1 req-exp)
                         (when req-exp
                           (error "REQ should be a quoted constant: %S"
