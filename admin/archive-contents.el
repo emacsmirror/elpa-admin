@@ -387,16 +387,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
   (setq bytes (/ bytes 1024.0))
-  (let ((units '(;; "B"
-                 "kB" "MB" "GB" "TB")))
+  (let ((units '("KiB" "MiB" "GiB" "TiB")))
     (while (>= bytes 1024)
       (setq bytes (/ bytes 1024.0))
       (setq units (cdr units)))
     (cond
-     ;; ((integerp bytes) (format "%4d%s" bytes (car units)))
-     ((>= bytes 100) (format "%4.0f%s" bytes (car units)))
-     ((>= bytes 10) (format "%4.1f%s" bytes (car units)))
-     (t (format "%4.2f%s" bytes (car units))))))
+     ((>= bytes 100) (format "%4.0f&nbsp;%s" bytes (car units)))
+     ((>= bytes 10) (format "%4.1f&nbsp;%s" bytes (car units)))
+     (t (format "%4.2f&nbsp;%s" bytes (car units))))))
 
 (defun archive--get-prop (prop name srcdir mainsrcfile)
   (let ((kprop (intern (format ":%s" (downcase prop)))))
@@ -536,7 +534,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                   "\n</pre>\n")))
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
-        (dolist (file files)
+        (dolist (file
+                 (sort files (lambda (f1 f2) (version< (car f2) (car f1)))))
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
