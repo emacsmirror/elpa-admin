@@ -762,14 +762,18 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
             (expand-file-name dest package-root))
            (absolute-core-file-name
             (expand-file-name source emacs-repo-root))
-           (directory (file-name-directory absolute-package-file-name)))
+           (directory
+	    (file-name-quote (file-name-directory absolute-package-file-name))))
       (unless (file-directory-p directory)
         (make-directory directory t))
       (condition-case nil
 	  (make-symbolic-link absolute-core-file-name
 			      absolute-package-file-name t)
 	(file-error
-	 (copy-file absolute-core-file-name absolute-package-file-name))))
+	 (copy-file absolute-core-file-name
+		    (if (file-directory-p absolute-package-file-name)
+			(file-name-as-directory absolute-package-file-name)
+		      absolute-package-file-name)))))
     (message "  %s -> %s" source (if (archive--core-package-empty-dest-p dest)
                                      (file-name-nondirectory source)
                                    dest))))
