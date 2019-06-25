@@ -160,6 +160,12 @@ Furthermore we recommend the following:
 - Use lexical-binding if it all possible.
 - Try and fix the warnings emitted when compiling the package with a recent Emacs.
 
+The Copyright notice should specify "Free Software Foundation, Inc." as
+the copyright holder.  Ensure that all the code has the proper copyright:
+if it is not your own code, make sure the author has signed the relevant
+copyright papers (for non-trivial contributions), and indicate the author
+correctly in the commit.
+
 ** External branches
 
 The above instructions are enough to add regular packages, those that
