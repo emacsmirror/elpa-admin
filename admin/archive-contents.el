@@ -152,11 +152,29 @@ Currently only refreshes the ChangeLog files."
       (dolist (dir (directory-files "."))
         (and (not (member dir '("." "..")))
              (file-directory-p dir)
-             (let ((index (expand-file-name
-                           (concat "packages/" dir "/.git/index")
-                           srcdir))
-                   (cl (expand-file-name "ChangeLog" dir)))
-               (and (file-exists-p index)
+             (let* ((gitdir (expand-file-name
+                             (concat "packages/" dir "/.git")
+                             srcdir))
+                    (index (cond
+                            ((file-directory-p gitdir)
+                             (expand-file-name
+                              (concat "packages/" dir "/.git/index")
+                              srcdir))
+                            ((file-readable-p gitdir)
+                             (with-temp-buffer
+                               (insert-file-contents gitdir)
+                               (goto-char (point-min))
+                               (if (looking-at "gitdir:[ \t]*")
+                                   (progn
+                                     (delete-region (match-beginning 0)
+                                                    (match-end 0))
+                                     (expand-file-name "index" (buffer-string)))
+                                 (message "Can't find gitdir in %S" gitdir)
+                                 nil)))
+                            (t nil)))
+                    (cl (expand-file-name "ChangeLog" dir)))
+               (and index
+                    (file-exists-p index)
                     (or (not (file-exists-p cl))
                         (file-newer-than-file-p index cl))))
              (archive--make-changelog
@@ -184,30 +202,28 @@ PKG is the name of the package and DIR is the directory where it is."
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-	(if (not (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$"))
-            (error "Can't parse first line of %s" mainfile)
-          ;; Grab the other fields, which are not mandatory.
-          (let* ((description (match-string 1))
-                 (version
-                  (or (lm-header "package-version")
-                      (lm-header "version")
-                      (unless (equal pkg "org")
-                        (error "Missing `version' header"))))
-                 (_ (archive--version-to-list version)) ; Sanity check!
-                 (requires-str (lm-header "package-requires"))
-                 (pt (lm-header "package-type"))
-                 (simple (if pt (equal pt "simple") (= (length files) 1)))
-                 (keywords (lm-keywords-list))
-                 (url (or (lm-header "url")
-                          (format archive-default-url-format pkg)))
-                 (req
-                  (and requires-str
-                       (mapcar #'archive--convert-require
-                               (car (read-from-string requires-str))))))
-            (list simple version description req
-                  ;; extra parameters
-                  (list (cons :url url)
-                        (cons :keywords keywords)))))))
+        (let* ((pkg-desc (package-buffer-info))
+               (extras (package-desc-extras pkg-desc))
+               (version (package-desc-version pkg-desc))
+               (keywords (lm-keywords-list))
+               (_ (archive--version-to-list version)) ; Sanity check!
+               (pt (lm-header "package-type"))
+               (simple (if pt (equal pt "simple") (= (length files) 1)))
+               (found-url (plist-get extras :url))
+               (found-keywords (plist-get extras :keywords)))
+
+          (when (and keywords (not found-keywords))
+            ;; Using an old package-buffer-info which doesn't include
+            ;; keywords.  Fix it by hand.
+            (setq extras (plist-put extras :keywords keywords)))
+          (unless found-url
+            ;; Provide a good default URL.
+            (setq extras (plist-put extras :url
+                                    (format archive-default-url-format pkg))))
+
+          (list simple version (package-desc-summary pkg-desc)
+                (package-desc-reqs pkg-desc)
+                extras))))
      (t
       (error "Can't find main file %s file in %s" mainfile dir)))))
 
@@ -323,18 +339,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (error "File not found: %s" pkg-file))
     (archive--form-from-file-contents pkg-file)))
 
-(defun archive--refresh-pkg-file ()
-  (let* ((dir (directory-file-name default-directory))
-         (pkg (file-name-nondirectory dir)))
-    (archive--write-pkg-file dir pkg (archive--metadata dir pkg))))
-
 (defun archive--write-pkg-file (pkg-dir name metadata)
+  ;; FIXME: Use package-generate-description-file!
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
         (print-quoted t)
 	(print-length nil))
     (write-region
-     (concat (format ";; Generated package description from %s.el\n"
+     (concat (format ";; Generated package description from %s.el  -*- no-byte-compile: t -*-\n"
 		     name)
 	     (prin1-to-string
               (cl-destructuring-bind (version desc requires extras)
@@ -358,7 +370,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 ;;; Make the HTML pages for online browsing.
 
-(defun archive--html-header (title)
+(defun archive--html-header (title &optional header)
   (format "<!DOCTYPE HTML PUBLIC>
 <html>
     <head>
@@ -383,7 +395,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
             </div>
 
             <div class=\"container\">\n"
-          title title title))
+          title (or header title)))
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
   (setq bytes (/ bytes 1024.0))
@@ -495,7 +507,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
          (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
-      (insert (archive--html-header (format "GNU ELPA - %s" name)))
+      (insert (archive--html-header
+               (format "GNU ELPA - %s" name)
+               (format "<a href=\"index.html\">GNU ELPA</a> - %s" name)))
       (insert (format "<h2 class=\"package\">%s</h2>" name))
       (insert "<dl>")
       (insert (format "<dt>Description</dt><dd>%s</dd>\n" (archive--quote desc)))
@@ -675,7 +689,7 @@ Return non-nil if there's an \"emacs\" repository present."
     nil))
 
 (defun archive--cleanup-packages (externals-list with-core)
-  "Remove subdirectories of `packages/' that do not correspond to known packages.
+  "Remove unknown subdirectories of `packages/'.
 This is any subdirectory inside `packages/' that's not under
 version control nor listed in EXTERNALS-LIST.
 If WITH-CORE is non-nil, it means we manage :core packages as well."
