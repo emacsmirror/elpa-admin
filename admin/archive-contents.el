@@ -145,7 +145,9 @@ Currently only refreshes the ChangeLog files."
             (when (file-directory-p pkg)
               (archive--make-changelog pkg (expand-file-name "packages/"
                                                              srcdir)))
-          (error (message "Error: %S" v)))))
+          (error (message
+		  "Error in archive-prepare-packages for package %S:\n  %S"
+                  pkg v)))))
     (write-region new-revno nil wit nil 'quiet)
     ;; Also update the ChangeLog of external packages.
     (let ((default-directory (expand-file-name "packages/")))
@@ -206,22 +208,22 @@ PKG is the name of the package and DIR is the directory where it is."
                (extras (package-desc-extras pkg-desc))
                (version (package-desc-version pkg-desc))
                (keywords (lm-keywords-list))
-               (_ (archive--version-to-list version)) ; Sanity check!
+               ;; (_ (archive--version-to-list version)) ; Sanity check!
                (pt (lm-header "package-type"))
                (simple (if pt (equal pt "simple") (= (length files) 1)))
-               (found-url (plist-get extras :url))
-               (found-keywords (plist-get extras :keywords)))
+               (found-url (alist-get :url extras))
+               (found-keywords (alist-get :keywords extras)))
 
           (when (and keywords (not found-keywords))
             ;; Using an old package-buffer-info which doesn't include
             ;; keywords.  Fix it by hand.
-            (setq extras (plist-put extras :keywords keywords)))
+            (push (cons :keywords keywords) extras))
           (unless found-url
             ;; Provide a good default URL.
-            (setq extras (plist-put extras :url
-                                    (format archive-default-url-format pkg))))
-
-          (list simple version (package-desc-summary pkg-desc)
+            (push (cons :url (format archive-default-url-format pkg)) extras))
+          (list simple
+		(package-version-join version)
+		(package-desc-summary pkg-desc)
                 (package-desc-reqs pkg-desc)
                 extras))))
      (t
@@ -751,7 +753,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                    (with-temp-buffer
                      (if (archive--use-worktree-p)
                          (archive-call t "git" "worktree" "add"
-                                       "-b" branch
+                                       "-B" branch
                                        name (concat "origin/" branch))
                        (archive-call t "git" "clone"
                                      "--reference" ".." "--single-branch"
@@ -772,7 +774,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   "Link file from SOURCE to DEST ensuring subdirectories."
   (unless (string-match-p exclude-regexp source)
     (let* ((absolute-package-file-name
-            (expand-file-name dest package-root))
+	    (if (equal "" dest)
+		;; Calling expand-file-name would remove the trailing / !
+		package-root
+              (expand-file-name dest package-root)))
            (absolute-core-file-name
             (expand-file-name source emacs-repo-root))
            (directory (file-name-directory absolute-package-file-name)))
@@ -780,10 +785,12 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (setq directory (file-name-quote directory)))
       (unless (file-directory-p directory)
         (make-directory directory t))
-      (condition-case nil
+      (condition-case err
 	  (make-symbolic-link absolute-core-file-name
 			      absolute-package-file-name t)
 	(file-error
+         (message "Error: can't symlink to %S from %S:\n  %S"
+                  absolute-core-file-name absolute-package-file-name err)
 	 (copy-file absolute-core-file-name
 		    (if (file-directory-p absolute-package-file-name)
 			(file-name-as-directory absolute-package-file-name)
@@ -823,7 +830,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (pcase-let*
       ((`(,name . (:core ,file-patterns :excludes ,excludes)) definition)
        (emacs-repo-root (expand-file-name "emacs"))
-       (package-root (expand-file-name name "packages"))
+       (package-root (file-name-as-directory
+		      (expand-file-name name "packages")))
        (default-directory package-root)
        (exclude-regexp
         (mapconcat #'identity
