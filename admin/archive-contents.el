@@ -775,8 +775,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
             (expand-file-name dest package-root))
            (absolute-core-file-name
             (expand-file-name source emacs-repo-root))
-           (directory
-	    (file-name-quote (file-name-directory absolute-package-file-name))))
+           (directory (file-name-directory absolute-package-file-name)))
+      (when (fboundp 'file-name-quote)  ;Not yet available on elpa.gnu.org
+        (setq directory (file-name-quote directory)))
       (unless (file-directory-p directory)
         (make-directory directory t))
       (condition-case nil
