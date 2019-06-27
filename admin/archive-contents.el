@@ -341,6 +341,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (error "File not found: %s" pkg-file))
     (archive--form-from-file-contents pkg-file)))
 
+(defun archive-refresh-pkg-file ()
+  ;; Note: Used via --batch by GNUmakefile rule.
+  (let* ((dir (directory-file-name default-directory))
+         (pkg (file-name-nondirectory dir)))
+    (archive--write-pkg-file dir pkg (archive--metadata dir pkg))))
+
 (defun archive--write-pkg-file (pkg-dir name metadata)
   ;; FIXME: Use package-generate-description-file!
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))

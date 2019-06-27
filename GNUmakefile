@@ -138,10 +138,10 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@echo 'Generating autoloads for $@'
-	@cd $(dir $@) && \
-	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el \
-	      --eval "(archive--refresh-pkg-file)" \
-	      --eval "(require 'package)" \
+	@cd $(dir $@) && 						   \
+	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el 		   \
+	      --eval "(archive-refresh-pkg-file)" 			   \
+	      --eval "(require 'package)" 				   \
 	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
 	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
 	                                          \"$$(pwd)\")"
