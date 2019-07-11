@@ -145,18 +145,38 @@ Currently only refreshes the ChangeLog files."
             (when (file-directory-p pkg)
               (archive--make-changelog pkg (expand-file-name "packages/"
                                                              srcdir)))
-          (error (message "Error: %S" v)))))
+          (error (message
+		  "Error in archive-prepare-packages for package %S:\n  %S"
+                  pkg v)))))
     (write-region new-revno nil wit nil 'quiet)
     ;; Also update the ChangeLog of external packages.
     (let ((default-directory (expand-file-name "packages/")))
       (dolist (dir (directory-files "."))
         (and (not (member dir '("." "..")))
              (file-directory-p dir)
-             (let ((index (expand-file-name
-                           (concat "packages/" dir "/.git/index")
-                           srcdir))
-                   (cl (expand-file-name "ChangeLog" dir)))
-               (and (file-exists-p index)
+             (let* ((gitdir (expand-file-name
+                             (concat "packages/" dir "/.git")
+                             srcdir))
+                    (index (cond
+                            ((file-directory-p gitdir)
+                             (expand-file-name
+                              (concat "packages/" dir "/.git/index")
+                              srcdir))
+                            ((file-readable-p gitdir)
+                             (with-temp-buffer
+                               (insert-file-contents gitdir)
+                               (goto-char (point-min))
+                               (if (looking-at "gitdir:[ \t]*")
+                                   (progn
+                                     (delete-region (match-beginning 0)
+                                                    (match-end 0))
+                                     (expand-file-name "index" (buffer-string)))
+                                 (message "Can't find gitdir in %S" gitdir)
+                                 nil)))
+                            (t nil)))
+                    (cl (expand-file-name "ChangeLog" dir)))
+               (and index
+                    (file-exists-p index)
                     (or (not (file-exists-p cl))
                         (file-newer-than-file-p index cl))))
              (archive--make-changelog
@@ -184,30 +204,28 @@ PKG is the name of the package and DIR is the directory where it is."
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-	(if (not (looking-at ";;;.*---[ \t]*\\(.*?\\)[ \t]*\\(-\\*-.*-\\*-[ \t]*\\)?$"))
-            (error "Can't parse first line of %s" mainfile)
-          ;; Grab the other fields, which are not mandatory.
-          (let* ((description (match-string 1))
-                 (version
-                  (or (lm-header "package-version")
-                      (lm-header "version")
-                      (unless (equal pkg "org")
-                        (error "Missing `version' header"))))
-                 (_ (archive--version-to-list version)) ; Sanity check!
-                 (requires-str (lm-header "package-requires"))
-                 (pt (lm-header "package-type"))
-                 (simple (if pt (equal pt "simple") (= (length files) 1)))
-                 (keywords (lm-keywords-list))
-                 (url (or (lm-header "url")
-                          (format archive-default-url-format pkg)))
-                 (req
-                  (and requires-str
-                       (mapcar #'archive--convert-require
-                               (car (read-from-string requires-str))))))
-            (list simple version description req
-                  ;; extra parameters
-                  (list (cons :url url)
-                        (cons :keywords keywords)))))))
+        (let* ((pkg-desc (package-buffer-info))
+               (extras (package-desc-extras pkg-desc))
+               (version (package-desc-version pkg-desc))
+               (keywords (lm-keywords-list))
+               ;; (_ (archive--version-to-list version)) ; Sanity check!
+               (pt (lm-header "package-type"))
+               (simple (if pt (equal pt "simple") (= (length files) 1)))
+               (found-url (alist-get :url extras))
+               (found-keywords (alist-get :keywords extras)))
+
+          (when (and keywords (not found-keywords))
+            ;; Using an old package-buffer-info which doesn't include
+            ;; keywords.  Fix it by hand.
+            (push (cons :keywords keywords) extras))
+          (unless found-url
+            ;; Provide a good default URL.
+            (push (cons :url (format archive-default-url-format pkg)) extras))
+          (list simple
+		(package-version-join version)
+		(package-desc-summary pkg-desc)
+                (package-desc-reqs pkg-desc)
+                extras))))
      (t
       (error "Can't find main file %s file in %s" mainfile dir)))))
 
@@ -323,18 +341,20 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (error "File not found: %s" pkg-file))
     (archive--form-from-file-contents pkg-file)))
 
-(defun archive--refresh-pkg-file ()
+(defun archive-refresh-pkg-file ()
+  ;; Note: Used via --batch by GNUmakefile rule.
   (let* ((dir (directory-file-name default-directory))
          (pkg (file-name-nondirectory dir)))
     (archive--write-pkg-file dir pkg (archive--metadata dir pkg))))
 
 (defun archive--write-pkg-file (pkg-dir name metadata)
+  ;; FIXME: Use package-generate-description-file!
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
         (print-quoted t)
 	(print-length nil))
     (write-region
-     (concat (format ";; Generated package description from %s.el\n"
+     (concat (format ";; Generated package description from %s.el  -*- no-byte-compile: t -*-\n"
 		     name)
 	     (prin1-to-string
               (cl-destructuring-bind (version desc requires extras)
@@ -358,7 +378,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 ;;; Make the HTML pages for online browsing.
 
-(defun archive--html-header (title)
+(defun archive--html-header (title &optional header)
   (format "<!DOCTYPE HTML PUBLIC>
 <html>
     <head>
@@ -383,20 +403,18 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
             </div>
 
             <div class=\"container\">\n"
-          title title title))
+          title (or header title)))
 
 (defun archive--html-bytes-format (bytes) ;Aka memory-usage-format.
   (setq bytes (/ bytes 1024.0))
-  (let ((units '(;; "B"
-                 "kB" "MB" "GB" "TB")))
+  (let ((units '("KiB" "MiB" "GiB" "TiB")))
     (while (>= bytes 1024)
       (setq bytes (/ bytes 1024.0))
       (setq units (cdr units)))
     (cond
-     ;; ((integerp bytes) (format "%4d%s" bytes (car units)))
-     ((>= bytes 100) (format "%4.0f%s" bytes (car units)))
-     ((>= bytes 10) (format "%4.1f%s" bytes (car units)))
-     (t (format "%4.2f%s" bytes (car units))))))
+     ((>= bytes 100) (format "%4.0f&nbsp;%s" bytes (car units)))
+     ((>= bytes 10) (format "%4.1f&nbsp;%s" bytes (car units)))
+     (t (format "%4.2f&nbsp;%s" bytes (car units))))))
 
 (defun archive--get-prop (prop name srcdir mainsrcfile)
   (let ((kprop (intern (format ":%s" (downcase prop)))))
@@ -497,7 +515,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
          (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
-      (insert (archive--html-header (format "GNU ELPA - %s" name)))
+      (insert (archive--html-header
+               (format "GNU ELPA - %s" name)
+               (format "<a href=\"index.html\">GNU ELPA</a> - %s" name)))
       (insert (format "<h2 class=\"package\">%s</h2>" name))
       (insert "<dl>")
       (insert (format "<dt>Description</dt><dd>%s</dd>\n" (archive--quote desc)))
@@ -536,7 +556,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                   "\n</pre>\n")))
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
-        (dolist (file files)
+        (dolist (file
+                 (sort files (lambda (f1 f2) (version< (car f2) (car f1)))))
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
@@ -676,7 +697,7 @@ Return non-nil if there's an \"emacs\" repository present."
     nil))
 
 (defun archive--cleanup-packages (externals-list with-core)
-  "Remove subdirectories of `packages/' that do not correspond to known packages.
+  "Remove unknown subdirectories of `packages/'.
 This is any subdirectory inside `packages/' that's not under
 version control nor listed in EXTERNALS-LIST.
 If WITH-CORE is non-nil, it means we manage :core packages as well."
@@ -738,7 +759,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                    (with-temp-buffer
                      (if (archive--use-worktree-p)
                          (archive-call t "git" "worktree" "add"
-                                       "-b" branch
+                                       "-B" branch
                                        name (concat "origin/" branch))
                        (archive-call t "git" "clone"
                                      "--reference" ".." "--single-branch"
@@ -759,17 +780,27 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   "Link file from SOURCE to DEST ensuring subdirectories."
   (unless (string-match-p exclude-regexp source)
     (let* ((absolute-package-file-name
-            (expand-file-name dest package-root))
+	    (if (equal "" dest)
+		;; Calling expand-file-name would remove the trailing / !
+		package-root
+              (expand-file-name dest package-root)))
            (absolute-core-file-name
             (expand-file-name source emacs-repo-root))
            (directory (file-name-directory absolute-package-file-name)))
+      (when (fboundp 'file-name-quote)  ;Not yet available on elpa.gnu.org
+        (setq directory (file-name-quote directory)))
       (unless (file-directory-p directory)
         (make-directory directory t))
-      (condition-case nil
+      (condition-case err
 	  (make-symbolic-link absolute-core-file-name
 			      absolute-package-file-name t)
 	(file-error
-	 (copy-file absolute-core-file-name absolute-package-file-name))))
+         (message "Error: can't symlink to %S from %S:\n  %S"
+                  absolute-core-file-name absolute-package-file-name err)
+	 (copy-file absolute-core-file-name
+		    (if (file-directory-p absolute-package-file-name)
+			(file-name-as-directory absolute-package-file-name)
+		      absolute-package-file-name)))))
     (message "  %s -> %s" source (if (archive--core-package-empty-dest-p dest)
                                      (file-name-nondirectory source)
                                    dest))))
@@ -805,7 +836,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (pcase-let*
       ((`(,name . (:core ,file-patterns :excludes ,excludes)) definition)
        (emacs-repo-root (expand-file-name "emacs"))
-       (package-root (expand-file-name name "packages"))
+       (package-root (file-name-as-directory
+		      (expand-file-name name "packages")))
        (default-directory package-root)
        (exclude-regexp
         (mapconcat #'identity

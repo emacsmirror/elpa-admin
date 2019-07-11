@@ -160,6 +160,12 @@ Furthermore we recommend the following:
 - Use lexical-binding if it all possible.
 - Try and fix the warnings emitted when compiling the package with a recent Emacs.
 
+The Copyright notice should specify "Free Software Foundation, Inc." as
+the copyright holder.  Ensure that all the code has the proper copyright:
+if it is not your own code, make sure the author has signed the relevant
+copyright papers (for non-trivial contributions), and indicate the author
+correctly in the commit.
+
 ** External branches
 
 The above instructions are enough to add regular packages, those that
@@ -228,15 +234,28 @@ In the `external' case, the copy of the code is not kept in `master` but in the
 `externals/<pkg-name>' branch in the `elpa.git' repository.
 
 To add a new externals package, first add this `elpa.git' repository as a
-new remote in your existing repository.  Then push a local branch to a
+new remote in your existing repository.
+
+Then push a local branch to a
 new remote branch in `elpa.git', named `externals/<pkgname>`.  For example:
 
    git push elpa <mybranch>:externals/<pkgname>
 
-Then edit the `externals-list' file as mentioned above, and push that
-change to `elpa's master branch.  After it's added to the `externals-list'
-file, the package can be maintained just by pushing changes to the
-`externals/<pkgname>` branch.
+For example, let's say that you want to add `realgud-ipdb` which is currently
+checked out in `$HOME/github/realgud-ipdb`:
+
+   cd $HOME/github/realgud-ipdb
+   git remote add elpa ${USER}@git.sv.gnu.org:/srv/git/emacs/elpa.git
+   git push elpa master:refs/heads/externals/realgud-ipdb
+
+
+Then edit the `externals-list' file as mentioned above, add the line
+
+   ("realgud-ipdb" :external "https://github.com/realgud/realgud-ipdb")
+
+and push that change to `elpa's master branch.  After it's added to
+the `externals-list' file, the package can be maintained just by
+pushing changes to the `externals/<pkgname>` branch.
 
 If you wish to check out all the external packages into the `packages'
 directory, you can run the command:
