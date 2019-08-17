@@ -26,7 +26,7 @@ check_copyrights:
 	        fquoted="$$(echo $$f|tr '|' '_')";		    \
 	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'   \
 	            -e '/Free Software Foundation/d'		    \
-	            -e "s|^\\(.*[Cc]opyright\\)|$$fquoted:\\1|p"    \
+	            -e "s|^\\(.*;.*[Cc]opyright\\)|$$fquoted:\\1|p" \
 	           "$$f";					    \
 	    done) | sort >$(CR_EXCEPTIONS)~
 	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
@@ -137,10 +137,9 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 
 $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
-	@echo 'Generating autoloads for $@'
+	@#echo 'Generating autoloads for $@'
 	@cd $(dir $@) && 						   \
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el 		   \
-	      --eval "(archive-refresh-pkg-file)" 			   \
 	      --eval "(require 'package)" 				   \
 	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
 	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
