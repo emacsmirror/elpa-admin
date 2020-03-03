@@ -55,18 +55,18 @@ process-archive:
 	cd $(ARCHIVE_TMP)/packages &&				\
 	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
 	           -f batch-make-archive
-	@cd $(ARCHIVE_TMP)/packages &&				\
-	  for pt in *; do					\
-	      if [ -f "$${pt}/.elpaignore" ]; then		\
-		  ignore="$${pt}/.elpaignore";			\
-	      else						\
-		  ignore="/dev/null";				\
-	      fi;						\
-	      if [ -d $$pt ]; then				\
-		  echo "Creating tarball $${pt}.tar" &&		\
-		  tar -chf $${pt}.tar $$pt --exclude-vcs -X "$$ignore";	\
-		  rm -rf $${pt}; 				\
-	      fi;						\
+	@cd $(ARCHIVE_TMP)/packages &&					\
+	  for pt in *; do						\
+	      if [ -f "$${pt}/.elpaignore" ]; then			\
+		  ignore="$${pt}/.elpaignore";				\
+	      else							\
+		  ignore="/dev/null";					\
+	      fi;							\
+	      if [ -d $$pt ]; then					\
+		  echo "Creating tarball $${pt}.tar" &&			\
+		  tar --exclude-vcs -X "$$ignore" -chf $${pt}.tar $$pt;	\
+		  rm -rf $${pt}; 					\
+	      fi;							\
 	  done
 	mkdir -p archive/packages
 	mv archive/packages archive/packages-old
