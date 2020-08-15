@@ -380,7 +380,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 (defun archive--html-header (title &optional header)
   (format "<!DOCTYPE HTML PUBLIC>
-<html>
+<html lang=\"en\" xml:lang=\"en\">
     <head>
         <title>%s</title>
         <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">
