@@ -299,6 +299,13 @@ packages/ directory.  You can then add that directory, e.g. with:
 
 ** To deploy the package repository as a remotely-accessible archive:
 
+The deployment process creates sibling directories, so start by creating
+a clean directory to work in:
+
+   mkdir elpa ; cd elpa
+
+The above step is optional, but recommended.
+
    git -c fetch.fsckObjects=false clone .../elpa
    (cd elpa; git clone .../emacs)    #If you want to generate :core packages.
    mkdir build
