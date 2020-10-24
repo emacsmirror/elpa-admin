@@ -156,8 +156,8 @@ and the web-pages from this source code:
 We do not impose a particular coding style on GNU ELPA packages, but of
 course we recommend the coding style used in Emacs's own source code.
 Furthermore we recommend the following:
-- Use `cl-lib` rather than `cl` if it all possible.
-- Use lexical-binding if it all possible.
+- Use `cl-lib` rather than `cl` if at all possible.
+- Use lexical-binding if at all possible.
 - Try and fix the warnings emitted when compiling the package with a recent Emacs.
 
 The Copyright notice should specify "Free Software Foundation, Inc." as
