@@ -31,6 +31,14 @@ check_copyrights:
 	    done) | sort >$(CR_EXCEPTIONS)~
 	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
 
+build/%:
+	$(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
+	         -f batch-make-one-package $*
+
+build-all:
+	$(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
+	         -f batch-make-all-packages
+
 ## Deploy the package archive to archive/, with packages in
 ## archive/packages/:
 archive: archive-tmp
@@ -162,7 +170,7 @@ included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
 # 	                                packages/*/*/*/*/*.el))
 els := $(call FILTER-nonsrc, $(included_els))
 naive_elcs := $(patsubst %.el, %.elc, $(els))
-current_elcs := $(shell find packages -name '*.elc' -print)
+current_elcs := $(shell find . -name '*.elc' -print)
 
 extra_els := $(call SET-diff, $(els), $(patsubst %.elc, %.el, $(current_elcs)))
 nbc_els := $(foreach el, $(extra_els), \

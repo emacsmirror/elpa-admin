@@ -1,6 +1,6 @@
 ;;; archive-contents.el --- Auto-generate an Emacs Lisp package archive.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2019  Free Software Foundation, Inc
+;; Copyright (C) 2011-2020  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -26,8 +26,20 @@
 (require 'package)
 (require 'pcase)
 
-(defconst archive-contents-subdirectory-regexp
-  "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)")
+
+(defconst archive--release-subdir "archive/"
+  "Subdirectory where the ELPA release files (tarballs, ...) will be placed.")
+(defconst archive--devel-subdir "archive-devel/"
+  "Subdirectory where the ELPA bleeding edge files (tarballs, ...) will be placed.")
+(defconst archive--name "NonGNU")
+(defconst archive--gitrepo "emacs/nongnu.git")
+(defconst archive--url "http://elpa.gnu.org/nongnu/")
+
+
+
+(defvar archive--debug nil)
+(defun archive--message (&rest args)
+  (when archive--debug (apply #'message args)))
 
 (defconst archive-re-no-dot "\\`\\([^.]\\|\\.\\([^.]\\|\\..\\)\\).*"
   "Regular expression matching all files except \".\" and \"..\".")
@@ -99,7 +111,210 @@ Delete backup files also."
       (pp (nreverse packages) (current-buffer))
       (write-region nil nil "archive-contents"))))
 
-(defun archive-call (destination program &rest args)
+(defun archive--update-archive-contents (pkg-desc dir)
+  "Update the `archive-contents' file in DIR with new package PKG-DESC."
+  (let* ((filename (expand-file-name "archive-contents" dir))
+         (ac (if (file-exists-p filename)
+                 (archive--form-from-file-contents filename)
+               '(1))))
+    (archive--message "current AC: %S" ac)
+    (setf (alist-get (car pkg-desc) (cdr ac)) (cdr pkg-desc))
+    (setf (cdr ac) (sort (cdr ac)
+                         (lambda (x y)
+                           (string-lessp (symbol-name (car x)) (symbol-name (car y))))))
+    (archive--message "new AC: %S" ac)
+    (with-temp-buffer
+      (pp ac (current-buffer))
+      (write-region nil nil filename)
+      (let ((default-directory (expand-file-name dir)))
+        (archive--html-make-index (cdr ac))))))
+
+(defun archive--get-release-revision (dir pkgname &optional vers version-map)
+  "Get the REVISION that corresponds to current release.
+This is either found from VERS in VERSION-MAP or by looking at the last
+commit which modified the \"Version:\" pseudo header."
+  (while (and version-map
+              (not (member vers (car version-map))))
+    (pop version-map))
+  (or (nth 2 (car version-map))
+      (let* ((default-directory (archive--dirname dir))
+             (release-rev
+              (with-temp-buffer
+                (if (zerop
+                     (archive--call
+                      (current-buffer)
+                      "git" "log" "-n1" "--oneline" "--no-patch"
+                      "--pretty=format:%H"
+                      "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                                   pkgname ".el")))
+                    (buffer-string)
+                  (cons 'error (buffer-string))))))
+        (if (stringp release-rev)
+            (progn
+              (archive--message "Found release rev: %S" release-rev)
+              release-rev)
+          (archive--message "Can't find release rev: %s" (cdr release-rev))
+          nil))))
+
+(defun archive--select-revision (dir pkgname rev)
+  "Checkout revision REV in DIR of PKGNAME."
+  (let ((cur-rev (vc-working-revision
+                  (expand-file-name (concat pkgname ".el") dir))))
+    (if (equal rev cur-rev)
+        (archive--message "Current revision is already desired revision!")
+      (with-temp-buffer
+        (let ((default-directory (archive--dirname dir)))
+          (archive--call (current-buffer) "git" "status" "--porcelain")
+          (if (not (zerop (buffer-size)))
+              (error "git-status not clean:\n%s" (buffer-string))
+            (archive--call (current-buffer) "git" "reset" "--merge" rev)
+            (archive--message "Reverted to release revision %s\n%s"
+                              rev (buffer-string))))))))
+
+(defun archive--make-one-tarball (tarball dir pkgname metadata
+                                          &optional revision)
+  "Create file TARBALL for PKGNAME if not done yet."
+  (archive--message "Building tarball %s..." tarball)
+  (if (file-readable-p tarball)
+      (archive--message "Tarball %s already built!" tarball)
+    (let* ((destdir (file-name-directory tarball))
+           (_ (unless (file-directory-p destdir) (make-directory destdir)))
+           (vers (nth 1 metadata))
+           (elpaignore (expand-file-name ".elpaignore" dir))
+           (re (concat "\\`" (regexp-quote pkgname) "-\\(.*\\)\\.tar"))
+           (oldtarballs
+            (mapcar
+             (lambda (file)
+               (string-match re file)
+               (cons (match-string 1 file) file))
+             (directory-files destdir nil re))))
+      (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
+      (when revision (archive--select-revision dir pkgname revision))
+      ;; FIXME: Build Info files and corresponding `dir' file.
+      (archive--write-pkg-file dir pkgname metadata)
+      ;; FIXME: Allow renaming files or selecting a subset of the files!
+      (archive--call nil "tar"
+                     "--exclude-vcs"
+                     "-X" (if (file-readable-p elpaignore)
+                              elpaignore "/dev/null")
+                     "--transform"
+                     (format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
+                     "-cf" tarball
+                     (concat "packages/" pkgname))
+      (let* ((pkgdesc
+              ;; FIXME: `archive--write-pkg-file' wrote the metadata to
+              ;; <pkg>-pkg.el and then `archive--process-multi-file-package'
+              ;; reads it back.  We could/should skip the middle man.
+              (archive--process-multi-file-package
+               dir pkgname 'dont-rename)))
+        (archive--message "%s: %S" pkgname pkgdesc)
+        (archive--update-archive-contents pkgdesc destdir)
+        ;; FIXME: Send email announcement!
+        (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+          (when (file-exists-p link) (delete-file link))
+          (make-symbolic-link (file-name-nondirectory tarball) link))
+        (dolist (oldtarball oldtarballs)
+          ;; lzip compress oldtarballs.
+          (let ((file (cdr oldtarball)))
+            (when (string-match "\\.tar\\'" file)
+              (archive--call nil "lzip" (expand-file-name file destdir))
+              (setf (cdr oldtarball) (concat file ".lz")))))
+        (let* ((default-directory (expand-file-name destdir)))
+          ;; Apparently this also creates the <pkg>-readme.txt file.
+          (archive--html-make-pkg pkgdesc
+                                  `((,vers . ,(file-name-nondirectory tarball))
+                                    . ,oldtarballs)
+                                  dir))
+        (message "Built new package %s!" tarball)
+        ))))
+
+(defun archive--get-devel-version (dir)
+  "Compute the date-based pseudo-version used for devel builds."
+  (let* ((default-directory (archive--dirname dir))
+         (gitdate
+          (with-temp-buffer
+            (archive--call (current-buffer)
+                           "git" "show" "--pretty=format:%cI" "--no-patch")
+            (buffer-string)))
+         (verdate
+          ;; Convert Git's date into something that looks like a version number.
+          ;; While we're at it, convert Git's date into its UTC equivalent,
+          ;; to try and make sure time-versions are monotone.
+          (let ((process-environment (cons "TZ=UTC" process-environment)))
+            (with-temp-buffer
+              (archive--call (current-buffer)
+                             "date" "-d" gitdate "+%Y%m%d.%H%M%S")
+              (buffer-string)))))
+    ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
+    (replace-regexp-in-string "\\(?:\\`\\|[^0-9]\\)0+" "\\1"
+                              ;; Remove trailing newline or anything untoward.
+                              (replace-regexp-in-string "[^.0-9]+" ""
+                                                        verdate))))
+
+(defun archive--get-package-spec (pkgname)
+  "Retrieve the property list for PKGNAME from `externals-list'."
+  (let* ((specs (archive--form-from-file-contents "externals-list"))
+         (spec (assoc pkgname specs)))
+    (if (null spec)
+        (error "Unknown package `%S`" pkgname)
+      (cdr spec))))
+
+(defun batch-make-all-packages (&rest _)
+  "Check all the packages and build the relevant new tarballs."
+  (let* ((specs (archive--form-from-file-contents "externals-list")))
+    (dolist (spec specs)
+      (with-demoted-errors "Build error: %S"
+        (archive--make-one-package (format "%s" (car spec)))))))
+
+(defun batch-make-one-package (&rest _)
+  "Build the new tarballs (if needed) for one particular package,"
+  (archive--make-one-package (pop command-line-args-left)))
+
+(defun archive--make-one-package (pkgname)
+  "Build the new tarballs (if needed) for PKGNAME."
+  (let* ((dir (expand-file-name pkgname "packages")))
+    (archive--message "Checking package %s for updates..." pkgname)
+    (archive--external-package-sync pkgname)
+    (let* ((pkg-spec (archive--get-package-spec pkgname))
+           (_ (archive--message "pkg-spec for %s: %S" pkgname pkg-spec))
+           (version-map (plist-get pkg-spec :version-map))
+           (metadata (archive--metadata dir pkgname version-map))
+           (vers (nth 1 metadata)))
+      (archive--message "metadata = %S" metadata)
+      (if (null metadata)
+          (error "No metadata found for package: %s" pkgname)
+        ;; Disregard the simple/multi distinction.  This might have been useful
+        ;; in a distant past, but nowadays it's just unneeded extra complexity.
+        (setf (car metadata) nil)
+        ;; First, try and build the devel tarball
+        ;; Do it before building the release tarball, because building
+        ;; the release tarball may revert to some older commit.
+        (let* ((date-version (archive--get-devel-version dir))
+               ;; Add a ".0." so that when the version number goes from
+               ;; NN.MM to NN.MM.1 we don't end up with the devel build
+               ;; of NN.MM comparing as more recent than NN.MM.1.
+               (devel-vers (concat vers ".0." date-version))
+               (tarball (concat archive--devel-subdir
+                                (format "%s-%s.tar" pkgname devel-vers)))
+               (archive--name (concat archive--name "-devel")))
+          (archive--make-one-tarball tarball
+                                     dir pkgname
+                                     `(nil ,devel-vers . ,(nthcdr 2 metadata))))
+        ;; Try and build the latest release tarball.
+        (cond
+         ((or (equal vers "0")
+              (let ((dont-release (plist-get pkg-spec :dont-release)))
+                (when dont-release (string-match dont-release vers))))
+          (archive--message "Package %s not released yet!" pkgname))
+         (t
+          (let ((tarball (concat archive--release-subdir
+                                 (format "%s-%s.tar" pkgname vers))))
+            (archive--make-one-tarball tarball
+                                       dir pkgname metadata
+                                       (archive--get-release-revision
+                                        dir pkgname vers version-map)))))))))
+
+(defun archive--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
 The INFILE and DISPLAY arguments are fixed as nil."
   (apply #'call-process program nil destination nil args))
@@ -122,7 +337,7 @@ Currently only refreshes the ChangeLog files."
          (new-revno
           (or (with-temp-buffer
                 (let ((default-directory srcdir))
-                  (archive-call '(t) "git" "rev-parse" "HEAD")
+                  (archive--call '(t) "git" "rev-parse" "HEAD")
                   (goto-char (point-min))
                   (when (looking-at (concat archive--revno-re "$"))
                     (match-string 0))))
@@ -131,7 +346,7 @@ Currently only refreshes the ChangeLog files."
     (unless (equal prevno new-revno)
       (with-temp-buffer
         (let ((default-directory srcdir))
-          (unless (zerop (archive-call '(t) "git" "diff"
+          (unless (zerop (archive--call '(t) "git" "diff"
                                        "--dirstat=cumulative,0"
                                        prevno))
             (error "Error signaled by git diff --dirstat %d" prevno)))
@@ -183,10 +398,18 @@ Currently only refreshes the ChangeLog files."
               dir (expand-file-name "packages/" srcdir)))))
     ))
 
-(defconst archive-default-url-format "http://elpa.gnu.org/packages/%s.html")
+(defconst archive-default-url-format (concat archive--url "%s.html"))
 (defconst archive-default-url-re (format archive-default-url-format ".*"))
 
-(defun archive--metadata (dir pkg)
+
+(defun archive--override-version (version-map orig-fun header)
+  (let ((str (funcall orig-fun header)))
+    (or (if (or (equal header "version")
+                (and str (equal header "package-version")))
+            (cadr (assoc str version-map)))
+        str)))
+
+(defun archive--metadata (dir pkg &optional version-map)
   "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS),
 where SIMPLE is non-nil if the package is simple;
 VERSION is the version string of the simple package;
@@ -204,7 +427,17 @@ PKG is the name of the package and DIR is the directory where it is."
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-        (let* ((pkg-desc (package-buffer-info))
+        (let* ((pkg-desc
+                (unwind-protect
+                    (progn
+                      (when version-map
+                        (advice-add 'lm-header :around
+                                    (apply-partially
+                                     #'archive--override-version
+                                     version-map)))
+                      (package-buffer-info))
+                  (advice-remove 'lm-header
+                                 #'archive--override-version)))
                (extras (package-desc-extras pkg-desc))
                (version (package-desc-version pkg-desc))
                (keywords (lm-keywords-list))
@@ -272,7 +505,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
         (let ((old-md5 (md5 (current-buffer))))
           (erase-buffer)
           (let ((default-directory (archive--dirname dir srcdir)))
-            (archive-call (current-buffer) ; hmm, why not use ‘t’ here? --ttn
+            (archive--call (current-buffer) ; hmm, why not use ‘t’ here? --ttn
                           "git" "log" "--date=short"
                           "--format=%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n"
                           "."))
@@ -306,7 +539,7 @@ Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
       (setq plist (cddr plist)))
     alist))
 
-(defun archive--process-multi-file-package (dir pkg)
+(defun archive--process-multi-file-package (dir pkg &optional dont-rename)
   "Deploy the contents of DIR into the archive as a multi-file package.
 Rename DIR/ to PKG-VERS/, and return the descriptor."
   (let* ((exp (archive--multi-file-package-def dir pkg))
@@ -321,7 +554,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (unless (equal (nth 1 exp) pkg)
       (error (format "Package name %s doesn't match file name %s"
 		     (nth 1 exp) pkg)))
-    (rename-file dir (concat pkg "-" vers))
+    (unless dont-rename (rename-file dir (concat pkg "-" vers)))
     (cons (intern pkg) (vector (archive--version-to-list vers)
                                req (nth 3 exp) 'tar extras))))
 
@@ -422,8 +655,11 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      (let ((pkgdescfile (expand-file-name (format "%s-pkg.el" name)
                                           srcdir)))
        (when (file-readable-p pkgdescfile)
-         (let ((desc (archive--form-from-file-contents pkgdescfile)))
-           (plist-get (cdr desc) kprop))))
+         (let* ((desc (archive--form-from-file-contents pkgdescfile))
+                (val-exp (plist-get (cdr desc) kprop)))
+           (if (eq 'quote (car-safe val-exp))
+               (cadr val-exp)
+             val-exp))))
      (when (file-readable-p mainsrcfile)
        (with-temp-buffer
          (insert-file-contents mainsrcfile)
@@ -494,12 +730,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                           ,(if (listp files)
                                "gitweb/?p=emacs.git;a=tree;f="
                              "gitweb/?p=emacs.git;a=blob;f="))))
-            (mapcar (lambda (s) (concat s name))
+            (mapcar (lambda (s) (format s archive--gitrepo name))
                     (if (eq (nth 1 extern-desc) :external)
-                        '("cgit/emacs/elpa.git/?h=externals/"
-                          "gitweb/?p=emacs/elpa.git;a=shortlog;h=refs/heads/externals/")
-                      '("cgit/emacs/elpa.git/tree/packages/"
-                        "gitweb/?p=emacs/elpa.git;a=tree;f=packages/"))))))
+                        '("cgit/%s/?h=externals/%s"
+                          "gitweb/?p=%s;a=shortlog;h=refs/heads/externals/%s")
+                      '("cgit/%s/tree/packages/%s"
+                        "gitweb/?p=%s;a=tree;f=packages/%s"))))))
     (insert (format
              (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
@@ -508,22 +744,24 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
              (concat git-sv (nth 1 urls))
              'Gitweb))))
 
-(defun archive--html-make-pkg (pkg files)
+(defun archive--html-make-pkg (pkg files &optional srcdir)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
-         (srcdir (expand-file-name name "../../build/packages"))
+         (srcdir (or srcdir
+                     (expand-file-name name "../../build/packages")))
          (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
          (desc (aref (cdr pkg) 2)))
     (with-temp-buffer
       (insert (archive--html-header
-               (format "GNU ELPA - %s" name)
-               (format "<a href=\"index.html\">GNU ELPA</a> - %s" name)))
+               (format "%s ELPA - %s" archive--name name)
+               (format "<a href=\"index.html\">%s ELPA</a> - %s"
+                       archive--name name)))
       (insert (format "<h2 class=\"package\">%s</h2>" name))
       (insert "<dl>")
       (insert (format "<dt>Description</dt><dd>%s</dd>\n" (archive--quote desc)))
       (if (zerop (length latest))
           (insert "<dd>This package "
-                  (if files "is not in GNU ELPA any more"
+                  (if files (concat "is not in " archive--name " ELPA any more")
                     "has not been released yet")
                   ".</dd>\n")
         (let* ((file (cdr (assoc latest files)))
@@ -534,6 +772,10 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                           (archive--html-bytes-format (nth 7 attrs))))))
       (let ((maint (archive--get-prop "Maintainer" name srcdir mainsrcfile)))
         (when maint
+          (when (consp maint)
+            (archive--message "maint=%S" maint)
+            (setq maint (concat (if (car maint) (concat (car maint) " "))
+                                "<" (cdr maint) ">")))
           (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (archive--quote maint)))))
       (archive--insert-repolinks
        name srcdir mainsrcfile
@@ -575,7 +817,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 (defun archive--html-make-index (pkgs)
   (with-temp-buffer
-    (insert (archive--html-header "GNU ELPA Packages"))
+    (insert (archive--html-header (concat archive--name " ELPA Packages")))
     (insert "<table>\n")
     (insert "<tr><th>Package</th><th>Version</th><th>Description</th></tr>\n")
     (dolist (pkg pkgs)
@@ -647,15 +889,16 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (cond
        ((file-directory-p ".git")
         (message "Running git pull in %S" default-directory)
-        (archive-call t "git" "pull"))
+        (archive--call t "git" "pull"))
        ((file-exists-p ".git")
-        (unless (with-temp-buffer
-                  (archive-call t "git" "status" "--branch" "--porcelain=2")
-                  (goto-char (point-min))
-                  ;; Nothing to pull (nor push, actually).
-                  (search-forward "\n# branch.ab +0 -0" nil t))
+        (if (with-temp-buffer
+              (archive--call t "git" "status" "--branch" "--porcelain=2")
+              (goto-char (point-min))
+              ;; Nothing to pull (nor push, actually).
+              (search-forward "\n# branch.ab +0 -0" nil t))
+            (message "%s up-to-date" dirname)
           (message "Updating worktree in %S" default-directory)
-          (archive-call t "git" "merge")))
+          (archive--call t "git" "merge")))
        (t (error "No .git in %S" default-directory)))
       (unless (and (eobp) (bobp))
         (message "Updated %s:%s%s" dirname
@@ -701,45 +944,46 @@ Return non-nil if there's an \"emacs\" repository present."
 This is any subdirectory inside `packages/' that's not under
 version control nor listed in EXTERNALS-LIST.
 If WITH-CORE is non-nil, it means we manage :core packages as well."
-  (let ((default-directory (expand-file-name "packages/")))
-    (dolist (dir (directory-files "."))
-      (cond
-       ((file-symlink-p dir)
-        ;; There are normally no such thing, but the user may elect to
-        ;; add symlinks to other projects.  If so, update them, as if they
-        ;; were "externals".
-        (when (file-directory-p (expand-file-name ".git" dir))
-          (archive--pull dir)))
-       ((or (not (file-directory-p dir)) )
-        ;; We only add/remove plain directories in elpa/packages (not
-        ;; symlinks).
-        nil)
-       ((member dir '("." "..")) nil)
-       ((assoc dir externals-list) nil)
-       ((file-directory-p (expand-file-name (format "%s/.git" dir)))
-        (let ((status
-               (with-temp-buffer
-                 (let ((default-directory (archive--dirname dir)))
-                   (archive-call t "git" "status" "--porcelain")
-                   (buffer-string)))))
-          (if (zerop (length status))
-              (progn (delete-directory dir 'recursive t)
-                     (message "Deleted all of %s" dir))
-            (message "Keeping leftover unclean %s:\n%s" dir status))))
-       ;; Check if `dir' is under version control.
-       ((and with-core
-             (not (zerop (archive-call nil "git" "ls-files"
-                                       "--error-unmatch" dir))))
-        ;; Not under version control.  Check if it only contains
-        ;; symlinks and generated files, in which case it is probably
-        ;; a leftover :core package that can safely be deleted.
-        ;; (let ((file (archive--find-non-trivial-file dir)))
-        ;;   (if file
-        ;;       (message "Keeping %s for non-trivial file \"%s\"" dir file)
-        ;;     (progn
-        ;;       (message "Deleted untracked package %s" dir)
-        ;;       (delete-directory dir 'recursive t))))
-        )))))
+  (when (file-directory-p (expand-file-name "packages/"))
+    (let ((default-directory (expand-file-name "packages/")))
+      (dolist (dir (directory-files "."))
+        (cond
+         ((file-symlink-p dir)
+          ;; There are normally no such thing, but the user may elect to
+          ;; add symlinks to other projects.  If so, update them, as if they
+          ;; were "externals".
+          (when (file-directory-p (expand-file-name ".git" dir))
+            (archive--pull dir)))
+         ((or (not (file-directory-p dir)) )
+          ;; We only add/remove plain directories in elpa/packages (not
+          ;; symlinks).
+          nil)
+         ((member dir '("." "..")) nil)
+         ((assoc dir externals-list) nil)
+         ((file-directory-p (expand-file-name (format "%s/.git" dir)))
+          (let ((status
+                 (with-temp-buffer
+                   (let ((default-directory (archive--dirname dir)))
+                     (archive--call t "git" "status" "--porcelain")
+                     (buffer-string)))))
+            (if (zerop (length status))
+                (progn (delete-directory dir 'recursive t)
+                       (message "Deleted all of %s" dir))
+              (message "Keeping leftover unclean %s:\n%s" dir status))))
+         ;; Check if `dir' is under version control.
+         ((and with-core
+               (not (zerop (archive--call nil "git" "ls-files"
+                                         "--error-unmatch" dir))))
+          ;; Not under version control.  Check if it only contains
+          ;; symlinks and generated files, in which case it is probably
+          ;; a leftover :core package that can safely be deleted.
+          ;; (let ((file (archive--find-non-trivial-file dir)))
+          ;;   (if file
+          ;;       (message "Keeping %s for non-trivial file \"%s\"" dir file)
+          ;;     (progn
+          ;;       (message "Deleted untracked package %s" dir)
+          ;;       (delete-directory dir 'recursive t))))
+          ))))))
 
 (defvar archive--use-worktree nil)
 (defun archive--use-worktree-p ()
@@ -747,21 +991,23 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (setq archive--use-worktree
           (list
            (ignore-errors
-             (zerop (call-process "git" nil nil nil "worktree" "list"))))))
+             (zerop (archive--call nil "git" "worktree" "list"))))))
   (car archive--use-worktree))
 
 (defun archive--external-package-sync (name)
   "Sync external package named NAME."
   (let ((default-directory (expand-file-name "packages/")))
+    (unless (file-directory-p default-directory)
+      (make-directory default-directory))
     (cond ((not (file-exists-p name))
            (let* ((branch (concat "externals/" name))
                   (output
                    (with-temp-buffer
                      (if (archive--use-worktree-p)
-                         (archive-call t "git" "worktree" "add"
+                         (archive--call t "git" "worktree" "add"
                                        "-B" branch
                                        name (concat "origin/" branch))
-                       (archive-call t "git" "clone"
+                       (archive--call t "git" "clone"
                                      "--reference" ".." "--single-branch"
                                      "--branch" branch
                                      archive--elpa-git-url name))
@@ -836,8 +1082,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (pcase-let*
       ((`(,name . (:core ,file-patterns :excludes ,excludes)) definition)
        (emacs-repo-root (expand-file-name "emacs"))
-       (package-root (file-name-as-directory
-		      (expand-file-name name "packages")))
+       (package-root (archive--dirname name "packages"))
        (default-directory package-root)
        (exclude-regexp
         (mapconcat #'identity
