@@ -181,7 +181,8 @@ commit which modified the \"Version:\" pseudo header."
            (_ (unless (file-directory-p destdir) (make-directory destdir)))
            (vers (nth 1 metadata))
            (elpaignore (expand-file-name ".elpaignore" dir))
-           (re (concat "\\`" (regexp-quote pkgname) "-\\(.*\\)\\.tar"))
+           (re (concat "\\`" (regexp-quote pkgname)
+                       "-\\(.*\\)\\.tar\\(\\.[a-z]*z\\)?"))
            (oldtarballs
             (mapcar
              (lambda (file)
