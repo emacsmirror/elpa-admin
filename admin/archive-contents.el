@@ -140,7 +140,7 @@ commit which modified the \"Version:\" pseudo header."
       (let* ((default-directory (archive--dirname dir))
              (release-rev
               (with-temp-buffer
-                (if (zerop
+                (if (equal 0         ;Don't signal an error if call errors out.
                      (archive--call
                       (current-buffer)
                       "git" "log" "-n1" "--oneline" "--no-patch"
@@ -172,7 +172,7 @@ commit which modified the \"Version:\" pseudo header."
                               rev (buffer-string))))))))
 
 (defun archive--make-one-tarball (tarball dir pkgname metadata
-                                          &optional revision)
+                                          &optional revision-function)
   "Create file TARBALL for PKGNAME if not done yet."
   (archive--message "Building tarball %s..." tarball)
   (if (file-readable-p tarball)
@@ -190,7 +190,8 @@ commit which modified the \"Version:\" pseudo header."
                (cons (match-string 1 file) file))
              (directory-files destdir nil re))))
       (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
-      (when revision (archive--select-revision dir pkgname revision))
+      (when revision-function
+        (archive--select-revision dir pkgname (funcall revision-function)))
       ;; FIXME: Build Info files and corresponding `dir' file.
       (archive--write-pkg-file dir pkgname metadata)
       ;; FIXME: Allow renaming files or selecting a subset of the files!
@@ -312,8 +313,9 @@ commit which modified the \"Version:\" pseudo header."
                                  (format "%s-%s.tar" pkgname vers))))
             (archive--make-one-tarball tarball
                                        dir pkgname metadata
-                                       (archive--get-release-revision
-                                        dir pkgname vers version-map)))))))))
+                                       (lambda ()
+                                         (archive--get-release-revision
+                                          dir pkgname vers version-map))))))))))
 
 (defun archive--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
