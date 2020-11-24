@@ -1,0 +1,113 @@
+* Guidance for accepting packages
+
+** We don't ask for copyright assignments to include packages in NonGNU ELPA.
+
+** The Emacs maintainers will decide what packages to put in NonGNU ELPA.
+
+** If an ELisp package follows the rules below,
+  we can add it to NonGNU ELPA if we want to.  If the code doesn't
+  follow them, we can change the code to follow them.  We may also
+  change the code in NonGNU ELPA for other reasons, technical or not.
+  After all, it is free software.
+
+** For practical reasons, we usually refrain from making local changes
+  to NonGNU ELPA packages, in order to simplify integration of future
+  changes from the upstream version.
+
+** The package's developers don't have an obligation to maintain the
+  NonGNU ELPA version, but we would like to invite them to do that, or
+  to cooperate and coordinate with us in doing that.  If you are the
+  developer of a NonGNU ELPA package, or a package that might be added
+  to NonGNU ELPA, and you're interested in maintaining it there, let's
+  discuss it.
+
+** Rules for a package to be acceptable in NonGNU ELPA
+
+*** A NonGNU ELPA package must display its copyright notices and license
+   notices clearly on each nontrivial file.  The notices do not have to
+   follow the FSF conventions about their presentation.
+
+   Software files need to carry a free license that is compatible with the
+   GNU GPL version 3-or-later.  Which licenses qualify is stated in
+   https://gnu.org/licenses/license-list.html.
+
+   Manuals need to be under a free license that is compatible
+   with the GNU FDL version 1.4-or-later.  Which licenses qualify is
+   stated in https://gnu.org/licenses/license-list.html.
+
+   All other documentation files, for users (manuals, help files, man
+   pages, and so on), and for developers (program logic, change logs,
+   and so on), can be under a license acceptable for manuals or a
+   license acceptable for software files (see above).  We can agree
+   with the package developers to include documentation published under
+   other free licenses.
+
+   Trivial files of just a few lines don't need to state a copyright or
+   a license.
+
+   Normally we don't include material other than software or
+   documentation, but we can agree with the developers to include
+   specific material.  If the material in question is an educational
+   resource, then it can have a license compatible with GNU FDL version
+   1.4 or one of the free Creative Commons licenses (CC-BY-SA, CC-BY or
+   CC-0), or another free license at our discretion.  If the material is
+   not an educational resource, it can instead be licensed under
+   CC-BY-ND.
+
+*** The package need not follow the GNU Coding Standards or the GNU
+   Maintainers Guide, except for a few specific points as stated below.
+
+*** The package must follow the rules in
+   https://www.gnu.org/prep/standards/, node References.  This means it
+   may not refer users to any nonfree software or nonfree
+   documentation, except as stated there.  Leading users to run a
+   program, and suggesting they run it, or depending on it to be
+   installed, are forms of referring users to it.
+
+*** Aside from packages obtained from GNU ELPA and NonGNU ELPA,
+   a package may not run code that it has fetched over the internet.
+
+   In particular, the package may install other packages in GNU ELPA and
+   NonGNU ELPA, but not any other software.
+
+   We will consider exceptions to that rule, but we will need to
+   consider them carefully, to make sure that the practices are
+   safe for Emacs users, not just in one package but when used in
+   many prackages.  Each time we approve such an exception, we will
+   say so in comments in the package, with an explanation of our reasoning.
+
+*** The package must deliver its full functionality and convenience on a
+   completely free platform based on the GNU operating system (in
+   practice, GNU/Linux), working exclusively with other free software.
+   Otherwise, it would act as an inducement to install nonfree systems
+   or other nonfree software, and that would work against our cause.
+
+   However, as an exception it is ok for a package to provide, on some
+   non-GNU operating systems, features that the rest of Emacs (plus GNU
+   ELPA and NonGNU ELPA) already supports on GNU.
+
+   This is a moral issue.  See https://www.gnu.org/prep/standards/,
+   node System Portability.  The reason for this rule is that at no
+   time, in no way, should a NonGNU ELPA package put users who defend
+   their freedom at a disadvantage compared with those who surrender
+   their freedom.
+
+*** The package may communicate with a class of remote services, either
+   using a standard interface or using an ad-hoc interface for each
+   service, or a combination, *provided* that these services' jobs
+   consist of either communication or lookup of published data.
+
+   The package may not use remote services to do the user's own
+   computational processing.  "Your own computational processing" means
+   anything you could _in principle_ do in your own computers by
+   installing and running suitable software, without communicating with
+   any other computers.
+
+*** A general Savannah rule about advertisements
+
+   In general, you may not advertise anything commercial with material
+   in the NonGNU ELPA package or this repositor.  However, as
+   exceptions, you can point people to commercial support offerings for
+   the package, and you can mention fan items that you sell directly to
+   the users.
+
