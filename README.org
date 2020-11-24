@@ -1,3 +1,28 @@
+* Building the archive
+
+To build the archive(s), all it takes is:
+
+    git clone .../nongnu.git
+
+which you presumably have done already if you're reading this file.
+And then
+
+    cd .../nongnu
+    make build-all
+
+This will build all the tarballs as well as the `archive-contents` file and
+put them into the `archive` and `archive-devel` subdirectories.
+If the archive exists already, it will only build those tarballs that are new.
+
+You can also (re)build a specific package [PKG] with:
+
+    make build/[PKG]
+
+If you want to force a rebuild of a tarball that was already built, you have
+to do:
+
+    rm archive/[PKG]-[VERSION].tar; make build/[PKG]
+
 * Guidance for accepting packages
 
 ** We don't ask for copyright assignments to include packages in NonGNU ELPA.
@@ -111,3 +136,27 @@
    the package, and you can mention fan items that you sell directly to
    the users.
 
+
+
+* Adding a package
+
+Once it is decided we want to add a [PKG], here's what it takes:
+
+- Fetch the upstream code with something like:
+
+      git fetch [PKGREMOTE]
+
+  Let's say the code is now in [PKGBRANCH].
+
+- Push that code to nongnu.git:
+
+      git push nongnu [PKGBRANCH]:refs/heads/externals/[PKG]
+
+- Add a corresponding entry to the file `externals-list`.
+
+- Make sure the resulting tarball looks good and works well.
+
+- Commit and push that change:
+
+      git commit -m 'New package [PKG]'
+      git push
