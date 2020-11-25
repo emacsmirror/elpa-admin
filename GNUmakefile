@@ -170,7 +170,7 @@ included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
 # 	                                packages/*/*/*/*/*.el))
 els := $(call FILTER-nonsrc, $(included_els))
 naive_elcs := $(patsubst %.el, %.elc, $(els))
-current_elcs := $(shell find . -name '*.elc' -print)
+current_elcs := $(shell find packages -name '*.elc' -print)
 
 extra_els := $(call SET-diff, $(els), $(patsubst %.elc, %.el, $(current_elcs)))
 nbc_els := $(foreach el, $(extra_els), \
@@ -201,11 +201,8 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 %-pkg.el: %.el
 	@echo 'Generating description file $@'
-	@$(EMACS) \
-	    --eval '(require (quote package))' \
-	    --eval '(setq b (find-file-noselect "$<"))' \
-	    --eval '(setq d (with-current-buffer b (package-buffer-info)))' \
-	    --eval '(package-generate-description-file d "$@")'
+	@$(EMACS) -l admin/archive-contents.el \
+	          -f batch-generate-description-file "$@"
 
 .PHONY: all-in-place
 # Use order-only prerequisites, so that autoloads are done first.

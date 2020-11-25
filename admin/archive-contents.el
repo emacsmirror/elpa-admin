@@ -612,6 +612,17 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      nil
      pkg-file)))
 
+(defun batch-generate-description-file (&rest _)
+  "(Re)build the <PKG>-pkg.el file for particular packages."
+  (while command-line-args-left
+    (let* ((file (pop command-line-args-left))
+           (dir (file-name-directory file))
+           (pkg (file-name-nondirectory (directory-file-name dir)))
+           (pkg-spec (archive--get-package-spec pkg))
+           (version-map (plist-get pkg-spec :version-map)))
+      (archive--write-pkg-file dir pkg
+                               (archive--metadata dir pkg version-map)))))
+
 ;;; Make the HTML pages for online browsing.
 
 (defun archive--html-header (title &optional header)
