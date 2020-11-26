@@ -23,6 +23,21 @@ to do:
 
     rm archive/[PKG]-[VERSION].tar; make build/[PKG]
 
+* Using packages in-place
+
+The packages can be installed and used in-place.  First you need to make
+sure the package(s) you can about are placed in the `packages` subdirectory,
+e.g. with `make externals`, and then you can to add that `.../packages`
+to your `package-directory-list`.  And once that is done you can do:
+
+    make packages/[PKG]
+
+to create the [PKG]-pkg.el and [PKG]-autoloads.el file as well as compile
+all the ELisp files in that package.  You can also do that on all the
+packages with:
+
+    make
+
 * Guidance for accepting packages
 
 ** We don't ask for copyright assignments to include packages in NonGNU ELPA.
