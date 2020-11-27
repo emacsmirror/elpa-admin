@@ -219,6 +219,24 @@ $(1): $(filter $(1)/%, $(elcs))
 endef
 $(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
 
+##### Fetching updates from upstream
+
+.PHONY: fetch/%
+fetch/%:
+	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-show "$*"
+
+.PHONY: fetch-all
+fetch-all:
+	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-show "-"
+
+.PHONY: sync/%
+sync/%:
+	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-push "$*"
+
+.PHONY: sync-all
+sync-all:
+	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-push "-"
+
 
 
 ############### Rules to prepare the externals ################################

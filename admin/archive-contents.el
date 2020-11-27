@@ -211,6 +211,17 @@ commit which modified the \"Version:\" pseudo header."
                dir pkgname 'dont-rename)))
         (archive--message "%s: %S" pkgname pkgdesc)
         (archive--update-archive-contents pkgdesc destdir)
+        (when (and nil revision-function) ;FIXME: Circumstantial evidence.
+          ;; Various problems:
+          ;; - If "make build/foo" is used by the developers in order to test
+          ;;   the build of their package, they'll end up with those spurious
+          ;;   tags which may end up spreading to unintended places.
+          ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
+          ;;   because that account can't push to git.sv.gnu.org anyway.
+          (let ((default-directory (archive--dirname dir)))
+            (archive--call nil "git" "tag" "-f"
+                           (format "%s-release/%s-%s"
+                                   archive--name pkgname vers))))
         ;; FIXME: Send email announcement!
         (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
           (when (file-exists-p link) (delete-file link))
@@ -1159,6 +1170,81 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                          (sort pkgs #'string<)
                          ""))
       (save-buffer))))
+
+;;; Fetch updates from upstream
+
+(defun archive--branch (pkg-spec)
+  (or (plist-get (cdr pkg-spec) :branch) "master"))
+
+(defun archive--urtb (pkg-spec)
+  "Return our upstream remote tracking branch for PKG-SPEC."
+  (format "refs/remotes/upstream/%s/%s" (car pkg-spec)
+          (archive--branch pkg-spec)))
+
+(defun archive--fetch (pkg-spec &optional k)
+  (let* ((pkg (car pkg-spec))
+         (url (plist-get (cdr pkg-spec) :external))
+         (branch (archive--branch pkg-spec))
+         (default-directory (archive--dirname pkg "packages"))
+         (urtb (archive--urtb pkg-spec))
+         (refspec (format "refs/heads/%s:%s"
+                          branch urtb)))
+    (if (not url)
+        (message "Missing upstream URL in externals-list for %s" pkg)
+      (message "Fetching updates for %s..." pkg)
+      (with-temp-buffer
+        (cond
+         ((not (equal 0 (archive--call t "git" "fetch" "--no-tags"
+                                       url refspec)))
+          (message "Fetch error for %s:\n%s" pkg (buffer-string)))
+         ((not (equal 0 (archive--call t "git" "log"
+                                       (format "origin/externals/%s...%s"
+                                               pkg urtb))))
+          (message "Log error for %s:\n%s" pkg (buffer-string)))
+         ((eq (point-min) (point-max))
+          (message "No pending upstream changes for %s" pkg))
+         (t (message "%s" (buffer-string))
+            (when k (funcall k pkg-spec))))))))
+
+(defun archive--push (pkg-spec)
+  (let* ((pkg (car pkg-spec))
+         (url (plist-get (cdr pkg-spec) :external))
+         (branch (archive--branch pkg-spec))
+         (urtb (archive--urtb pkg-spec)))
+    ;; FIXME: Arrange to merge if it's not a fast-forward.
+    (with-temp-buffer
+      (cond
+       ((zerop (archive--call t "git" "merge-base" "--is-ancestor"
+                              urtb (format "externals/%s" pkg)))
+        (message "Nothing to push for %s" pkg))
+       ((not (zerop (archive--call t "git" "merge-base" "--is-ancestor"
+                                   (format "externals/%s" pkg) urtb)))
+        (message "Can't push %s: not a fast-forward" pkg))
+       ((not (equal 0 (archive--call t "git" "push" "origin"
+                                     (format "%s:externals/%s" urtb pkg))))
+        (message "Fetch error for %s:\n%s" pkg (buffer-string)))
+       (t
+        (message "Pushed %s successfully:\n%s" pkg (buffer-string))
+        (let ((default-directory (expand-file-name "../../")))
+          (archive--external-package-sync pkg)))))))
+
+(defun archive--batch-fetch-and (k)
+  (let ((specs (archive--form-from-file-contents "externals-list"))
+        (pkgs command-line-args-left))
+    (setq command-line-args-left nil)
+    (if (equal pkgs '("-")) (setq pkgs (mapcar #'car specs)))
+    (dolist (pkg pkgs)
+      (let* ((pkg-spec (assoc pkg specs)))
+        (if (not pkg-spec) (message "Unknown package: %s" pkg)
+          (unless (file-directory-p (expand-file-name pkg "packages"))
+            (archive--external-package-sync pkg))
+          (archive--fetch pkg-spec k))))))
+
+(defun batch-fetch-and-show (&rest _)
+  (archive--batch-fetch-and #'ignore))
+
+(defun batch-fetch-and-push (&rest _)
+  (archive--batch-fetch-and #'archive--push))
 
 (provide 'archive-contents)
 ;;; archive-contents.el ends here
