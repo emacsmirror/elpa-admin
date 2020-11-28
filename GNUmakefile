@@ -203,6 +203,18 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 # Use order-only prerequisites, so that autoloads are done first.
 all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 
+##### Compiling the files of just a single package
+
+# FIXME: This should be tuned so as to "git worktree add" the branch
+# if the $(1) directory doesn't exist yet!
+define RULE-singlepkg
+$(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
+                           $1/$(notdir $(1))-autoloads.el
+$(1): $(filter $(1)/%, $(elcs))
+endef
+$(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
+
+
 
 ############### Rules to prepare the externals ################################
 
