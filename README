@@ -48,11 +48,19 @@ Adding a basic package is very simple.  There are thorough
 instructions below, but the gist of it is that you:
 
 1. Notify emacs-devel@gnu.org.
-2. Place all files inside `packages/<pkg-name>/'.
-3. `git add', `git commit' and `git push'.
+2. Push your package's code to its branch on elpa.git with:
+
+       git push elpa <mybranch>:refs/heads/externals/<pkgname>
+
+   where <mybranch> will probably be `master` for most people.
+
+3. Edit the `externals-list` file to add an entry for <pkgname>.
+   It has to have an `:external` property specified but that
+   property can be nil.
+4. `git add externals-list', `git commit' and `git push'.
 
 If you don't have push access to the repository, someone will do steps
-2 and 3 for you.
+2-4 for you.
 
 *** Notify emacs-devel@gnu.org
 
@@ -173,73 +181,21 @@ are maintained primarily here in the repository and are fairly small.
 The instructions below are for those maintainers who prefer to use a dedicated
 repository or branch for the package or for largish packages.
 
-There are two ways to do that: "subtrees" and "externals".
-
-Either way, such packages should always be listed in the
-`externals-list' file.
-
-In both cases, a copy of the code is kept in the `elpa.git' repository
-(not necessarily in the master branch) and should be sync'd with the
+In any case, a copy of the code is kept in the `elpa.git' repository
+(not in the master branch) and should be sync'd with the
 upstream every once in a while.  This copy may include local changes,
 although these should be kept to a minimum.
 
-If you don't know which of these two options you prefer, then use an
-"external" (and also if your package is large).
-
-*** Subtrees
-
-In the `subtree' case, the copy of the code is kept here in the master
-branch, inside its corresponding `packages/<pkg-name>' directory just
-as if it were a local package.
-
-In fact, a subtree package is essentially indistinguishable from a
-local package.  The only difference is that, instead of developing it
-here, you do it in some remote repository and pull in the changes.
-
-Instead of manually creating the directory, you should be able to use:
-
-    git subtree add --prefix=packages/<pkg-name> <remote-repo> <remote-branch>
-
-Later, when you make some changes to the remote and want to publish
-them here, simply do:
-
-    git subtree pull --prefix=packages/<pkg-name> <remote-repo> <remote-branch>
-
-On older git versions "git subtree" might not be available.  You can
-try "git merge -s subtree", or just update git.
-
-- <remote-repo> is the remote's URL.  If you've previously used "git
-  remote add", then this can be the remote's name.
-- <remote-branch> is the branch you want to pull (probably "master").
-
-If you want the local code to be slightly different from the remote,
-simply commit further changes to it here.  Of course, this may trigger
-merge conflicts when you do a "subtree pull" in the future, so it's
-best to avoid these local changes.
-
-If someone makes changes to your package here on elpa.git and you want
-to push them to your remote, it's easiest to just copy these changes
-over to the remote repo.  Trying to push a subtree with git is likely
-to induce headache.
-
-**** When you're adding and pulling, DO NOT --SQUASH!!
-
-Don't worry about flooding elpa.git's commit log with your package's
-commit messages.  Your package is part of elpa.git.  Squashing doesn't
-help and only gets in the way.
-
-*** Externals
-
-In the `external' case, the copy of the code is not kept in `master` but in the
+The copy of the code is not kept in `master` but in the
 `externals/<pkg-name>' branch in the `elpa.git' repository.
 
-To add a new externals package, first add this `elpa.git' repository as a
+To add a new external package, first add this `elpa.git' repository as a
 new remote in your existing repository.
 
 Then push a local branch to a
 new remote branch in `elpa.git', named `externals/<pkgname>`.  For example:
 
-   git push elpa <mybranch>:externals/<pkgname>
+   git push elpa <mybranch>:refs/heads/externals/<pkgname>
 
 For example, let's say that you want to add `realgud-ipdb` which is currently
 checked out in `$HOME/github/realgud-ipdb`:
