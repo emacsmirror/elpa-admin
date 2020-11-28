@@ -8,7 +8,7 @@ SITE_DIR=site
 
 .PHONY: archive-tmp changelogs process-archive archive-full org-fetch clean all do-it
 
-all: all-in-place .gitignore
+all: all-in-place
 
 CR_EXCEPTIONS=copyright_exceptions
 .PHONY: check_copyrights
@@ -80,10 +80,6 @@ archive-full: archive-tmp org-fetch
 	$(MAKE) $(MFLAGS) process-archive
 	#mkdir -p archive/admin
 	#cp admin/* archive/admin/
-
-.gitignore: externals-list
-	$(EMACS) -l $(CURDIR)/admin/archive-contents.el \
-		 --eval '(archive-gitignore-externals "$<" "$@")'
 
 # FIXME: Turn it into an `external', which will require adding the notion of
 # "snapshot" packages.
