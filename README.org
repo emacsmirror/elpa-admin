@@ -1,3 +1,15 @@
+#+TITLE: NonGNU ELPA README
+
+Copyright (C) 2020 Free Software Foundation, Inc.
+See the end of the file for license conditions.
+
+This repository contains the sources, deployment scripts, and auxiliary files
+for NonGNU ELPA (elpa.nongnu.org).
+
+This file explains the repository layout, how to add and edit packages, and how
+to deploy the archive (either on elpa.nongnu.org, or a local copy for testing
+purposes).
+
 * Building the archive
 
 To build the archive(s), all it takes is:
@@ -175,3 +187,20 @@ Once it is decided we want to add a [PKG], here's what it takes:
 
       git commit -m 'New package [PKG]'
       git push
+
+* License
+
+This file is part of NonGNU ELPA.
+
+NonGNU ELPA is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+NonGNU ELPA is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with NonGNU ELPA.  If not, see <http://www.gnu.org/licenses/>.
