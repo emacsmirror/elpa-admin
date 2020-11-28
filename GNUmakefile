@@ -96,6 +96,12 @@ org-fetch: archive-tmp
 clean:
 	rm -rf archive $(ARCHIVE_TMP) $(SITE_DIR)
 
+.PHONY: readme
+readme:
+	$(EMACS) --eval "(progn (require 'org) \
+			  (find-file \"README\")\
+			  (org-export-to-file 'html \"html/readme.html\"))"
+
 ########## Rules for in-place installation ####################################
 pkgs := $(foreach pkg, $(wildcard packages/*), \
           $(if $(shell [ -d "$(pkg)" ] && echo true), $(pkg)))
