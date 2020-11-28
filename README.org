@@ -1,54 +1,70 @@
 #+TITLE: NonGNU ELPA README
+#+DATE: 2020-11-28
 
 Copyright (C) 2020 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 This repository contains the sources, deployment scripts, and auxiliary files
-for NonGNU ELPA (elpa.nongnu.org).
+for [[https://nongnu.elpa.org][NonGNU ELPA]] (=elpa.nongnu.org=).
 
 This file explains the repository layout, how to add and edit packages, and how
-to deploy the archive (either on elpa.nongnu.org, or a local copy for testing
+to deploy the archive (either on =elpa.nongnu.org=, or a local copy for testing
 purposes).
+
 
 * Building the archive
 
 To build the archive(s), all it takes is:
 
-    git clone .../nongnu.git
+#+begin_src sh
+    git clone .../nongnu.git $FOO
+#+end_src
 
 which you presumably have done already if you're reading this file.
 And then
 
+#+begin_src sh
     cd .../nongnu
     make build-all
+#+end_src
 
-This will build all the tarballs as well as the `archive-contents` file and
-put them into the `archive` and `archive-devel` subdirectories.
+This will build all the tarballs as well as the =archive-contents= file and
+put them into the =archive= and =archive-devel= subdirectories.
 If the archive exists already, it will only build those tarballs that are new.
 
-You can also (re)build a specific package [PKG] with:
+You can also (re)build a specific package =[PKG]= with:
 
+#+begin_src sh
     make build/[PKG]
+#+end_src
 
 If you want to force a rebuild of a tarball that was already built, you have
 to do:
 
+#+begin_src sh
     rm archive/[PKG]-[VERSION].tar; make build/[PKG]
+#+end_src
+
 
 * Using packages in-place
 
 The packages can be installed and used in-place.  First you need to make
-sure the package(s) you can about are placed in the `packages` subdirectory,
-e.g. with `make externals`, and then you can to add that `.../packages`
-to your `package-directory-list`.  And once that is done you can do:
+sure the package(s) you can about are placed in the =packages= subdirectory,
+e.g. with =make externals=, and then you can to add that =.../packages=
+to your =package-directory-list=.  And once that is done you can do:
 
+#+begin_src sh
     make packages/[PKG]
+#+end_src
 
-to create the [PKG]-pkg.el and [PKG]-autoloads.el file as well as compile
+to create the =[PKG]-pkg.el= and =[PKG]-autoloads.el= file as well as compile
 all the ELisp files in that package.  You can also do that on all the
 packages with:
 
+#+begin_src sh
     make
+#+end_src
+
 
 * Guidance for accepting packages
 
@@ -164,29 +180,34 @@ packages with:
    the users.
 
 
-
 * Adding a package
 
-Once it is decided we want to add a [PKG], here's what it takes:
+Once it is decided we want to add a package =[PKG]=, here's what it takes:
 
 - Fetch the upstream code with something like:
 
+  #+begin_src sh
       git fetch [PKGREMOTE]
+  #+end_src
 
-  Let's say the code is now in [PKGBRANCH].
+  Let's say the code is now in =[PKGBRANCH]=.
 
-- Push that code to nongnu.git:
+- Push that code to =nongnu.git=:
 
+  #+begin_src sh
       git push nongnu [PKGBRANCH]:refs/heads/externals/[PKG]
+  #+end_src
 
-- Add a corresponding entry to the file `externals-list`.
+- Add a corresponding entry to the file =externals-list=.
 
 - Make sure the resulting tarball looks good and works well.
 
 - Commit and push that change:
 
+  #+begin_src sh
       git commit -m 'New package [PKG]'
       git push
+  #+end_src
 
 * License
 
@@ -204,3 +225,15 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with NonGNU ELPA.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#+STARTUP: showall
+#+OPTIONS: num:1
+#+AUTHOR: NonGNU ELPA Maintainers
+#+EMAIL: emacs-devel@gnu.org
+#+BEGIN_COMMENT
+Local variables:
+paragraph-separate: "[ 	]*$"
+time-stamp-pattern: "4/#\\+DATE: %Y-%02m-%02d$"
+end:
+#+END_COMMENT
