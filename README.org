@@ -1,11 +1,12 @@
 #+TITLE: NonGNU ELPA README
-#+DATE: 2020-11-28
+#+DATE: 2020-12-01
 
-Copyright (C) 2020 Free Software Foundation, Inc.
+Copyright (C) 2020 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
 This repository contains the sources, deployment scripts, and auxiliary files
-for [[https://nongnu.elpa.org][NonGNU ELPA]] (=elpa.nongnu.org=).
+for [[https://nongnu.elpa.org][NonGNU ELPA]] (=elpa.nongnu.org=).  NonGNU ELPA is a [[https://www.gnu.org/philosophy/free-sw.html][free software]] Emacs Lisp
+Package Archive (ELPA) with extensions to [[https://www.gnu.org/software/emacs/][GNU Emacs]].
 
 This file explains the repository layout, how to add and edit packages, and how
 to deploy the archive (either on =elpa.nongnu.org=, or a local copy for testing
@@ -13,6 +14,15 @@ purposes).
 
 
 * Building the archive
+
+Building the NonGNU ELPA package archive means creating the package tarballs,
+the =archive-contents= file, and other associated files, in an ELPA compatible
+directory.  This format is described in the Emacs Lisp Reference Manual chapter
+[[https://www.gnu.org/software/emacs/manual/html_node/elisp/Packaging-Basics.html][Packaging Basics]] (web link) or from Emacs:
+
+#+begin_src elisp
+    (info "(elisp) Packaging")
+#+end_src
 
 To build the archive(s), all it takes is:
 
