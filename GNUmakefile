@@ -4,7 +4,6 @@
 EMACS=emacs --batch
 
 ARCHIVE_TMP=archive-tmp
-SITE_DIR=site
 
 .PHONY: archive-tmp changelogs process-archive archive-full org-fetch clean all do-it
 
@@ -102,7 +101,9 @@ org-fetch: archive-tmp
 	fi
 
 clean:
-	rm -rf archive $(ARCHIVE_TMP) $(SITE_DIR)
+#	rm -rf archive $(ARCHIVE_TMP)
+	rm -f packages/*/*-autoloads.el
+	find packages -name '*.elc' -print0 | xargs -0 rm -f
 
 .PHONY: readme
 readme:
@@ -208,10 +209,9 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 # Use order-only prerequisites, so that autoloads are done first.
 all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 
-##### Compiling the files of just a single package
 
-# FIXME: This should be tuned so as to "git worktree add" the branch
-# if the $(1) directory doesn't exist yet!
+#### `make package/<pkgname>` to compile the files of a single package     ####
+
 define RULE-singlepkg
 $(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
                            $1/$(notdir $(1))-autoloads.el
@@ -219,7 +219,20 @@ $(1): $(filter $(1)/%, $(elcs))
 endef
 $(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
 
-##### Fetching updates from upstream
+
+#### `make package/<pkgname>` to populate one package's subdirectory       ####
+
+MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
+                   ls -1d packages/*; ls -1d packages/*)		      \
+                  | sort | uniq -u
+MISSING_PKGS := $(shell $(MISSING_script))
+
+$(MISSING_PKGS):
+	$(EMACS) -l admin/archive-contents.el \
+	         -f batch-archive-update-worktrees "$(@F)"
+
+
+#### Fetching updates from upstream                                        ####
 
 .PHONY: fetch/%
 fetch/%:

@@ -81,6 +81,7 @@ Delete backup files also."
 	  (if (not (file-directory-p dir))
 	      (message "Skipping non-package file %s" dir)
 	    (let* ((pkg (file-name-nondirectory dir))
+		   (pkg-spec (archive--get-package-spec pkg))
 		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir)))
 	      ;; Omit autoloads and .elc files from the package.
               (when (file-exists-p autoloads-file)
@@ -88,7 +89,7 @@ Delete backup files also."
 	      (archive--delete-elc-files dir)
 	      (let ((metadata (or (with-demoted-errors
                                     ;;(format "batch-make-archive %s: %%s" dir)
-                                    (archive--metadata dir pkg))
+                                    (archive--metadata dir pkg-spec))
                                   '(nil "0"))))
                 ;; (nth 1 metadata) is nil for "org" which is the only package
                 ;; still using the "org-pkg.el file to specify the metadata.
@@ -270,7 +271,7 @@ commit which modified the \"Version:\" pseudo header."
          (spec (assoc pkgname specs)))
     (if (null spec)
         (error "Unknown package `%S`" pkgname)
-      (cdr spec))))
+      spec)))
 
 (defun batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
@@ -287,11 +288,10 @@ commit which modified the \"Version:\" pseudo header."
   "Build the new tarballs (if needed) for PKGNAME."
   (let* ((dir (expand-file-name pkgname "packages")))
     (archive--message "Checking package %s for updates..." pkgname)
-    (archive--external-package-sync pkgname)
     (let* ((pkg-spec (archive--get-package-spec pkgname))
+           (_ (archive--external-package-sync pkg-spec))
            (_ (archive--message "pkg-spec for %s: %S" pkgname pkg-spec))
-           (version-map (plist-get pkg-spec :version-map))
-           (metadata (archive--metadata dir pkgname version-map))
+           (metadata (archive--metadata dir pkg-spec))
            (vers (nth 1 metadata)))
       (archive--message "metadata = %S" metadata)
       (if (null metadata)
@@ -306,7 +306,11 @@ commit which modified the \"Version:\" pseudo header."
                ;; Add a ".0." so that when the version number goes from
                ;; NN.MM to NN.MM.1 we don't end up with the devel build
                ;; of NN.MM comparing as more recent than NN.MM.1.
-               (devel-vers (concat vers ".0." date-version))
+               ;; But be careful to turn "2.3" into "2.3.0.DATE"
+               ;; and "2.3b" into "2.3b0.DATE".
+               (devel-vers
+                (concat vers (if (string-match "[0-9]\\'" vers) ".")
+                        "0." date-version))
                (tarball (concat archive--devel-subdir
                                 (format "%s-%s.tar" pkgname devel-vers)))
                (archive--name (concat archive--name "-devel")))
@@ -316,21 +320,23 @@ commit which modified the \"Version:\" pseudo header."
         ;; Try and build the latest release tarball.
         (cond
          ((or (equal vers "0")
-              (let ((dont-release (plist-get pkg-spec :dont-release)))
-                (when dont-release (string-match dont-release vers))))
+              ;; -4 is used for "NN.MMsnapshot" and "NN.MM-git"
+              (member '-4 (version-to-list vers)))
           (archive--message "Package %s not released yet!" pkgname))
          (t
           (let ((tarball (concat archive--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
-            (archive--make-one-tarball tarball
-                                       dir pkgname metadata
-                                       (lambda ()
-                                         (archive--get-release-revision
-                                          dir pkgname vers version-map))))))))))
+            (archive--make-one-tarball
+             tarball dir pkgname metadata
+             (lambda ()
+               (archive--get-release-revision
+                dir pkgname vers
+                (plist-get (cdr pkg-spec) :version-map)))))))))))
 
 (defun archive--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
 The INFILE and DISPLAY arguments are fixed as nil."
+  ;; (message "call-process %s %S" program args)
   (apply #'call-process program nil destination nil args))
 
 (defconst archive--revno-re "[0-9a-f]+")
@@ -416,14 +422,25 @@ Currently only refreshes the ChangeLog files."
 (defconst archive-default-url-re (format archive-default-url-format ".*"))
 
 
-(defun archive--override-version (version-map orig-fun header)
+(defun archive--override-version (pkg-spec orig-fun header)
   (let ((str (funcall orig-fun header)))
     (or (if (or (equal header "version")
                 (and str (equal header "package-version")))
-            (cadr (assoc str version-map)))
+            (let ((version-map (plist-get (cdr pkg-spec) :version-map))
+                  (dont-release (plist-get (cdr pkg-spec) :dont-release)))
+              (or (cadr (assoc str version-map))
+                  (and str dont-release
+                       (string-match dont-release str)
+                       (replace-match "snapshot" t t str)))))
         str)))
 
-(defun archive--metadata (dir pkg &optional version-map)
+;; Some packages use version numbers which `version-to-list' doesn't
+;; recognize out of the box.  So here we help.
+
+(add-to-list 'version-regexp-alist '("^[-.+ ]*beta-?$" . -2)) ;"1.0.0-beta-3"
+(add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
+
+(defun archive--metadata (dir pkg-spec)
   "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS),
 where SIMPLE is non-nil if the package is simple;
 VERSION is the version string of the simple package;
@@ -432,7 +449,8 @@ REQ is a list of requirements;
 EXTRAS is an alist with additional metadata.
 
 PKG is the name of the package and DIR is the directory where it is."
-  (let* ((mainfile (expand-file-name (concat pkg ".el") dir))
+  (let* ((pkg (car pkg-spec))
+         (mainfile (expand-file-name (concat pkg ".el") dir))
          (files (directory-files dir nil "\\`dir\\'\\|\\.el\\'")))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
@@ -444,11 +462,12 @@ PKG is the name of the package and DIR is the directory where it is."
         (let* ((pkg-desc
                 (unwind-protect
                     (progn
-                      (when version-map
+                      (when (or (plist-get (cdr pkg-spec) :version-map)
+                                (plist-get (cdr pkg-spec) :dont-release))
                         (advice-add 'lm-header :around
                                     (apply-partially
                                      #'archive--override-version
-                                     version-map)))
+                                     pkg-spec)))
                       (package-buffer-info))
                   (advice-remove 'lm-header
                                  #'archive--override-version)))
@@ -591,8 +610,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun archive-refresh-pkg-file ()
   ;; Note: Used via --batch by GNUmakefile rule.
   (let* ((dir (directory-file-name default-directory))
-         (pkg (file-name-nondirectory dir)))
-    (archive--write-pkg-file dir pkg (archive--metadata dir pkg))))
+         (pkg (file-name-nondirectory dir))
+         (pkg-spec (archive--get-package-spec pkg)))
+    (archive--write-pkg-file dir pkg (archive--metadata dir pkg-spec))))
 
 (defun archive--write-pkg-file (pkg-dir name metadata)
   ;; FIXME: Use package-generate-description-file!
@@ -629,10 +649,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (let* ((file (pop command-line-args-left))
            (dir (file-name-directory file))
            (pkg (file-name-nondirectory (directory-file-name dir)))
-           (pkg-spec (archive--get-package-spec pkg))
-           (version-map (plist-get pkg-spec :version-map)))
+           (pkg-spec (archive--get-package-spec pkg)))
       (archive--write-pkg-file dir pkg
-                               (archive--metadata dir pkg version-map)))))
+                               (archive--metadata dir pkg-spec)))))
 
 ;;; Make the HTML pages for online browsing.
 
@@ -1010,32 +1029,30 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           ;;       (delete-directory dir 'recursive t))))
           ))))))
 
-(defvar archive--use-worktree nil)
-(defun archive--use-worktree-p ()
-  (unless archive--use-worktree
-    (setq archive--use-worktree
-          (list
-           (ignore-errors
-             (zerop (archive--call nil "git" "worktree" "list"))))))
-  (car archive--use-worktree))
 
-(defun archive--external-package-sync (name)
-  "Sync external package named NAME."
-  (let ((default-directory (expand-file-name "packages/")))
+(defun archive--external-package-sync (pkg-spec)
+  "Sync external package named PKG-SPEC."
+  (let ((name (car pkg-spec))
+        (default-directory (expand-file-name "packages/")))
     (unless (file-directory-p default-directory)
       (make-directory default-directory))
     (cond ((not (file-exists-p name))
            (let* ((branch (concat "externals/" name))
                   (output
                    (with-temp-buffer
-                     (if (archive--use-worktree-p)
-                         (archive--call t "git" "worktree" "add"
-                                       "-B" branch
-                                       name (concat "origin/" branch))
-                       (archive--call t "git" "clone"
-                                     "--reference" ".." "--single-branch"
-                                     "--branch" branch
-                                     archive--elpa-git-url name))
+                     (cond
+                      ((archive--git-branch-p (archive--ortb pkg-spec))
+                       (archive--call t "git" "worktree" "add"
+                                      "-B" branch
+                                      name (archive--ortb pkg-spec)))
+                      ((archive--git-branch-p branch)
+                       (archive--call t "git" "worktree" "add" name branch))
+                      ((archive--git-branch-p (archive--urtb pkg-spec))
+                       (archive--call t "git" "worktree" "add"
+                                      "-B" branch "--no-track"
+                                      name (archive--urtb pkg-spec)))
+                      (t (error "No branch %s for the worktree of %s"
+                                branch name)))
                      (buffer-string))))
              (message "Cloning branch %s:\n%s" name output)))
           ((not (file-exists-p (concat name "/.git")))
@@ -1140,16 +1157,31 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun archive-add/remove/update-externals ()
   "Remove non-package directories and fetch external packages."
-  (let ((externals-list (archive--read-externals-list)))
+  (let ((specs (archive--read-externals-list)))
     (let ((with-core (archive--sync-emacs-repo)))
-      (archive--cleanup-packages externals-list with-core)
-      (pcase-dolist ((and definition `(,name ,kind ,_url)) externals-list)
+      (archive--cleanup-packages specs with-core)
+      (pcase-dolist ((and pkg-spec `(,name ,kind ,_url)) specs)
         (pcase kind
-          (`:subtree nil)               ;Nothing to do.
-          (`:external (archive--external-package-sync name))
-          (`:core (when with-core (archive--core-package-sync definition)))
+          (`:external (archive--external-package-sync pkg-spec))
+          (`:core (when with-core (archive--core-package-sync pkg-spec)))
           (_ (message "Unknown external package kind `%S' for %s"
                       kind name)))))))
+
+(defun batch-archive-update-worktrees (&rest _)
+  (let ((specs (archive--form-from-file-contents "externals-list"))
+        (pkgs command-line-args-left))
+    (setq command-line-args-left nil)
+    (if (equal pkgs '("-")) (setq pkgs (mapcar #'car specs)))
+    (dolist (pkg pkgs)
+      (let* ((pkg-spec (assoc pkg specs))
+             (kind (nth 1 pkg-spec)))
+        (pcase kind
+          (`:external (archive--external-package-sync pkg-spec))
+          ;; (`:core (when with-core (archive--core-package-sync definition)))
+          (_ (if pkg-spec
+                 (message "Unknown external package kind `%S' for %s"
+                          kind pkg)
+               (message "Unknown external package %s" pkg))))))))
 
 ;;; Manage .gitignore
 
@@ -1181,14 +1213,22 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (format "refs/remotes/upstream/%s/%s" (car pkg-spec)
           (archive--branch pkg-spec)))
 
+(defun archive--ortb (pkg-spec)
+  "Return our origin remote tracking branch for PKG-SPEC."
+  ;; We can't use the shorthand "origin/externals/%s" when we pass it to
+  ;; `git-show-ref'.
+  (format "refs/remotes/origin/externals/%s" (car pkg-spec)))
+
+(defun archive--git-branch-p (branch)
+  "Return non-nil iff BRANCH is an existing branch."
+  (equal 0 (archive--call t "git" "show-ref" "--verify" "--quiet" branch)))
+
 (defun archive--fetch (pkg-spec &optional k)
   (let* ((pkg (car pkg-spec))
          (url (plist-get (cdr pkg-spec) :external))
          (branch (archive--branch pkg-spec))
-         (default-directory (archive--dirname pkg "packages"))
          (urtb (archive--urtb pkg-spec))
-         (refspec (format "refs/heads/%s:%s"
-                          branch urtb)))
+         (refspec (format "refs/heads/%s:%s" branch urtb)))
     (if (not url)
         (message "Missing upstream URL in externals-list for %s" pkg)
       (message "Fetching updates for %s..." pkg)
@@ -1197,9 +1237,12 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
          ((not (equal 0 (archive--call t "git" "fetch" "--no-tags"
                                        url refspec)))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
-         ((not (equal 0 (archive--call t "git" "log"
-                                       (format "origin/externals/%s...%s"
-                                               pkg urtb))))
+         ((let* ((ortb (archive--ortb pkg-spec))
+                 (exists (archive--git-branch-p ortb)))
+            (not (equal 0 (archive--call t "git" "log"
+                                         (if exists
+                                             (format "%s...%s" ortb urtb)
+                                           urtb)))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
           (message "No pending upstream changes for %s" pkg))
@@ -1208,25 +1251,28 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun archive--push (pkg-spec)
   (let* ((pkg (car pkg-spec))
-         (url (plist-get (cdr pkg-spec) :external))
-         (branch (archive--branch pkg-spec))
+         ;; (url (plist-get (cdr pkg-spec) :external))
+         ;; (branch (archive--branch pkg-spec))
+         (ortb (archive--ortb pkg-spec))
          (urtb (archive--urtb pkg-spec)))
     ;; FIXME: Arrange to merge if it's not a fast-forward.
     (with-temp-buffer
       (cond
-       ((zerop (archive--call t "git" "merge-base" "--is-ancestor"
-                              urtb (format "externals/%s" pkg)))
+       ((zerop (archive--call t "git" "merge-base" "--is-ancestor" urtb ortb))
         (message "Nothing to push for %s" pkg))
-       ((not (zerop (archive--call t "git" "merge-base" "--is-ancestor"
-                                   (format "externals/%s" pkg) urtb)))
+       ((and
+         (not (zerop (archive--call t "git" "merge-base" "--is-ancestor"
+                                    ortb urtb)))
+         (archive--git-branch-p ortb))
         (message "Can't push %s: not a fast-forward" pkg))
-       ((not (equal 0 (archive--call t "git" "push" "origin"
-                                     (format "%s:externals/%s" urtb pkg))))
+       ((not (equal 0 (archive--call t "git" "push" "--set-upstream"
+                                     "origin"
+                                     (format "%s:refs/heads/externals/%s"
+                                             urtb pkg))))
         (message "Fetch error for %s:\n%s" pkg (buffer-string)))
        (t
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (let ((default-directory (expand-file-name "../../")))
-          (archive--external-package-sync pkg)))))))
+        (archive--external-package-sync pkg-spec))))))
 
 (defun archive--batch-fetch-and (k)
   (let ((specs (archive--form-from-file-contents "externals-list"))
@@ -1236,8 +1282,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (dolist (pkg pkgs)
       (let* ((pkg-spec (assoc pkg specs)))
         (if (not pkg-spec) (message "Unknown package: %s" pkg)
-          (unless (file-directory-p (expand-file-name pkg "packages"))
-            (archive--external-package-sync pkg))
+          ;; (unless (file-directory-p (expand-file-name pkg "packages"))
+          ;;   (archive--external-package-sync pkg-spec))
           (archive--fetch pkg-spec k))))))
 
 (defun batch-fetch-and-show (&rest _)
