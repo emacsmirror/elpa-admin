@@ -157,6 +157,52 @@ commit which modified the \"Version:\" pseudo header."
           (archive--message "Can't find release rev: %s" (cdr release-rev))
           nil))))
 
+(defun archive--get-last-release (pkg-spec)
+  "Return (VERSION . REV) of the last release.
+Assumes that the current worktree holds a snapshot version."
+  (with-temp-buffer
+    (setq default-directory (archive--dirname (car pkg-spec) "packages"))
+    (if (not (equal 0             ;Don't signal an error if call errors out.
+                    (archive--call
+                     (current-buffer)
+                     "git" "log" "-n1" "--oneline" "--no-patch"
+                     "--pretty=format:%H"
+                     "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                                  (car pkg-spec) ".el"))))
+        (progn
+          (archive--message "Error in git-log:\n" (buffer-string))
+          nil)
+      (goto-char (point-min))
+      (let ((last-chg-rev (buffer-substring (point) (line-end-position))))
+        (erase-buffer)
+        (if (not (equal 0             ;Don't signal an error if call errors out.
+                        (archive--call
+                         (current-buffer)
+                         "git" "log" "-n1" "--oneline"
+                         "--pretty=format:%H"
+                         "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                                      (car pkg-spec) ".el")
+                         (concat last-chg-rev "~1"))))
+            (progn
+              (archive--message "Error in git-log:\n" (buffer-string))
+              nil)
+          (goto-char (point-min))
+          (let ((rev (buffer-substring (point) (line-end-position)))
+                (case-fold-search t))
+            (if (not (re-search-forward "^\\+.*Version:[ \t]*\\(.+?\\)[ \t]*$"
+                                        nil t))
+                (archive--message "No previous release version found")
+              (let* ((vers (match-string 1))
+                     (vl (condition-case err (version-to-list vers)
+                           (error (archive--message "Error: %S" err) nil))))
+                (cond
+                 ((null vl)
+                  (archive--message "Invalid previous release version"))
+                 ((member -4 vl)
+                  (archive--message "Previous version was also snapshot"))
+                 (t
+                  (cons (package-version-join vl) rev)))))))))))
+
 (defun archive--select-revision (dir pkgname rev)
   "Checkout revision REV in DIR of PKGNAME."
   (let ((cur-rev (vc-working-revision
@@ -174,10 +220,15 @@ commit which modified the \"Version:\" pseudo header."
 
 (defun archive--make-one-tarball (tarball dir pkgname metadata
                                           &optional revision-function)
-  "Create file TARBALL for PKGNAME if not done yet."
+  "Create file TARBALL for PKGNAME if not done yet.
+Return non-nil if a new tarball was created."
   (archive--message "Building tarball %s..." tarball)
-  (if (file-readable-p tarball)
-      (archive--message "Tarball %s already built!" tarball)
+  (if (or (file-readable-p tarball)
+          (file-readable-p (replace-regexp-in-string
+                            "\\.tar\\'" ".el" tarball)))
+      (progn
+        (archive--message "Tarball %s already built!" tarball)
+        nil)
     (let* ((destdir (file-name-directory tarball))
            (_ (unless (file-directory-p destdir) (make-directory destdir)))
            (vers (nth 1 metadata))
@@ -240,7 +291,7 @@ commit which modified the \"Version:\" pseudo header."
                                     . ,oldtarballs)
                                   dir))
         (message "Built new package %s!" tarball)
-        ))))
+        'new))))
 
 (defun archive--get-devel-version (dir)
   "Compute the date-based pseudo-version used for devel builds."
@@ -313,25 +364,44 @@ commit which modified the \"Version:\" pseudo header."
                         "0." date-version))
                (tarball (concat archive--devel-subdir
                                 (format "%s-%s.tar" pkgname devel-vers)))
-               (archive--name (concat archive--name "-devel")))
-          (archive--make-one-tarball tarball
-                                     dir pkgname
-                                     `(nil ,devel-vers . ,(nthcdr 2 metadata))))
-        ;; Try and build the latest release tarball.
-        (cond
-         ((or (equal vers "0")
-              ;; -4 is used for "NN.MMsnapshot" and "NN.MM-git"
-              (member '-4 (version-to-list vers)))
-          (archive--message "Package %s not released yet!" pkgname))
-         (t
-          (let ((tarball (concat archive--release-subdir
-                                 (format "%s-%s.tar" pkgname vers))))
-            (archive--make-one-tarball
-             tarball dir pkgname metadata
-             (lambda ()
-               (archive--get-release-revision
-                dir pkgname vers
-                (plist-get (cdr pkg-spec) :version-map)))))))))))
+               (archive--name (concat archive--name "-devel"))
+               (new
+                ;; Build the archive-devel tarball.
+                (archive--make-one-tarball tarball
+                                           dir pkgname
+                                           `(nil ,devel-vers
+                                                 . ,(nthcdr 2 metadata)))))
+
+          ;; Try and build the latest release tarball.
+          (cond
+           ((or (equal vers "0")
+                ;; -4 is used for "NN.MMsnapshot" and "NN.MM-git"
+                (member '-4 (version-to-list vers)))
+            (cond
+             ((equal vers "0")
+              (archive--message "Package %s not released yet!" pkgname))
+             ((not new)
+              (archive--message "Nothing new for package %s!" pkgname))
+             (t
+              ;; If this revision is a snapshot, check to see if there's
+              ;; a previous non-snapshot revision and build it if needed.
+              (let* ((last-rel (archive--get-last-release pkg-spec))
+                     (tarball (concat archive--release-subdir
+                                      (format "%s-%s.tar"
+                                              pkgname (car last-rel)))))
+                (if (not last-rel)
+                    (archive--message "Package %s not released yet!" pkgname)
+                  (archive--make-one-tarball
+                   tarball dir pkgname metadata (lambda () (cdr last-rel))))))))
+           (t
+            (let ((tarball (concat archive--release-subdir
+                                   (format "%s-%s.tar" pkgname vers))))
+              (archive--make-one-tarball
+               tarball dir pkgname metadata
+               (lambda ()
+                 (archive--get-release-revision
+                  dir pkgname vers
+                  (plist-get (cdr pkg-spec) :version-map))))))))))))
 
 (defun archive--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
