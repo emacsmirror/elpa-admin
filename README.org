@@ -194,29 +194,33 @@ packages with:
 
 Once it is decided we want to add a package =[PKG]=, here's what it takes:
 
-- Fetch the upstream code with something like:
+- Add a corresponding entry to the file =externals-list=, then
 
   #+begin_src sh
-      git fetch [PKGREMOTE]
+    make fetch/<pkgname>
+    make packages/<pkgname>
+    make build/<pkgname>
   #+end_src
-
-  Let's say the code is now in =[PKGBRANCH]=.
-
-- Push that code to =nongnu.git=:
-
-  #+begin_src sh
-      git push nongnu [PKGBRANCH]:refs/heads/externals/[PKG]
-  #+end_src
-
-- Add a corresponding entry to the file =externals-list=.
 
 - Make sure the resulting tarball looks good and works well.
 
-- Commit and push that change:
+- You might also check that it can be compiled in place:
 
   #+begin_src sh
-      git commit -m 'New package [PKG]'
-      git push
+    make packages/<pkgname>
+  #+end_src
+
+- Push the package's code to =nongnu.git=:
+
+  #+begin_src sh
+    make sync/<pkgname>
+  #+end_src
+
+- Commit and push the change to =externals-list=:
+
+  #+begin_src sh
+    git commit -m "* externals-list (<pkgname>): New package" -- externals-list
+    git push
   #+end_src
 
 * License
