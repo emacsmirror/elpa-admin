@@ -364,13 +364,13 @@ Return non-nil if a new tarball was created."
                         "0." date-version))
                (tarball (concat archive--devel-subdir
                                 (format "%s-%s.tar" pkgname devel-vers)))
-               (archive--name (concat archive--name "-devel"))
                (new
-                ;; Build the archive-devel tarball.
-                (archive--make-one-tarball tarball
-                                           dir pkgname
-                                           `(nil ,devel-vers
-                                                 . ,(nthcdr 2 metadata)))))
+                (let ((archive--name (concat archive--name "-devel")))
+                  ;; Build the archive-devel tarball.
+                  (archive--make-one-tarball tarball
+                                             dir pkgname
+                                             `(nil ,devel-vers
+                                                   . ,(nthcdr 2 metadata))))))
 
           ;; Try and build the latest release tarball.
           (cond
@@ -392,7 +392,9 @@ Return non-nil if a new tarball was created."
                 (if (not last-rel)
                     (archive--message "Package %s not released yet!" pkgname)
                   (archive--make-one-tarball
-                   tarball dir pkgname metadata (lambda () (cdr last-rel))))))))
+                   tarball dir pkgname
+                   `(nil ,(car last-rel) . ,(nthcdr 2 metadata))
+                   (lambda () (cdr last-rel))))))))
            (t
             (let ((tarball (concat archive--release-subdir
                                    (format "%s-%s.tar" pkgname vers))))
@@ -899,6 +901,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
+      ;; FIXME: Use README.md for some packages (such as markdown-mode).
       (let ((rm (archive--get-section
                  "Commentary" '("README" "README.rst"
                                 ;; Most README.md files seem to be currently
