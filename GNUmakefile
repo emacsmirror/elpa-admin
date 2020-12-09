@@ -3,8 +3,6 @@
 
 EMACS=emacs --batch
 
-ARCHIVE_TMP=archive-tmp
-
 .PHONY: archive-tmp changelogs process-archive archive-full org-fetch clean all do-it
 
 all: all-in-place
@@ -31,12 +29,12 @@ check_copyrights:
 	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
 
 build/%:
-	$(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
-	         -f batch-make-one-package $*
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	         -f elpaa-batch-make-one-package $*
 
 build-all:
-	$(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
-	         -f batch-make-all-packages
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	         -f elpaa-batch-make-all-packages
 
 ## Deploy the package archive to archive/, with packages in
 ## archive/packages/:
@@ -51,7 +49,7 @@ archive-tmp: packages
 # Use && after the cd commands, not ;, to ensure the build fails
 # immediately if the directory $(ARCHIVE_TMP)/packages does not exist.
 # For process-archive this is crucial; otherwise batch-make-archive in
-# archive-contents.el will interpret directories in the current
+# elpa-admin will interpret directories in the current
 # directory as unreleased packages, and recursively delete them,
 # including .git.  Prior to using &&, running "make process-archive"
 # could silently delete all local git history!
@@ -60,8 +58,8 @@ process-archive:
 	# rules like "%.tar: ../%/ChangeLog" so we only rebuild the packages
 	# that have indeed changed.
 	cd $(ARCHIVE_TMP)/packages &&				\
-	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el	\
-	           -f batch-make-archive
+	  $(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	           -f elpaa-batch-make-archive
 	@cd $(ARCHIVE_TMP)/packages &&					\
 	  for pt in *; do						\
 	      if [ -f "$${pt}/.elpaignore" ]; then			\
@@ -150,7 +148,7 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@#echo 'Generating autoloads for $@'
 	@cd $(dir $@) && 						   \
-	  $(EMACS) -l $(CURDIR)/admin/archive-contents.el 		   \
+	  $(EMACS) -l $(CURDIR)/admin/elpa-admin 		   \
 	      --eval "(require 'package)" 				   \
 	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
 	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
@@ -202,8 +200,8 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 %-pkg.el: %.el
 	@echo 'Generating description file $@'
-	@$(EMACS) -l admin/archive-contents.el \
-	          -f batch-generate-description-file "$@"
+	@$(EMACS) -l admin/elpa-admin \
+	          -f elpaa-batch-generate-description-file "$@"
 
 .PHONY: all-in-place
 # Use order-only prerequisites, so that autoloads are done first.
@@ -228,27 +226,27 @@ MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
 MISSING_PKGS := $(shell $(MISSING_script))
 
 $(MISSING_PKGS):
-	$(EMACS) -l admin/archive-contents.el \
-	         -f batch-archive-update-worktrees "$(@F)"
+	$(EMACS) -l admin/elpa-admin \
+	         -f elpaa-batch-archive-update-worktrees "$(@F)"
 
 
 #### Fetching updates from upstream                                        ####
 
 .PHONY: fetch/%
 fetch/%:
-	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-show "$*"
+	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-show "$*"
 
 .PHONY: fetch-all
 fetch-all:
-	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-show "-"
+	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-show "-"
 
 .PHONY: sync/%
 sync/%:
-	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-push "$*"
+	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-push "$*"
 
 .PHONY: sync-all
 sync-all:
-	$(EMACS) -l admin/archive-contents.el -f batch-fetch-and-push "-"
+	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-push "-"
 
 
 
@@ -256,10 +254,8 @@ sync-all:
 
 .PHONY:
 externals:
-	$(EMACS) -l admin/archive-contents.el \
-	    -f archive-add/remove/update-externals
-
-
+	$(EMACS) -l admin/elpa-admin \
+	    -f elpaa-add/remove/update-externals
 
 
 ################### Testing ###############
