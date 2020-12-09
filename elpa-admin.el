@@ -1261,5 +1261,47 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 (defun elpaa-batch-fetch-and-push (&rest _)
   (elpaa--batch-fetch-and #'elpaa--push))
 
+;;; ERT test support
+
+(defun elpaa-ert-package-install (top-directory package)
+  ;; blitz default value and set up from elpa.
+  (setq package-archives
+        `(("local-elpa"
+	   . ,(expand-file-name "archive/packages" top-directory)))
+	package-user-dir (make-temp-file "elpa-test" t))
+  (package-initialize)
+  (package-refresh-contents)
+  (package-install package))
+
+(defun elpaa-ert-test-find-tests (package-directory package)
+  (append
+   `(,(expand-file-name
+       (concat (symbol-name package) "-autoloads.el") package-directory))
+   (or
+    (directory-files package-directory t ".*-test.el$")
+    (directory-files package-directory t ".*-tests.el$")
+    (let ((dir-test (expand-file-name "test" package-directory)))
+      (when (file-directory-p dir-test)
+	(directory-files dir-test t directory-files-no-dot-files-regexp)))
+    (let ((dir-tests (expand-file-name "tests" package-directory)))
+      (when (file-directory-p dir-tests)
+	(directory-files dir-tests t directory-files-no-dot-files-regexp))))))
+
+(defun elpaa-ert-load-tests (package-directory package)
+  (mapc
+   (lambda (file)
+     (let ((force-load-messages t))
+       (load-file file)))
+   (elpaa-ert-test-find-tests package-directory package)))
+
+(defun elpaa-ert-test-package (top-directory package)
+  (elpaa-ert-package-install top-directory package)
+  (elpaa-ert-load-tests
+   (expand-file-name (concat "packages/" (symbol-name package)) top-directory)
+   package)
+
+  (ert-run-tests-batch-and-exit t))
+
+
 (provide 'elpa-admin)
 ;;; elpa-admin.el ends here

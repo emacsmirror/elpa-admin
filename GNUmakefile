@@ -267,9 +267,9 @@ TOP =$(shell pwd)
 
 define test_template
 $(1)-test:
-	cd packages/$(1);\
-	$(EMACS) -l $(TOP)/admin/ert-support.el \
-		--eval "(ert-support-test-package \"$(TOP)\" '$(1))" \
+	cd packages/$(1);				       	   \
+	$(EMACS) -l $(TOP)/admin/elpa-admin.el 		       	   \
+		--eval "(elpaa-ert-test-package \"$(TOP)\" '$(1))" \
 
 $(1)-test-log:
 	$(MAKE) $(1)-test > packages/$(1)/$(1).log 2>&1 || { stat=ERROR; }
