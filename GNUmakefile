@@ -28,12 +28,31 @@ check_copyrights:
 	    done) | sort >$(CR_EXCEPTIONS)~
 	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
 
+.PHONY: check/%
+check/%:
+	@export LC_ALL=C;					       \
+	(cd packages &&						       \
+	find ./$* -name '.git' -prune -o			       \
+	       -name 'test' -prune -o				       \
+	       -name '*.el' -print0 |				       \
+	    xargs -0 grep -L 'Free Software Foundation, Inc' |	       \
+	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';    \
+	find ./$* -name '.git' -prune -o -name '*.el' -type f -print | \
+	    while read f; do					       \
+	        fquoted="$$(echo $$f|tr '|' '_')";		       \
+	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'      \
+	            -e '/Free Software Foundation/d'		       \
+	            -e "s|^\\(.*;.*[Cc]opyright\\)|$$fquoted:\\1|p"    \
+	           "$$f";					       \
+	    done; 						       \
+	cat ../$(CR_EXCEPTIONS) ../$(CR_EXCEPTIONS)) | sort | uniq -u
+
 build/%:
-	$(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-one-package $*
 
 build-all:
-	$(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-all-packages
 
 ## Deploy the package archive to archive/, with packages in
@@ -58,7 +77,7 @@ process-archive:
 	# rules like "%.tar: ../%/ChangeLog" so we only rebuild the packages
 	# that have indeed changed.
 	cd $(ARCHIVE_TMP)/packages &&				\
-	  $(EMACS) -l $(CURDIR)/admin/elpa-admin	\
+	  $(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	           -f elpaa-batch-make-archive
 	@cd $(ARCHIVE_TMP)/packages &&					\
 	  for pt in *; do						\
@@ -148,7 +167,7 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 %-autoloads.el:
 	@#echo 'Generating autoloads for $@'
 	@cd $(dir $@) && 						   \
-	  $(EMACS) -l $(CURDIR)/admin/elpa-admin 		   \
+	  $(EMACS) -l $(CURDIR)/admin/elpa-admin.el 		   \
 	      --eval "(require 'package)" 				   \
 	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
 	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
@@ -200,7 +219,7 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 %-pkg.el: %.el
 	@echo 'Generating description file $@'
-	@$(EMACS) -l admin/elpa-admin \
+	@$(EMACS) -l admin/elpa-admin.el \
 	          -f elpaa-batch-generate-description-file "$@"
 
 .PHONY: all-in-place
@@ -209,6 +228,9 @@ all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 
 
 #### `make package/<pkgname>` to compile the files of a single package     ####
+
+# FIXME: `make` spends a lot of time at startup now, apparently
+# building all those singlepkg rules!
 
 define RULE-singlepkg
 $(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
@@ -226,7 +248,7 @@ MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
 MISSING_PKGS := $(shell $(MISSING_script))
 
 $(MISSING_PKGS):
-	$(EMACS) -l admin/elpa-admin \
+	$(EMACS) -l admin/elpa-admin.el \
 	         -f elpaa-batch-archive-update-worktrees "$(@F)"
 
 
@@ -234,19 +256,19 @@ $(MISSING_PKGS):
 
 .PHONY: fetch/%
 fetch/%:
-	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-show "$*"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-show "$*"
 
 .PHONY: fetch-all
 fetch-all:
-	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-show "-"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-show "-"
 
 .PHONY: sync/%
 sync/%:
-	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-push "$*"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-push "$*"
 
 .PHONY: sync-all
 sync-all:
-	$(EMACS) -l admin/elpa-admin -f elpaa-batch-fetch-and-push "-"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-push "-"
 
 
 
@@ -254,7 +276,7 @@ sync-all:
 
 .PHONY:
 externals:
-	$(EMACS) -l admin/elpa-admin \
+	$(EMACS) -l admin/elpa-admin.el \
 	    -f elpaa-add/remove/update-externals
 
 
@@ -263,13 +285,11 @@ externals:
 PACKAGE_DIRS = $(shell find packages -maxdepth 1 -type d)
 PACKAGES=$(subst /,,$(subst packages,,$(PACKAGE_DIRS)))
 
-TOP =$(shell pwd)
-
 define test_template
 $(1)-test:
-	cd packages/$(1);				       	   \
-	$(EMACS) -l $(TOP)/admin/elpa-admin.el 		       	   \
-		--eval "(elpaa-ert-test-package \"$(TOP)\" '$(1))" \
+	cd packages/$(1);				       	      \
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el.el 		      \
+		--eval "(elpaa-ert-test-package \"$(CURDIR)\" '$(1))" \
 
 $(1)-test-log:
 	$(MAKE) $(1)-test > packages/$(1)/$(1).log 2>&1 || { stat=ERROR; }

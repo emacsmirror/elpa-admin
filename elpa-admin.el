@@ -28,7 +28,6 @@
 ;; - Fix archive name and URL
 
 ;; TODO:
-;; - Eliminate hardcoded `build/packages' directory structure
 ;; - support for rebuilding index.html, archive-contents, and <pkg>.html
 ;; - support for building the Info files
 ;; - support for README.md for some packages
@@ -788,11 +787,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
              (concat git-sv (nth 1 urls))
              'Gitweb))))
 
-(defun elpaa--html-make-pkg (pkg pkg-spec files &optional srcdir)
+(defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
-         (srcdir (or srcdir
-                     (expand-file-name name "../../build/packages")))
          (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
          (desc (aref (cdr pkg) 2)))
     (cl-assert (equal name (car pkg-spec)))
@@ -891,46 +888,6 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 
 </body>\n")
     (write-region (point-min) (point-max) "index.html")))
-
-(defun elpaa-batch-html-make-index ()
-  (let ((packages (make-hash-table :test #'equal))
-        (specs (elpaa--form-from-file-contents "externals-list"))
-        (archive-contents
-         ;; Skip the first element which is a version number.
-         (cdr (elpaa--form-from-file-contents "archive-contents"))))
-    (dolist (subdir (directory-files "../../build/packages" nil))
-      (cond
-       ((member subdir '("." ".." "elpa.rss" "index.html" "archive-contents")))
-       (t (puthash subdir nil packages))))
-    (dolist (file (directory-files default-directory nil))
-      (cond
-       ((member file '("." ".." "elpa.rss" "index.html" "archive-contents")))
-       ((string-match "\\.html\\'" file))
-       ((string-match "\\.sig\\'" file))
-       ((string-match "-readme\\.txt\\'" file)
-        (let ((name (substring file 0 (match-beginning 0))))
-          (puthash name (gethash name packages) packages)))
-       ((string-match "-\\([0-9][^-]*\\)\\.\\(tar\\|el\\)\\'" file)
-        (let ((name (substring file 0 (match-beginning 0)))
-              (version (match-string 1 file)))
-          (push (cons version file) (gethash name packages))))
-       (t (message "Unknown file %S" file))))
-    (maphash (lambda (pkg-name files)
-               (elpaa--html-make-pkg
-                (let ((pkg (intern pkg-name)))
-                  (or (assq pkg archive-contents)
-                      ;; Add entries for packages that are either not yet
-                      ;; released or not released any more.
-                      ;; FIXME: Get actual description!
-                      (let ((entry (cons pkg (vector nil nil "" nil nil))))
-                        (setq archive-contents
-                              ;; Add entry at the end.
-                              (nconc archive-contents (list entry)))
-                        entry)))
-                (assoc pkg-name specs)
-                files))
-             packages)
-    (elpaa--html-make-index archive-contents)))
 
 (defun elpaa--pull (dirname)
   (let ((default-directory (elpaa--dirname dirname)))
@@ -1281,7 +1238,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   ;; blitz default value and set up from elpa.
   (setq package-archives
         `(("local-elpa"
-	   . ,(expand-file-name "archive/packages" top-directory)))
+	   . ,(expand-file-name "packages" top-directory)))
 	package-user-dir (make-temp-file "elpa-test" t))
   (package-initialize)
   (package-refresh-contents)
