@@ -228,92 +228,108 @@ Do it without leaving the current branch."
               (concat from "$"))
             pkgname to)))
 
+(defvar elpaa--temp-files)
+
+(defun elpaa--temp-file (file)
+  (when (boundp 'elpaa--temp-files)
+    (push (expand-file-name file) elpaa--temp-files)))
+
+(defmacro elpaa--with-temp-files (&rest body)
+  (declare (debug t))
+  `(let ((elpaa--temp-files nil))
+     (unwind-protect
+         (progn . ,body)
+       (elpaa--message "Deleting temp files: %S" elpaa--temp-files)
+       (mapc #'delete-file elpaa--temp-files))))
+
 (defun elpaa--make-one-tarball (tarball dir pkg-spec metadata
                                           &optional revision-function)
   "Create file TARBALL for PKGNAME if not done yet.
 Return non-nil if a new tarball was created."
   (elpaa--message "Building tarball %s..." tarball)
-  (if (or (file-readable-p tarball)
-          (file-readable-p (replace-regexp-in-string
-                            "\\.tar\\'" ".el" tarball)))
-      (progn
-        (elpaa--message "Tarball %s already built!" tarball)
-        nil)
-    (let* ((destdir (file-name-directory tarball))
-           (pkgname (car pkg-spec))
-           (_ (unless (file-directory-p destdir) (make-directory destdir)))
-           (vers (nth 1 metadata))
-           (elpaignore (expand-file-name ".elpaignore" dir))
-           (ignores (elpaa--spec-get pkg-spec :ignored-files))
-           (renames (elpaa--spec-get pkg-spec :renames))
-           (re (concat "\\`" (regexp-quote pkgname)
-                       "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
-           (oldtarballs
-            (mapcar
-             (lambda (file)
-               (string-match re file)
-               (cons (match-string 1 file) file))
-             (directory-files destdir nil re))))
-      (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
-      (when revision-function
-        (elpaa--select-revision dir pkg-spec (funcall revision-function)))
-      (elpaa--copyright-check pkg-spec)
-      ;; FIXME: Build Info files and corresponding `dir' file.
-      (elpaa--write-pkg-file dir pkgname metadata)
-      ;; FIXME: Allow renaming files or selecting a subset of the files!
-      (cl-assert (not (string-match "[][*+\\|?]" pkgname)))
-      (cl-assert (not (string-match "[][*+\\|?]" vers)))
-      (apply #'elpaa--call
-             nil "tar"
-             `("--exclude-vcs"
-               ,@(cond
-                  (ignores
-                   (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
-                           ignores))
-                  ((file-readable-p elpaignore) `("-X" elpaignore)))
-               ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r)) renames)
-               "--transform"
-               ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
-               "-chf" ,tarball
-               ,(concat "packages/" pkgname)))
-      (let* ((pkgdesc
-              ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
-              ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
-              ;; reads it back.  We could/should skip the middle man.
-              (elpaa--process-multi-file-package
-               dir pkgname 'dont-rename)))
-        (elpaa--message "%s: %S" pkgname pkgdesc)
-        (elpaa--update-archive-contents pkgdesc destdir)
-        (when (and nil revision-function) ;FIXME: Circumstantial evidence.
-          ;; Various problems:
-          ;; - If "make build/foo" is used by the developers in order to test
-          ;;   the build of their package, they'll end up with those spurious
-          ;;   tags which may end up spreading to unintended places.
-          ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
-          ;;   because that account can't push to git.sv.gnu.org anyway.
-          (let ((default-directory (elpaa--dirname dir)))
-            (elpaa--call nil "git" "tag" "-f"
-                           (format "%s-release/%s-%s"
-                                   elpaa--name pkgname vers))))
-        (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-          (when (file-symlink-p link) (delete-file link))
-          (make-symbolic-link (file-name-nondirectory tarball) link))
-        (dolist (oldtarball oldtarballs)
-          ;; Compress oldtarballs.
-          (let ((file (cdr oldtarball)))
-            (when (string-match "\\.\\(tar\\|el\\)\\'" file)
-              ;; Don't compress the file we just created.
-              (unless (equal file (file-name-nondirectory tarball))
-                (elpaa--call nil "lzip" (expand-file-name file destdir))
-                (setf (cdr oldtarball) (concat file ".lz"))))))
-        (let* ((default-directory (expand-file-name destdir)))
-          ;; Apparently this also creates the <pkg>-readme.txt file.
-          (elpaa--html-make-pkg pkgdesc pkg-spec
-                                `((,vers . ,(file-name-nondirectory tarball))
-                                  . ,oldtarballs)
-                                dir))
-        (message "Built new package %s!" tarball)
-        'new))))
+  (elpaa--with-temp-files
+   (if (or (file-readable-p tarball)
+           (file-readable-p (replace-regexp-in-string
+                             "\\.tar\\'" ".el" tarball)))
+       (progn
+         (elpaa--message "Tarball %s already built!" tarball)
+         nil)
+     (let* ((destdir (file-name-directory tarball))
+            (pkgname (car pkg-spec))
+            (_ (unless (file-directory-p destdir) (make-directory destdir)))
+            (vers (nth 1 metadata))
+            (elpaignore (expand-file-name ".elpaignore" dir))
+            (ignores (elpaa--spec-get pkg-spec :ignored-files))
+            (renames (elpaa--spec-get pkg-spec :renames))
+            (re (concat "\\`" (regexp-quote pkgname)
+                        "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
+            (oldtarballs
+             (mapcar
+              (lambda (file)
+                (string-match re file)
+                (cons (match-string 1 file) file))
+              (directory-files destdir nil re))))
+       (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
+       (when revision-function
+         (elpaa--select-revision dir pkg-spec (funcall revision-function)))
+       (elpaa--copyright-check pkg-spec)
+       ;; FIXME: Build Info files and corresponding `dir' file.
+       (elpaa--build-Info pkg-spec dir)
+       (elpaa--write-pkg-file dir pkgname metadata)
+       ;; FIXME: Allow renaming files or selecting a subset of the files!
+       (cl-assert (not (string-match "[][*+\\|?]" pkgname)))
+       (cl-assert (not (string-match "[][*+\\|?]" vers)))
+       (apply #'elpaa--call
+              nil "tar"
+              `("--exclude-vcs"
+                ,@(cond
+                   (ignores
+                    (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
+                            ignores))
+                   ((file-readable-p elpaignore) `("-X" elpaignore)))
+                ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r)) renames)
+                "--transform"
+                ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
+                "-chf" ,tarball
+                ,(concat "packages/" pkgname)))
+       (let* ((pkgdesc
+               ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
+               ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
+               ;; reads it back.  We could/should skip the middle man.
+               (elpaa--process-multi-file-package
+                dir pkgname 'dont-rename)))
+         (elpaa--message "%s: %S" pkgname pkgdesc)
+         (elpaa--update-archive-contents pkgdesc destdir)
+         (when (and nil revision-function) ;FIXME: Circumstantial evidence.
+           ;; Various problems:
+           ;; - If "make build/foo" is used by the developers in order to test
+           ;;   the build of their package, they'll end up with those spurious
+           ;;   tags which may end up spreading to unintended places.
+           ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
+           ;;   because that account can't push to git.sv.gnu.org anyway.
+           (let ((default-directory (elpaa--dirname dir)))
+             (elpaa--call nil "git" "tag" "-f"
+                          (format "%s-release/%s-%s"
+                                  elpaa--name pkgname vers))))
+         (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+           (when (file-symlink-p link) (delete-file link))
+           (make-symbolic-link (file-name-nondirectory tarball) link))
+         (dolist (oldtarball oldtarballs)
+           ;; Compress oldtarballs.
+           (let ((file (cdr oldtarball)))
+             (when (string-match "\\.\\(tar\\|el\\)\\'" file)
+               ;; Don't compress the file we just created.
+               (unless (equal file (file-name-nondirectory tarball))
+                 (elpaa--call nil "lzip" (expand-file-name file destdir))
+                 (setf (cdr oldtarball) (concat file ".lz"))))))
+         (let* ((default-directory (expand-file-name destdir)))
+           ;; Apparently this also creates the <pkg>-readme.txt file.
+           (elpaa--html-make-pkg pkgdesc pkg-spec
+                                 `((,vers . ,(file-name-nondirectory tarball))
+                                   . ,oldtarballs)
+                                 dir))
+         (message "Built new package %s!" tarball)
+         'new)))))
 
 (defun elpaa--get-devel-version (dir)
   "Compute the date-based pseudo-version used for devel builds."
@@ -605,6 +621,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 	(print-level nil)
         (print-quoted t)
 	(print-length nil))
+    (elpaa--temp-file pkg-file)
     (write-region
      (concat (format ";; Generated package description from %s.el  -*- no-byte-compile: t -*-\n"
 		     name)
@@ -751,14 +768,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (concat (substring text 0 4000) "...\n...\n"))))
 
 
-(defun elpaa--quote (txt)
+(defun elpaa--html-quote (txt)
   (replace-regexp-in-string "<" "&lt;"
                             (replace-regexp-in-string "&" "&amp;" txt)))
 
 (defun elpaa--insert-repolinks (pkg-spec url)
   (when url
     (insert (format "<dt>Home page</dt> <dd><a href=%S>%s</a></dd>\n"
-                    url (elpaa--quote url)))
+                    url (elpaa--html-quote url)))
     (when (string-match elpaa--default-url-re url)
       (setq url nil)))
   (let* ((git-sv "http://git.savannah.gnu.org/")
@@ -802,7 +819,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                        elpaa--name name)))
       (insert (format "<h2 class=\"package\">%s</h2>" name))
       (insert "<dl>")
-      (insert (format "<dt>Description</dt><dd>%s</dd>\n" (elpaa--quote desc)))
+      (insert (format "<dt>Description</dt><dd>%s</dd>\n" (elpaa--html-quote desc)))
       (if (zerop (length latest))
           (insert "<dd>This package "
                   (if files (concat "is not in " elpaa--name " ELPA any more")
@@ -811,7 +828,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (let* ((file (cdr (assoc latest files)))
                (attrs (file-attributes file)))
           (insert (format "<dt>Latest</dt> <dd><a href=%S>%s</a>, %s, %s</dd>\n"
-                          file (elpaa--quote file)
+                          file (elpaa--html-quote file)
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (elpaa--html-bytes-format (nth 7 attrs))))))
       (let ((maint (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
@@ -820,7 +837,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
             (elpaa--message "maint=%S" maint)
             (setq maint (concat (if (car maint) (concat (car maint) " "))
                                 "<" (cdr maint) ">")))
-          (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (elpaa--quote maint)))))
+          (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (elpaa--html-quote maint)))))
       (elpaa--insert-repolinks
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
@@ -832,7 +849,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (let ((rm (elpaa--get-README pkg-spec srcdir)))
         (when rm
           (write-region rm nil (concat name "-readme.txt"))
-          (insert "<h2>Full description</h2><pre>\n" (elpaa--quote rm)
+          (insert "<h2>Full description</h2><pre>\n" (elpaa--html-quote rm)
                   "\n</pre>\n")))
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
@@ -842,13 +859,13 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
-                              file (elpaa--quote file)
+                              file (elpaa--html-quote file)
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (elpaa--html-bytes-format (nth 7 attrs)))))))
         (insert "</table>\n"))
       (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
-          (insert "<h2>News</h2><pre>\n" (elpaa--quote news) "\n</pre>\n")))
+          (insert "<h2>News</h2><pre>\n" (elpaa--html-quote news) "\n</pre>\n")))
       (insert "</body>\n")
       (write-region (point-min) (point-max) (concat name ".html")))))
 
@@ -1254,6 +1271,44 @@ More at " elpaa--url pkgname ".html")
         ;; (pop-to-buffer (current-buffer)) (debug t)
         (message-send)
         ))))
+
+;;; Build Info files from Texinfo
+
+(defun elpaa--build-Info (pkg-spec dir)
+  (let* ((default-directory (elpaa--dirname dir))
+         (srcfile (elpaa--spec-get pkg-spec :texinfo))
+         (info-file
+          (when (and srcfile (file-readable-p srcfile))
+            (if (and (string-match "\\.info\\'" srcfile)
+                     (null (file-name-directory srcfile)))
+                ;; Already Info format and already at top-level.
+                srcfile
+              ;; The built-in support for Info files in package.el only
+              ;; works for Info file that are in the top-level directory.
+              ;; FIXME: We could just not use it, but then we'd need to do
+              ;; something like add a dummy .el file at toplevel with
+              ;; an ;;;###autoload cookie which adds the right directory to
+              ;; Info-directory-list.  This would have the advantage that
+              ;;   emacs -l .../<pkg>-autoloads.el
+              ;; would properly setup the Info reader!
+              (let ((info-file (concat
+                                (file-name-sans-extension
+                                 (file-name-nondirectory srcfile))
+                                ".info")))
+                (elpaa--temp-file info-file)
+                (if (string-match "\\.info\\'" srcfile)
+                    (copy-file srcfile info-file)
+                  (with-temp-buffer
+                    (elpaa--call t "makeinfo" "--no-split"
+                                 srcfile "-o" info-file)
+                    (message "%s" (buffer-string))))
+                info-file)))))
+    (when info-file
+      (let ((dir-file (expand-file-name "dir")))
+        (elpaa--temp-file dir-file)
+        (with-temp-buffer
+          (elpaa--call t "install-info" (concat "--dir=" dir-file) info-file)
+          (message "%s" (buffer-string)))))))
 
 ;;; Fetch updates from upstream
 
