@@ -3,50 +3,16 @@
 
 EMACS=emacs --batch
 
-.PHONY: archive-tmp changelogs process-archive archive-full org-fetch clean all do-it
-
+.PHONY: all
 all: all-in-place
 
-CR_EXCEPTIONS=copyright_exceptions
-.PHONY: check_copyrights
-check_copyrights:
-	@echo "Compute exceptions >$(CR_EXCEPTIONS)~"
-	@export LC_ALL=C;					    \
-	(cd packages &&						    \
-	find . -name '.git' -prune -o				    \
-	       -name 'test' -prune -o				    \
-	       -name '*.el' -print0 |				    \
-	    xargs -0 grep -L 'Free Software Foundation, Inc' |	    \
-	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$'; \
-	find . -name '.git' -prune -o -name '*.el' -type f -print | \
-	    while read f; do					    \
-	        fquoted="$$(echo $$f|tr '|' '_')";		    \
-	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'   \
-	            -e '/Free Software Foundation/d'		    \
-	            -e "s|^\\(.*;.*[Cc]opyright\\)|$$fquoted:\\1|p" \
-	           "$$f";					    \
-	    done) | sort >$(CR_EXCEPTIONS)~
-	diff -u "$(CR_EXCEPTIONS)" "$(CR_EXCEPTIONS)~"
-
-.PHONY: check/%
+.PHONY: check/% check-all
+check-all: check/-
 check/%:
-	@export LC_ALL=C;					       \
-	(cd packages &&						       \
-	find ./$* -name '.git' -prune -o			       \
-	       -name 'test' -prune -o				       \
-	       -name '*.el' -print0 |				       \
-	    xargs -0 grep -L 'Free Software Foundation, Inc' |	       \
-	    grep -v '\(\.dir-locals\|.-\(pkg\|autoloads\)\)\.el$$';    \
-	find ./$* -name '.git' -prune -o -name '*.el' -type f -print | \
-	    while read f; do					       \
-	        fquoted="$$(echo $$f|tr '|' '_')";		       \
-	        sed -n -e '/[Cc]opyright.*, *[1-9][-0-9]*,\?$$/N'      \
-	            -e '/Free Software Foundation/d'		       \
-	            -e "s|^\\(.*;.*[Cc]opyright\\)|$$fquoted:\\1|p"    \
-	           "$$f";					       \
-	    done; 						       \
-	cat ../$(CR_EXCEPTIONS) ../$(CR_EXCEPTIONS)) | sort | uniq -u
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
+	         -f elpaa-batch-copyright-check $*
 
+.PHONY: build/% build-all
 build/%:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-one-package $*
@@ -55,6 +21,7 @@ build-all:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-all-packages
 
+.PHONY: clean
 clean:
 #	rm -rf archive $(ARCHIVE_TMP)
 	rm -f packages/*/*-autoloads.el

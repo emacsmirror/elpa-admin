@@ -22,7 +22,6 @@
 ;;;; TODO
 
 ;; Missing from GNU ELPA script:
-;; - check_copyrights
 ;; - Support for :core (seems to be partly working, actually, tho it likely
 ;;   doesn't select the right release revision).
 ;; - Support for Org's package
@@ -37,7 +36,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl-lib))
+(require 'cl-lib)
 (require 'lisp-mnt)
 (require 'package)
 
@@ -54,6 +53,7 @@
 (defconst elpaa--release-branch-prefix "externals-release/")
 
 (defconst elpaa--specs-file "externals-list")
+(defconst elpaa--copyright-file "copyright_exceptions")
 
 (defvar elpaa--debug t)
 (defun elpaa--message (&rest args)
@@ -256,6 +256,7 @@ Return non-nil if a new tarball was created."
       (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
       (when revision-function
         (elpaa--select-revision dir pkg-spec (funcall revision-function)))
+      (elpaa--copyright-check)
       ;; FIXME: Build Info files and corresponding `dir' file.
       (elpaa--write-pkg-file dir pkgname metadata)
       ;; FIXME: Allow renaming files or selecting a subset of the files!
@@ -1120,6 +1121,94 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           (_ (if pkg-spec
                  (message "Unknown package kind `%S' for %s" kind pkg)
                (message "Unknown package %s" pkg))))))))
+
+;;; Check copyrights
+
+(defun elpaa--copyright-files (pkg-spec)
+  "Return the list of ELisp files in the package PKG-SPEC."
+  (let* ((pkgname (car pkg-spec))
+         (default-directory (elpaa--dirname pkgname "packages"))
+         (ignores (elpaa--spec-get pkg-spec :ignored-files))
+         (all-ignores '("." ".." ".git" "test" ".dir-locals.el"))
+         (dir-files (lambda (d)
+                      (cl-set-difference (directory-files d)
+                                         all-ignores :test #'equal)))
+         (pending (cl-set-difference
+                   (funcall dir-files ".")
+                   (list (concat pkgname "-pkg.el")
+                         (concat pkgname "-autoloads.el"))
+                   :test #'equal))
+         (files '()))
+    (while pending
+      (pcase (pop pending)
+        ((pred (lambda (f) (member f ignores))))
+        ((pred file-symlink-p))
+        ((and (pred file-directory-p) d)
+         (setq pending (nconc (mapcar (lambda (f) (concat d "/" f))
+                                      (funcall dir-files d))
+                              pending)))
+        ((and (pred (string-match "\\.el\\'")) f)
+         (push f files))))
+    files))
+
+(defun elpaa--copyright-collect (pkg-spec)
+  ;; This is crude but is only meant to catch the all too common mistakes where
+  ;; we forget to update the copyright information after transferring the
+  ;; copyright to the FSF.
+  (with-temp-buffer
+    (let* ((pkgname (car pkg-spec))
+           (files (mapcar (lambda (f) (concat pkgname "/" f))
+                          (elpaa--copyright-files pkg-spec)))
+           (default-directory (elpaa--dirname "packages")))
+      ;; Look for ELisp files which omit a copyright line for the FSF.
+      (apply #'elpaa--call t "grep" "-L" "Free Software Foundation, Inc" files)
+      ;; Look for *other* lines attributing copyright to someone else.
+      (dolist (file files)
+        (elpaa--call t "sed" "-n"
+                     "-e" "/[Cc]opyright.*, *[1-9][-0-9]*,\\?$/N"
+                     "-e" "/Free Software Foundation/d"
+                     ;; FIXME: This tends to suffer from misc false positives.
+                     "-e" (format "s|^\\(.*;.*[Cc]opyright\\)|%s:\\1|p"
+                                  (replace-regexp-in-string "|" "_" file))
+                     file)))
+    (sort-lines nil (point-min) (point-max))
+    (buffer-string)))
+
+(defun elpaa--copyright-filter (collected)
+  (let ((res '()))
+    (with-current-buffer (find-file-noselect elpaa--copyright-file)
+      (dolist (line (split-string collected "\n" t))
+        (goto-char (point-min))
+        (unless (re-search-forward (concat "^" (regexp-quote line) "$") nil t)
+          (push line res))))
+    res))
+
+(defun elpaa--copyright-check (pkg-name)
+  "Check the copyright notices, if applicable."
+  (when (file-readable-p elpaa--copyright-file)
+    (let* ((collected (elpaa--copyright-collect pkg-name))
+           (filtered (elpaa--copyright-filter collected)))
+      (when filtered
+        (message "Problem with copyright notices:\n%s"
+                 (mapconcat (lambda (line)
+                              (if (string-match ":" line) line
+                                (concat "Missing copyright notice in " line)))
+                            filtered "\n"))
+        (error "Abort")))))
+
+(defun elpaa-batch-copyright-check (&rest _)
+  (let ((specs (elpaa--get-specs))
+        (pkgs command-line-args-left))
+    (setq command-line-args-left nil)
+    (when (equal pkgs '("-"))
+      (setq pkgs (delq nil (mapcar (lambda (spec)
+                                     (when (file-directory-p
+                                            (elpaa--dirname (car spec)
+                                                            "packages"))
+                                       (car spec)))
+                                   specs))))
+    (dolist (pkg pkgs)
+      (elpaa--copyright-check (assoc pkg specs)))))
 
 ;;; Fetch updates from upstream
 

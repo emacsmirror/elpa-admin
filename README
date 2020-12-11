@@ -19,7 +19,11 @@ This code expects to be used in a directory that has the following layout:
 - =admin/=              -- Directory containing a copy of the here files
 - =GNUmakefile=         -- A copy of or symlink to =admin/GNUmakefile=
 - =externals-list=      -- The specifications of the packages
-  
+- =copyright_exceptions= -- List of exceptions for the copyright-notices checks
+
+The =copyright_exceptions= file can be absent, in which case copyright notices
+will simply not be checked.
+
 Additionally to the above, this code will then add to that directory
 the following elements:
 
