@@ -1,17 +1,11 @@
-#+TITLE: GNU ELPA README
+#+TITLE: ELPA-Admin README
 #+DATE: 2020-11-28
 
-Copyright (C) 2010-2011, 2014-2020 Free Software Foundation, Inc. \\
+Copyright (C) 2010-2020 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
-
-This branch contains the sources, deployment scripts, and auxiliary
-files for [[https://elpa.gnu.org/][GNU ELPA]].
-
-This file explains the branch layout, how to add and edit packages,
-and how to deploy the archive (either on =elpa.gnu.org=, or a local copy
-for testing purposes).
-
+This branch contains the source code used to build and manage
+the [[https://elpa.gnu.org/][GNU ELPA]] and NonGNU ELPA archives.
 
 * Getting the source
 
@@ -20,10 +14,82 @@ and look for "ELPA".  Using a clone of a clone does not work.
 
 * Directory layout
 
-** =admin/=    -- scripts for administering the package archive.
-** =html/=     -- HTML for the elpa.gnu.org website.
-** =packages/= -- source code for the packages.
+This code expects to be used in a directory that has the following layout:
 
+- =admin/=              -- Directory containing a copy of the here files
+- =GNUmakefile=         -- A copy of or symlink to =admin/GNUmakefile=
+- =externals-list=      -- The specifications of the packages
+  
+Additionally to the above, this code will then add to that directory
+the following elements:
+
+- =packages/=           -- Directory holding Git worktrees of packages
+- =archive/=            -- Directory holding the generated files for the archive
+- =archive-devel/=      -- Same for the "bleeding edge" version of the archive
+
+* Specifications
+
+The specifications of packages is a `lisp-data-mode` file containing
+a single Lisp list where each element describe a particular ELisp package
+that should be part of the archive.  Each element has the form
+
+    (NAME . PLIST)
+
+where NAME is the name of the ELisp package and PLIST is a property list
+giving additional info about that package.  It has to have either
+an =:external= or a =:core= property, all others are optional.
+The properties are the following:
+
+** =:external URL=
+Gives the URL where the upstream Git repository for that package can be found.
+The URL can be =nil= if there is no upstream repository.
+
+** =:core FILES=
+Indicates that this is a special package which will be built by extracting
+files directly from Emacs's source code.  For this to work, the Emacs
+source code should be available in the =emacs= subdirectory.
+FILES specifies the files that will be contained in the generated tarballs.
+It can be a single file name or a list of file names.
+
+** =:branch BRANCH=
+Specifies the branch to follow in the upstream Git repository, in case
+it should be different from =master=.
+
+** =:main-file FILE=
+Gives the name of the main file of the package, i.e. the file in which
+the metadata can be found in the form of pseudo-headers like "Version:".
+It needs to be an ELisp file formatted following the proper conventions.
+This is normally the file [PKG].el, but in some rare circumstances,
+the file is named differently, typically because it is placed in
+a subdirectory.
+
+** =:version-map MAP=
+A list of elements of the form (ORIG-VERSION REMAPPED-VERSION REVISION).
+This allows replacing the ORIG-VERSION from the [PKG].el file
+with REMAPPED-VERSION (e.g. because the ORIG-VERSION is not a valid
+version number, is missing, or because we want to create a new package
+from the same code version).
+It also makes it possible to specify which REVISION corresponds to
+this ORIG-VERSION (or REMAPPED-VERSION if non-nil) to override
+the default heuristic which uses the last revision that modified the
+"Version:" header.
+
+** =:release-branch BRANCH=
+The upstream BRANCH from which releases are cut.  This is only used
+for those packages which have both a development branch and a release branch
+and only if the version number in the development branch indicates that it
+contains development code (i.e. a "snapshot" version, according to
+`version-to-list`).
+
+** =:ignored-files FILES=
+Names of files or directories that should not be included in the tarballs.
+
+** =:renames RENAMES=
+Mapping from the source layout to the layout used in the tarball.
+RENAMES is a list of element (FROM TO) where FROM should terminate with =/=
+if it's a directory.
+
+* Text below this marker is OUTDATED and still needs to be reviewed/rewritten!!
 
 * Packages
 

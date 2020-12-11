@@ -19,6 +19,8 @@
 
 ;;; Commentary:
 
+;;;; TODO
+
 ;; Missing from GNU ELPA script:
 ;; - check_copyrights
 ;; - Support for :core (seems to be partly working, actually, tho it likely
@@ -27,7 +29,7 @@
 ;; - Send email announcements
 ;; - Fix archive name and URL
 
-;; TODO:
+;; Missing more generally:
 ;; - support for rebuilding index.html, archive-contents, and <pkg>.html
 ;; - support for building the Info files
 ;; - support for README.md for some packages
@@ -48,9 +50,12 @@
 (defconst elpaa--gitrepo "emacs/nongnu.git")
 (defconst elpaa--url "http://elpa.gnu.org/nongnu/")
 
+(defconst elpaa--branch-prefix "externals/")
+(defconst elpaa--release-branch-prefix "externals-release/")
 
+(defconst elpaa--specs-file "externals-list")
 
-(defvar elpaa--debug nil)
+(defvar elpaa--debug t)
 (defun elpaa--message (&rest args)
   (when elpaa--debug (apply #'message args)))
 
@@ -86,45 +91,6 @@ Delete backup files also."
 	       (backup-file-name-p f))
 	   (delete-file f)))))
 
-(defun elpaa-batch-make-archive ()
-  "Process package content directories and generate the archive-contents file."
-  (let ((packages '(1))) ; format-version.
-    (dolist (dir (directory-files default-directory nil elpaa--re-no-dot))
-      (condition-case v
-	  (if (not (file-directory-p dir))
-	      (message "Skipping non-package file %s" dir)
-	    (let* ((pkg (file-name-nondirectory dir))
-		   (pkg-spec (elpaa--get-package-spec pkg))
-		   (autoloads-file (expand-file-name (concat pkg "-autoloads.el") dir)))
-	      ;; Omit autoloads and .elc files from the package.
-              (when (file-exists-p autoloads-file)
-                (delete-file autoloads-file))
-	      (elpaa--delete-elc-files dir)
-	      (let ((metadata (or (with-demoted-errors
-                                    ;;(format "batch-make-archive %s: %%s" dir)
-                                    (elpaa--metadata dir pkg-spec))
-                                  '(nil "0"))))
-                ;; (nth 1 metadata) is nil for "org" which is the only package
-                ;; still using the "org-pkg.el file to specify the metadata.
-                (if (and (nth 1 metadata)
-                         (or (equal (nth 1 metadata) "0")
-                             ;; Old deprecated convention.
-                             (< (string-to-number (nth 1 metadata)) 0)))
-                    (progn ;; Negative version: don't publish this package yet!
-                      (message "Package %s not released yet!" dir)
-                      (delete-directory dir 'recursive))
-                  (push (if (car metadata)
-                            (apply #'elpaa--process-simple-package
-                                   dir pkg (cdr metadata))
-                          (when (nth 1 metadata)
-                            (elpaa--write-pkg-file dir pkg metadata))
-                          (elpaa--process-multi-file-package dir pkg))
-                        packages)))))
-	((debug error) (error "Error in %s: %S" dir v))))
-    (with-temp-buffer
-      (pp (nreverse packages) (current-buffer))
-      (write-region nil nil "archive-contents"))))
-
 (defun elpaa--update-archive-contents (pkg-desc dir)
   "Update the `archive-contents' file in DIR with new package PKG-DESC."
   (let* ((filename (expand-file-name "archive-contents" dir))
@@ -143,7 +109,17 @@ Delete backup files also."
       (let ((default-directory (expand-file-name dir)))
         (elpaa--html-make-index (cdr ac))))))
 
-(defun elpaa--get-release-revision (dir pkgname &optional vers version-map)
+(defun elpaa--get-specs ()
+  (elpaa--form-from-file-contents "externals-list"))
+
+(defun elpaa--spec-get (pkg-spec prop &optional default)
+  (or (plist-get (cdr pkg-spec) prop) default))
+
+(defun elpaa--main-file (pkg-spec)
+  (or (elpaa--spec-get pkg-spec :main-file)
+      (concat (car pkg-spec) ".el")))
+
+(defun elpaa--get-release-revision (dir pkg-spec &optional vers version-map)
   "Get the REVISION that corresponds to current release.
 This is either found from VERS in VERSION-MAP or by looking at the last
 commit which modified the \"Version:\" pseudo header."
@@ -160,7 +136,7 @@ commit which modified the \"Version:\" pseudo header."
                       "git" "log" "-n1" "--oneline" "--no-patch"
                       "--pretty=format:%H"
                       "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                   pkgname ".el")))
+                                   (elpaa--main-file pkg-spec))))
                     (buffer-string)
                   (cons 'error (buffer-string))))))
         (if (stringp release-rev)
@@ -174,53 +150,61 @@ commit which modified the \"Version:\" pseudo header."
   "Return (VERSION . REV) of the last release.
 Assumes that the current worktree holds a snapshot version."
   (with-temp-buffer
-    (setq default-directory (elpaa--dirname (car pkg-spec) "packages"))
-    (if (not (equal 0             ;Don't signal an error if call errors out.
-                    (elpaa--call
-                     (current-buffer)
-                     "git" "log" "-n1" "--oneline" "--no-patch"
-                     "--pretty=format:%H"
-                     "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                  (car pkg-spec) ".el"))))
-        (progn
-          (elpaa--message "Error in git-log:\n" (buffer-string))
-          nil)
-      (goto-char (point-min))
-      (let ((last-chg-rev (buffer-substring (point) (line-end-position))))
-        (erase-buffer)
-        (if (not (equal 0             ;Don't signal an error if call errors out.
-                        (elpaa--call
-                         (current-buffer)
-                         "git" "log" "-n1" "--oneline"
-                         "--pretty=format:%H"
-                         "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                      (car pkg-spec) ".el")
-                         (concat last-chg-rev "~1"))))
-            (progn
-              (elpaa--message "Error in git-log:\n" (buffer-string))
-              nil)
-          (goto-char (point-min))
-          (let ((rev (buffer-substring (point) (line-end-position)))
-                (case-fold-search t))
-            (if (not (re-search-forward "^\\+.*Version:[ \t]*\\(.+?\\)[ \t]*$"
-                                        nil t))
-                (elpaa--message "No previous release version found")
-              (let* ((vers (match-string 1))
-                     (vl (condition-case err (version-to-list vers)
-                           (error (elpaa--message "Error: %S" err) nil))))
-                (cond
-                 ((null vl)
-                  (elpaa--message "Invalid previous release version"))
-                 ((member -4 vl)
-                  (elpaa--message "Previous version was also snapshot"))
-                 (t
-                  (cons (package-version-join vl) rev)))))))))))
+    (let* ((default-directory (elpaa--dirname (car pkg-spec) "packages"))
+           (release-branch (elpaa--spec-get pkg-spec :release-branch))
+           (L-spec (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                           (elpaa--main-file pkg-spec)))
+           (search-start-rev
+            (or (if release-branch
+                    (concat "refs/remotes/origin/"
+                            elpaa--release-branch-prefix (car pkg-spec)))
+                (if (not (equal 0     ;Don't signal an error if call errors out.
+                                (elpaa--call
+                                 (current-buffer)
+                                 "git" "log" "-n1" "--oneline" "--no-patch"
+                                 "--pretty=format:%H"
+                                 "-L" L-spec)))
+                    (progn
+                      (elpaa--message "Error in git-log:\n" (buffer-string))
+                      nil)
+                  (goto-char (point-min))
+                  (concat
+                   ;; This is the rev of the last change to Version:
+                   (buffer-substring (point) (line-end-position))
+                   "~1")))))
+      (erase-buffer)
+      (if (not (equal 0              ;Don't signal an error if call errors out.
+                      (elpaa--call
+                       (current-buffer)
+                       "git" "log" "-n1" "--oneline"
+                       "--pretty=format:%H"
+                       "-L" L-spec
+                       search-start-rev)))
+          (progn
+            (elpaa--message "Error in git-log:\n" (buffer-string))
+            nil)
+        (goto-char (point-min))
+        (let ((rev (buffer-substring (point) (line-end-position)))
+              (case-fold-search t))
+          (if (not (re-search-forward "^\\+.*Version:[ \t]*\\(.+?\\)[ \t]*$"
+                                      nil t))
+              (elpaa--message "No previous release version found")
+            (let* ((vers (match-string 1))
+                   (vl (condition-case err (version-to-list vers)
+                         (error (elpaa--message "Error: %S" err) nil))))
+              (cond
+               ((null vl)
+                (elpaa--message "Invalid previous release version"))
+               ((member -4 vl)
+                (elpaa--message "Previous version was also snapshot"))
+               (t
+                (cons (package-version-join vl) rev))))))))))
 
-(defun elpaa--select-revision (dir pkgname rev)
-  "Checkout revision REV in DIR of PKGNAME.
+(defun elpaa--select-revision (dir pkg-spec rev)
+  "Checkout revision REV in DIR of PKG-SPEC.
 Do it without leaving the current branch."
   (let ((cur-rev (vc-working-revision
-                  (expand-file-name (concat pkgname ".el") dir))))
+                  (expand-file-name (elpaa--main-file pkg-spec) dir))))
     (if (equal rev cur-rev)
         (elpaa--message "Current revision is already desired revision!")
       (with-temp-buffer
@@ -230,7 +214,18 @@ Do it without leaving the current branch."
               (error "git-status not clean:\n%s" (buffer-string))
             (elpaa--call (current-buffer) "git" "reset" "--merge" rev)
             (elpaa--message "Reverted to release revision %s\n%s"
-                              rev (buffer-string))))))))
+                            rev (buffer-string))))))))
+
+(defun elpaa--make-tar-transform (pkgname r)
+  (let ((from (nth 0 r)) (to (nth 1 r)))
+    (cl-assert (not (string-match "[][*+\\|?]" from)))
+    (cl-assert (not (string-match "[][*+\\|?]" to)))
+    (format "--transform=s|^packages/%s/%s|packages/%s/%s|"
+            pkgname
+            (if (string-match "/\\'" from)
+                (concat (substring from 0 -1) "\\($\\|/\\)")
+              (concat from "$"))
+            pkgname to)))
 
 (defun elpaa--make-one-tarball (tarball dir pkg-spec metadata
                                           &optional revision-function)
@@ -248,6 +243,8 @@ Return non-nil if a new tarball was created."
            (_ (unless (file-directory-p destdir) (make-directory destdir)))
            (vers (nth 1 metadata))
            (elpaignore (expand-file-name ".elpaignore" dir))
+           (ignores (elpaa--spec-get pkg-spec :ignored-files))
+           (renames (elpaa--spec-get pkg-spec :renames))
            (re (concat "\\`" (regexp-quote pkgname)
                        "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
            (oldtarballs
@@ -258,18 +255,25 @@ Return non-nil if a new tarball was created."
              (directory-files destdir nil re))))
       (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
       (when revision-function
-        (elpaa--select-revision dir pkgname (funcall revision-function)))
+        (elpaa--select-revision dir pkg-spec (funcall revision-function)))
       ;; FIXME: Build Info files and corresponding `dir' file.
       (elpaa--write-pkg-file dir pkgname metadata)
       ;; FIXME: Allow renaming files or selecting a subset of the files!
-      (elpaa--call nil "tar"
-                     "--exclude-vcs"
-                     "-X" (if (file-readable-p elpaignore)
-                              elpaignore "/dev/null")
-                     "--transform"
-                     (format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
-                     "-chf" tarball
-                     (concat "packages/" pkgname))
+      (cl-assert (not (string-match "[][*+\\|?]" pkgname)))
+      (cl-assert (not (string-match "[][*+\\|?]" vers)))
+      (apply #'elpaa--call
+             nil "tar"
+             `("--exclude-vcs"
+               ,@(cond
+                  (ignores
+                   (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
+                           ignores))
+                  ((file-readable-p elpaignore) `("-X" elpaignore)))
+               ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r)) renames)
+               "--transform"
+               ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
+               "-chf" ,tarball
+               ,(concat "packages/" pkgname)))
       (let* ((pkgdesc
               ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
               ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
@@ -291,7 +295,7 @@ Return non-nil if a new tarball was created."
                                    elpaa--name pkgname vers))))
         ;; FIXME: Send email announcement!
         (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-          (when (file-exists-p link) (delete-file link))
+          (when (file-symlink-p link) (delete-file link))
           (make-symbolic-link (file-name-nondirectory tarball) link))
         (dolist (oldtarball oldtarballs)
           ;; lzip compress oldtarballs.
@@ -335,7 +339,7 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa--get-package-spec (pkgname)
   "Retrieve the property list for PKGNAME from `externals-list'."
-  (let* ((specs (elpaa--form-from-file-contents "externals-list"))
+  (let* ((specs (elpaa--get-specs))
          (spec (assoc pkgname specs)))
     (if (null spec)
         (error "Unknown package `%S`" pkgname)
@@ -343,7 +347,7 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
-  (let* ((specs (elpaa--form-from-file-contents "externals-list")))
+  (let* ((specs (elpaa--get-specs)))
     (dolist (spec specs)
       (with-demoted-errors "Build error: %S"
         (elpaa--make-one-package spec)))))
@@ -429,7 +433,7 @@ Return non-nil if a new tarball was created."
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
 The INFILE and DISPLAY arguments are fixed as nil."
-  ;; (message "call-process %s %S" program args)
+  (elpaa--message "call-process %s %S" program args)
   (apply #'call-process program nil destination nil args))
 
 (defconst elpaa--revno-re "[0-9a-f]+")
@@ -466,7 +470,7 @@ EXTRAS is an alist with additional metadata.
 
 PKG is the name of the package and DIR is the directory where it is."
   (let* ((pkg (car pkg-spec))
-         (mainfile (expand-file-name (concat pkg ".el") dir))
+         (mainfile (expand-file-name (elpaa--main-file pkg-spec) dir))
          (files (directory-files dir nil "\\`dir\\'\\|\\.el\\'")))
     (setq files (delete (concat pkg "-pkg.el") files))
     (setq files (delete (concat pkg "-autoloads.el") files))
@@ -510,37 +514,6 @@ PKG is the name of the package and DIR is the directory where it is."
                 extras))))
      (t
       (error "Can't find main file %s file in %s" mainfile dir)))))
-
-(defun elpaa--process-simple-package (dir pkg vers desc req extras)
-  "Deploy the contents of DIR into the archive as a simple package.
-Rename DIR/PKG.el to PKG-VERS.el, delete DIR, and return the descriptor."
-  ;; Write DIR/foo.el to foo-VERS.el and delete DIR
-  (let ((src (expand-file-name (concat pkg ".el") dir)))
-    (funcall (if (file-symlink-p src) #'copy-file #'rename-file)
-	     src (concat pkg "-" vers ".el")))
-  ;; Add the content of the ChangeLog.
-  (let ((cl (expand-file-name "ChangeLog" dir)))
-    (with-current-buffer (find-file-noselect (concat pkg "-" vers ".el"))
-      (goto-char (point-max))
-      (re-search-backward "^;;;.*ends here")
-      (re-search-backward "^(provide")
-      (skip-chars-backward " \t\n")
-      (insert "\n\n;;;; ChangeLog:\n\n")
-      (let* ((start (point))
-             (end (copy-marker start t)))
-        (condition-case nil
-            (insert-file-contents cl)
-          (file-error (message "Can't find %S's ChangeLog file" pkg)))
-        (goto-char end)
-        (unless (bolp) (insert "\n"))
-        (while (progn (forward-line -1) (>= (point) start))
-          (insert ";; ")))
-      (set (make-local-variable 'backup-inhibited) t)
-      (basic-save-buffer)               ;Less chatty than save-buffer.
-      (kill-buffer)))
-  (delete-directory dir t)
-  (cons (intern pkg) (vector (elpaa--version-to-list vers)
-                             req desc 'single extras)))
 
 (defun elpaa--make-changelog (dir srcdir)
   "Export Git log info of DIR into a ChangeLog file."
@@ -692,15 +665,17 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           title (or header title)))
 
 (defun elpaa--html-bytes-format (bytes) ;Aka memory-usage-format.
-  (setq bytes (/ bytes 1024.0))
-  (let ((units '("KiB" "MiB" "GiB" "TiB")))
-    (while (>= bytes 1024)
-      (setq bytes (/ bytes 1024.0))
-      (setq units (cdr units)))
-    (cond
-     ((>= bytes 100) (format "%4.0f&nbsp;%s" bytes (car units)))
-     ((>= bytes 10) (format "%4.1f&nbsp;%s" bytes (car units)))
-     (t (format "%4.2f&nbsp;%s" bytes (car units))))))
+  (if (null bytes)
+      "??KiB"
+    (setq bytes (/ bytes 1024.0))
+    (let ((units '("KiB" "MiB" "GiB" "TiB")))
+      (while (>= bytes 1024)
+        (setq bytes (/ bytes 1024.0))
+        (setq units (cdr units)))
+      (cond
+       ((>= bytes 100) (format "%4.0f&nbsp;%s" bytes (car units)))
+       ((>= bytes 10) (format "%4.1f&nbsp;%s" bytes (car units)))
+       (t (format "%4.2f&nbsp;%s" bytes (car units)))))))
 
 (defun elpaa--get-prop (prop name srcdir mainsrcfile)
   (let ((kprop (intern (format ":%s" (downcase prop)))))
@@ -776,9 +751,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                           ,(if (listp files)
                                "gitweb/?p=emacs.git;a=tree;f="
                              "gitweb/?p=emacs.git;a=blob;f="))))
-            (mapcar (lambda (s) (format s elpaa--gitrepo (car pkg-spec)))
-                    '("cgit/%s/?h=externals/%s"
-                      "gitweb/?p=%s;a=shortlog;h=refs/heads/externals/%s")))))
+            (mapcar (lambda (s)
+                      (format s elpaa--gitrepo
+                              elpaa--branch-prefix
+                              (car pkg-spec)))
+                    '("cgit/%s/?h=%s%s"
+                      "gitweb/?p=%s;a=shortlog;h=refs/heads/%s%s")))))
     (insert (format
              (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
@@ -1004,7 +982,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (unless (file-directory-p default-directory)
       (make-directory default-directory))
     (cond ((not (file-exists-p name))
-           (let* ((branch (concat "externals/" name))
+           (let* ((branch (concat elpaa--branch-prefix name))
                   (output
                    (with-temp-buffer
                      (cond
@@ -1128,7 +1106,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (elpaa-batch-archive-update-worktrees)))
 
 (defun elpaa-batch-archive-update-worktrees (&rest _)
-  (let ((specs (elpaa--form-from-file-contents "externals-list"))
+  (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left)
         (with-core (elpaa--sync-emacs-repo)))
     (setq command-line-args-left nil)
@@ -1146,18 +1124,18 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 ;;; Fetch updates from upstream
 
 (defun elpaa--branch (pkg-spec)
-  (or (plist-get (cdr pkg-spec) :branch) "master"))
+  (elpaa--spec-get pkg-spec :branch "master"))
 
-(defun elpaa--urtb (pkg-spec)
+(defun elpaa--urtb (pkg-spec &optional branch)
   "Return our upstream remote tracking branch for PKG-SPEC."
   (format "refs/remotes/upstream/%s/%s" (car pkg-spec)
-          (elpaa--branch pkg-spec)))
+          (or branch (elpaa--branch pkg-spec))))
 
 (defun elpaa--ortb (pkg-spec)
   "Return our origin remote tracking branch for PKG-SPEC."
-  ;; We can't use the shorthand "origin/externals/%s" when we pass it to
+  ;; We can't use the shorthand "origin/%s%s" when we pass it to
   ;; `git-show-ref'.
-  (format "refs/remotes/origin/externals/%s" (car pkg-spec)))
+  (format "refs/remotes/origin/%s%s" elpaa--branch-prefix (car pkg-spec)))
 
 (defun elpaa--git-branch-p (branch)
   "Return non-nil iff BRANCH is an existing branch."
@@ -1165,17 +1143,25 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun elpaa--fetch (pkg-spec &optional k)
   (let* ((pkg (car pkg-spec))
-         (url (plist-get (cdr pkg-spec) :external))
+         (url (elpaa--spec-get pkg-spec :external))
          (branch (elpaa--branch pkg-spec))
+         (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (urtb (elpaa--urtb pkg-spec))
-         (refspec (format "refs/heads/%s:%s" branch urtb)))
+         (refspec (format "refs/heads/%s:%s" branch urtb))
+         (release-refspec (if release-branch
+                              (format "refs/heads/%s:%s"
+                                      release-branch
+                                      (elpaa--urtb pkg-spec release-branch)))))
     (if (not url)
         (message "Missing upstream URL in externals-list for %s" pkg)
       (message "Fetching updates for %s..." pkg)
       (with-temp-buffer
         (cond
-         ((not (equal 0 (elpaa--call t "git" "fetch" "--no-tags"
-                                       url refspec)))
+         ((not (equal 0 (apply #'elpaa--call
+                               t "git" "fetch" "--no-tags"
+                               url refspec
+                               (if release-refspec
+                                   (list release-refspec)))))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
          ((let* ((ortb (elpaa--ortb pkg-spec))
                  (exists (elpaa--git-branch-p ortb)))
@@ -1193,6 +1179,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (let* ((pkg (car pkg-spec))
          ;; (url (plist-get (cdr pkg-spec) :external))
          ;; (branch (elpaa--branch pkg-spec))
+         (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
          (urtb (elpaa--urtb pkg-spec)))
     ;; FIXME: Arrange to merge if it's not a fast-forward.
@@ -1202,20 +1189,26 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (message "Nothing to push for %s" pkg))
        ((and
          (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                    ortb urtb)))
+                                  ortb urtb)))
          (elpaa--git-branch-p ortb))
         (message "Can't push %s: not a fast-forward" pkg))
-       ((not (equal 0 (elpaa--call t "git" "push" "--set-upstream"
-                                     "origin"
-                                     (format "%s:refs/heads/externals/%s"
-                                             urtb pkg))))
-        (message "Fetch error for %s:\n%s" pkg (buffer-string)))
-       (t
+       ((equal 0 (apply #'elpaa--call
+                        t "git" "push" "--set-upstream"
+                        "origin"
+                        (format "%s:refs/heads/%s%s"
+                                urtb elpaa--branch-prefix pkg)
+                        (when release-branch
+                          (list
+                           (format "%s:refs/heads/%s%s"
+                                   (elpaa--urtb pkg-spec release-branch)
+                                   elpaa--release-branch-prefix pkg)))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (elpaa--external-package-sync pkg-spec))))))
+        (elpaa--external-package-sync pkg-spec))
+       (t
+        (message "Push error for %s:\n%s" pkg (buffer-string)))))))
 
 (defun elpaa--batch-fetch-and (k)
-  (let ((specs (elpaa--form-from-file-contents "externals-list"))
+  (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left))
     (setq command-line-args-left nil)
     (if (equal pkgs '("-")) (setq pkgs (mapcar #'car specs)))
