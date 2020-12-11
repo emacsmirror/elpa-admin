@@ -24,8 +24,7 @@
 ;; Missing from GNU ELPA script:
 ;; - Support for :core (seems to be partly working, actually, tho it likely
 ;;   doesn't select the right release revision).
-;; - Support for Org's package
-;; - Send email announcements
+;; - Support for Org's package (including building the Info file)
 ;; - Fix archive name and URL
 
 ;; Missing more generally:
@@ -47,13 +46,15 @@
   "Subdirectory where the ELPA bleeding edge files (tarballs, ...) will be placed.")
 (defconst elpaa--name "NonGNU")
 (defconst elpaa--gitrepo "emacs/nongnu.git")
-(defconst elpaa--url "http://elpa.gnu.org/nongnu/")
+(defconst elpaa--url "https://elpa.gnu.org/nongnu/")
 
 (defconst elpaa--branch-prefix "externals/")
 (defconst elpaa--release-branch-prefix "externals-release/")
 
 (defconst elpaa--specs-file "externals-list")
 (defconst elpaa--copyright-file "copyright_exceptions")
+(defconst elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
+(defconst elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
 
 (defvar elpaa--debug t)
 (defun elpaa--message (&rest args)
@@ -256,7 +257,7 @@ Return non-nil if a new tarball was created."
       (delete-file (expand-file-name (format "%s-pkg.el" pkgname) dir))
       (when revision-function
         (elpaa--select-revision dir pkg-spec (funcall revision-function)))
-      (elpaa--copyright-check)
+      (elpaa--copyright-check pkg-spec)
       ;; FIXME: Build Info files and corresponding `dir' file.
       (elpaa--write-pkg-file dir pkgname metadata)
       ;; FIXME: Allow renaming files or selecting a subset of the files!
@@ -294,12 +295,11 @@ Return non-nil if a new tarball was created."
             (elpaa--call nil "git" "tag" "-f"
                            (format "%s-release/%s-%s"
                                    elpaa--name pkgname vers))))
-        ;; FIXME: Send email announcement!
         (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
           (when (file-symlink-p link) (delete-file link))
           (make-symbolic-link (file-name-nondirectory tarball) link))
         (dolist (oldtarball oldtarballs)
-          ;; lzip compress oldtarballs.
+          ;; Compress oldtarballs.
           (let ((file (cdr oldtarball)))
             (when (string-match "\\.\\(tar\\|el\\)\\'" file)
               ;; Don't compress the file we just created.
@@ -414,13 +414,14 @@ Return non-nil if a new tarball was created."
             (let* ((last-rel (elpaa--get-last-release pkg-spec))
                    (tarball (concat elpaa--release-subdir
                                     (format "%s-%s.tar"
-                                            pkgname (car last-rel)))))
+                                            pkgname (car last-rel))))
+                   (metadata `(nil ,(car last-rel) . ,(nthcdr 2 metadata))))
               (if (not last-rel)
                   (elpaa--message "Package %s not released yet!" pkgname)
                 (elpaa--make-one-tarball
-                 tarball dir pkg-spec
-                 `(nil ,(car last-rel) . ,(nthcdr 2 metadata))
-                 (lambda () (cdr last-rel))))))))
+                 tarball dir pkg-spec metadata
+                 (lambda () (cdr last-rel)))
+                (elpaa--release-email pkg-spec metadata))))))
          (t
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
@@ -429,7 +430,8 @@ Return non-nil if a new tarball was created."
              (lambda ()
                (elpaa--get-release-revision
                 dir pkgname vers
-                (plist-get (cdr pkg-spec) :version-map)))))))))))
+                (plist-get (cdr pkg-spec) :version-map))))
+            (elpaa--release-email pkg-spec metadata))))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
@@ -1157,6 +1159,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   ;; copyright to the FSF.
   (with-temp-buffer
     (let* ((pkgname (car pkg-spec))
+           (elpaa--debug nil)
            (files (mapcar (lambda (f) (concat pkgname "/" f))
                           (elpaa--copyright-files pkg-spec)))
            (default-directory (elpaa--dirname "packages")))
@@ -1183,10 +1186,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           (push line res))))
     res))
 
-(defun elpaa--copyright-check (pkg-name)
+(defun elpaa--copyright-check (pkg-spec)
   "Check the copyright notices, if applicable."
   (when (file-readable-p elpaa--copyright-file)
-    (let* ((collected (elpaa--copyright-collect pkg-name))
+    (let* ((collected (elpaa--copyright-collect pkg-spec))
            (filtered (elpaa--copyright-filter collected)))
       (when filtered
         (message "Problem with copyright notices:\n%s"
@@ -1208,7 +1211,35 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                        (car spec)))
                                    specs))))
     (dolist (pkg pkgs)
-      (elpaa--copyright-check (assoc pkg specs)))))
+      (ignore-error 'error
+        (elpaa--copyright-check (assoc pkg specs))))))
+
+;;; Announcement emails
+
+(defun elpaa--release-email (pkg-spec metadata)
+  (when elpaa--email-to
+    (with-temp-buffer
+      (message-mode)
+      (let* ((version (nth 1 metadata))
+             (pkgname (car pkg-spec))
+             (name (capitalize pkgname)))
+        (message-setup `((From    . ,elpaa--email-from)
+                         (To      . ,elpaa--email-to)
+                         (Subject . ,(format "[%s ELPA] %s version %s"
+                                             elpaa--name name version))))
+        ;; FIXME: This message needs to be improved, e.g. with the "NEWS".
+        (insert "Version " version
+                " of package " name
+                " has just been released in " elpaa--name " ELPA.
+You can now find it in M-x package-list RET.
+
+" name " describes itself as:
+  " (nth 2 metadata) "
+
+More at " elpaa--url pkgname ".html")
+        ;; (pop-to-buffer (current-buffer)) (debug t)
+        (message-send)
+        ))))
 
 ;;; Fetch updates from upstream
 
