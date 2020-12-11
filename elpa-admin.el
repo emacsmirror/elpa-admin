@@ -30,8 +30,8 @@
 ;; Missing more generally:
 ;; - support for rebuilding index.html, archive-contents, and <pkg>.html
 ;; - support for building the Info files
-;; - support for README.md for some packages
-;; - support for Tramp as core
+;; - render the README and News in the HTML rather than as <pre> block!
+;; - support for Tramp as core?
 
 ;;; Code:
 
@@ -421,7 +421,7 @@ Return non-nil if a new tarball was created."
                 (elpaa--make-one-tarball
                  tarball dir pkg-spec metadata
                  (lambda () (cdr last-rel)))
-                (elpaa--release-email pkg-spec metadata))))))
+                (elpaa--release-email pkg-spec metadata dir))))))
          (t
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
@@ -431,7 +431,7 @@ Return non-nil if a new tarball was created."
                (elpaa--get-release-revision
                 dir pkgname vers
                 (plist-get (cdr pkg-spec) :version-map))))
-            (elpaa--release-email pkg-spec metadata))))))))
+            (elpaa--release-email pkg-spec metadata dir))))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
@@ -696,7 +696,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (insert-file-contents mainsrcfile)
          (lm-header prop))))))
 
-(defun elpaa--get-section (hsection fsection srcdir mainsrcfile)
+(defun elpaa--get-section (hsection fsection srcdir pkg-spec)
   (when (consp fsection)
     (while (cdr-safe fsection)
       (setq fsection
@@ -709,9 +709,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (with-temp-buffer
       (insert-file-contents (expand-file-name fsection srcdir))
       (buffer-string)))
-   ((file-readable-p mainsrcfile)
+   ((file-readable-p (elpaa--main-file pkg-spec))
     (with-temp-buffer
-      (insert-file-contents mainsrcfile)
+      (insert-file-contents (elpaa--main-file pkg-spec))
       (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
       (let ((start (lm-section-start hsection)))
         (when start
@@ -729,6 +729,27 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
           (skip-chars-backward " \t\n")
           (delete-region (point) (point-max))
           (buffer-string)))))))
+
+(defun elpaa--get-README (pkg-spec dir)
+  (elpaa--get-section
+   "Commentary" (elpaa--spec-get pkg-spec :readme
+                                 '("README" "README.rst"
+                                   ;; Most README.md files seem to be currently
+                                   ;; worse than the Commentary: section :-(
+                                   ;; "README.md"
+                                   "README.org"))
+   dir pkg-spec))
+
+(defun elpaa--get-NEWS (pkg-spec dir)
+  (let ((text
+         (elpaa--get-section
+          "News" (elpaa--spec-get pkg-spec :news
+                                  '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
+          dir pkg-spec)))
+    (if (< (length text) 4000)
+        text
+      (concat (substring text 0 4000) "...\n...\n"))))
+
 
 (defun elpaa--quote (txt)
   (replace-regexp-in-string "<" "&lt;"
@@ -771,7 +792,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
-         (mainsrcfile (expand-file-name (format "%s.el" name) srcdir))
+         (mainsrcfile (expand-file-name (elpaa--main-file pkg-spec) srcdir))
          (desc (aref (cdr pkg) 2)))
     (cl-assert (equal name (car pkg-spec)))
     (with-temp-buffer
@@ -808,14 +829,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
-      ;; FIXME: Use README.md for some packages (such as markdown-mode).
-      (let ((rm (elpaa--get-section
-                 "Commentary" '("README" "README.rst"
-                                ;; Most README.md files seem to be currently
-                                ;; worse than the Commentary: section :-(
-                                ;; "README.md"
-                                "README.org")
-                 srcdir mainsrcfile)))
+      (let ((rm (elpaa--get-README pkg-spec srcdir)))
         (when rm
           (write-region rm nil (concat name "-readme.txt"))
           (insert "<h2>Full description</h2><pre>\n" (elpaa--quote rm)
@@ -832,9 +846,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (elpaa--html-bytes-format (nth 7 attrs)))))))
         (insert "</table>\n"))
-      (let ((news (elpaa--get-section
-                   "News" '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org")
-                   srcdir mainsrcfile)))
+      (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
           (insert "<h2>News</h2><pre>\n" (elpaa--quote news) "\n</pre>\n")))
       (insert "</body>\n")
@@ -1216,7 +1228,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 ;;; Announcement emails
 
-(defun elpaa--release-email (pkg-spec metadata)
+(defun elpaa--release-email (pkg-spec metadata dir)
   (when elpaa--email-to
     (with-temp-buffer
       (message-mode)
@@ -1227,7 +1239,6 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
                                              elpaa--name name version))))
-        ;; FIXME: This message needs to be improved, e.g. with the "NEWS".
         (insert "Version " version
                 " of package " name
                 " has just been released in " elpaa--name " ELPA.
@@ -1237,6 +1248,9 @@ You can now find it in M-x package-list RET.
   " (nth 2 metadata) "
 
 More at " elpaa--url pkgname ".html")
+        (let ((news (elpaa--get-NEWS pkg-spec dir)))
+          (when news
+            (insert "\n\nRecent NEWS:\n\n" news)))
         ;; (pop-to-buffer (current-buffer)) (debug t)
         (message-send)
         ))))

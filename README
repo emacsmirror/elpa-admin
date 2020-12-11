@@ -93,6 +93,18 @@ Mapping from the source layout to the layout used in the tarball.
 RENAMES is a list of element (FROM TO) where FROM should terminate with =/=
 if it's a directory.
 
+** =:readme FILE=
+Name of the file to use as the description of the package.  By default
+we try to use README, README.rst, README.org, or the Commentary section
+in the main file.
+
+** =:news FILE=
+Name of the file that contains the list of changes in recent versions
+(listed from more recent to least recent).
+By default we try to use NEWS, NEWS.rst, NEWS.md, NEWS.org, the News section
+in the main file.
+
+
 * Text below this marker is OUTDATED and still needs to be reviewed/rewritten!!
 
 * Packages
