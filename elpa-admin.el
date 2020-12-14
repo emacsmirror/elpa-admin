@@ -993,7 +993,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
               (goto-char (point-min))
               ;; Nothing to pull (nor push, actually).
               (search-forward "\n# branch.ab +0 -0" nil t))
-            (message "%s up-to-date" dirname)
+            (elpaa--message "%s up-to-date" dirname)
           (message "Updating worktree in %S" default-directory)
           (elpaa--call t "git" "merge")))
        (t (error "No .git in %S" default-directory)))
