@@ -221,8 +221,13 @@ Assumes that the current worktree holds a snapshot version."
 (defun elpaa--select-revision (dir pkg-spec rev)
   "Checkout revision REV in DIR of PKG-SPEC.
 Do it without leaving the current branch."
-  (let ((cur-rev (vc-working-revision
-                  (expand-file-name (elpaa--main-file pkg-spec) dir))))
+  (let ((cur-rev
+         ;; FIXME: Emacs-26's `vc-git-working-revision' ignores its arg and
+         ;; uses uses the `default-directory' to get the revision.
+         (let* ((ftn (file-truename
+                      (expand-file-name (elpaa--main-file pkg-spec) dir)))
+                (default-directory (file-name-directory ftn)))
+           (vc-working-revision ftn))))
     (if (equal rev cur-rev)
         (elpaa--message "Current revision is already desired revision!")
       (with-temp-buffer
@@ -387,12 +392,20 @@ Return non-nil if a new tarball was created."
           (message "Built new package %s!" tarball)
           'new)))))
 
-(defun elpaa--get-devel-version (dir)
+(defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
-  (let* ((default-directory (elpaa--dirname dir))
+  (let* ((ftn (file-truename      ;; Follow symlinks!
+              (expand-file-name (elpaa--main-file pkg-spec) dir)))
+        (default-directory (file-name-directory ftn))
          (gitdate
           (with-temp-buffer
-            (elpaa--call t "git" "show" "--pretty=format:%cI" "--no-patch")
+           (if (plist-get (cdr pkg-spec) :core)
+               ;; For core packages, don't use the date of the last
+               ;; commit to the branch, but that of the last commit
+               ;; to the main file.
+               (elpaa--call t "git" "log" "--pretty=format:%cI" "--no-patch"
+                            "-1" "--" (file-name-nondirectory ftn))
+             (elpaa--call t "git" "show" "--pretty=format:%cI" "--no-patch"))
             (buffer-string)))
          (verdate
           ;; Convert Git's date into something that looks like a version number.
@@ -452,7 +465,7 @@ Return non-nil if a new tarball was created."
       ;; First, try and build the devel tarball
       ;; Do it before building the release tarball, because building
       ;; the release tarball may revert to some older commit.
-      (let* ((date-version (elpaa--get-devel-version dir))
+      (let* ((date-version (elpaa--get-devel-version dir pkg-spec))
              ;; Add a ".0." so that when the version number goes from
              ;; NN.MM to NN.MM.1 we don't end up with the devel build
              ;; of NN.MM comparing as more recent than NN.MM.1.
