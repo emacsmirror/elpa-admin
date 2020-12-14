@@ -101,7 +101,7 @@ nbc_els := $(foreach el, $(extra_els), \
 elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
-%.elc: %.el
+packages/%.elc: packages/%.el
 	@echo 'Byte compiling $<'
 	@$(EMACS) 		  		       	       	     \
 	    --eval "(setq package-directory-list nil   	       	     \
@@ -137,25 +137,32 @@ all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 # FIXME: `make` spends a lot of time at startup now, apparently
 # building all those singlepkg rules!
 
-define RULE-singlepkg
-$(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
-                           $1/$(notdir $(1))-autoloads.el
-$(1): $(filter $(1)/%, $(elcs))
-endef
-$(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
+# define RULE-singlepkg
+# $(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
+#                            $1/$(notdir $(1))-autoloads.el
+# $(1): $(filter $(1)/%, $(elcs))
+# endef
+# $(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
 
 
-#### `make package/<pkgname>` to populate one package's subdirectory       ####
+# #### `make package/<pkgname>` to populate one package's subdirectory       ####
 
-MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
-                   ls -1d packages/*; ls -1d packages/*)		      \
-                  | sort | uniq -u
-MISSING_PKGS := $(shell $(MISSING_script))
+# MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
+#                    ls -1d packages/*; ls -1d packages/*)		      \
+#                   | sort | uniq -u
+# MISSING_PKGS := $(shell $(MISSING_script))
 
-$(MISSING_PKGS):
+# $(MISSING_PKGS):
+# 	$(EMACS) -l admin/elpa-admin.el \
+# 	         -f elpaa-batch-archive-update-worktrees "$(@F)"
+
+.SECONDEXPANSION:
+packages/% : $$(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
+                          --exclude-vcs packages/$$* 2>&1 | 	       \
+                      sed -ne 's/\.el$$$$/.elc/p')
+	[ -d packages/$* ] || 		\
 	$(EMACS) -l admin/elpa-admin.el \
 	         -f elpaa-batch-archive-update-worktrees "$(@F)"
-
 
 #### Fetching updates from upstream                                        ####
 

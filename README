@@ -104,9 +104,12 @@ Name of the file that contains the list of changes in recent versions
 By default we try to use NEWS, NEWS.rst, NEWS.md, NEWS.org, the News section
 in the main file.
 
-** =:texinfo FILE=
-Name of the Texinfo documentation file for the package.
-It can also be the name of an Info file.
+** =:doc FILE=
+Name of the documentation file for the package.
+It can be either an Info file, a Texinfo file, or an Org file.
+
+** =:make TARGET=
+Indicates that we should run ~make TARGET~ in order to build some files.
 
 * Text below this marker is OUTDATED and still needs to be reviewed/rewritten!!
 
