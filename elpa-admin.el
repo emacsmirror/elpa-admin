@@ -21,17 +21,9 @@
 
 ;;;; TODO
 
-;; Missing from GNU ELPA script:
-;; - Support for :core (seems to be partly working, actually, tho it likely
-;;   doesn't select the right release revision).
-;; - Support for Org's package (including building the Info file)
-;; - Fix archive name and URL
-
-;; Missing more generally:
-;; - support for rebuilding index.html, archive-contents, and <pkg>.html
-;; - support for building the Info files
+;; - support for conveniently rebuilding individual files like
+;;   index.html, archive-contents, or <pkg>.html
 ;; - render the README and News in the HTML rather than as <pre> block!
-;; - support for Tramp as core?
 
 ;;; Code:
 
@@ -40,29 +32,48 @@
 (require 'package)
 
 
-(defconst elpaa--release-subdir "archive/"
+(defvar elpaa--release-subdir "archive/"
   "Subdirectory where the ELPA release files (tarballs, ...) will be placed.")
-(defconst elpaa--devel-subdir "archive-devel/"
+(defvar elpaa--devel-subdir "archive-devel/"
   "Subdirectory where the ELPA bleeding edge files (tarballs, ...) will be placed.")
-(defconst elpaa--name "NonGNU")
-(defconst elpaa--gitrepo "emacs/nongnu.git")
-(defconst elpaa--url "https://elpa.gnu.org/nongnu/")
+(defvar elpaa--name "NonGNU")
+(defvar elpaa--gitrepo "emacs/nongnu.git")
+(defvar elpaa--url "https://elpa.gnu.org/nongnu/")
 
-(defconst elpaa--branch-prefix "externals/")
-(defconst elpaa--release-branch-prefix "externals-release/")
+(defvar elpaa--branch-prefix "externals/")
+(defvar elpaa--release-branch-prefix "externals-release/")
 
-(defconst elpaa--specs-file "externals-list")
-(defconst elpaa--copyright-file "copyright_exceptions")
-(defconst elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
-(defconst elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
+(defvar elpaa--specs-file "externals-list")
+(defvar elpaa--copyright-file "copyright_exceptions")
+(defvar elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
+(defvar elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
 
-(defconst elpaa--sandbox t
+(defvar elpaa--sandbox t
   "If non-nil, run some of the less trusted commands in a sandbox.
 This is recommended when building packages from untrusted sources,
 but this requires Bubblewrap to be installed and has only been tested
 on some Debian systems.")
 
-(defvar elpaa--debug t)
+(defvar elpaa--debug nil)
+
+(defun elpaa-read-config (&optional file)
+  (let ((config (elpaa--form-from-file-contents (or file "elpa-config"))))
+    (pcase-dolist (`(,var ,val) config)
+      (cl-assert (or (stringp val) (booleanp val)) t)
+      (setf (pcase-exhaustive var
+              ('name			elpaa--name)
+              ('gitrepo			elpaa--gitrepo)
+              ('url			elpaa--url)
+              ('branch-prefix		elpaa--branch-prefix)
+              ('release-branch-prefix	elpaa--release-branch-prefix)
+              ('specs-file		elpaa--specs-file)
+              ('copyright-file		elpaa--copyright-file)
+              ('email-to		elpaa--email-to)
+              ('email-from		elpaa--email-from)
+              ('sandbox			elpaa--sandbox)
+              ('debug			elpaa--debug))
+            val))))
+
 (defun elpaa--message (&rest args)
   (when elpaa--debug (apply #'message args)))
 
@@ -222,8 +233,8 @@ Do it without leaving the current branch."
 
 (defun elpaa--make-tar-transform (pkgname r)
   (let ((from (nth 0 r)) (to (nth 1 r)))
-    (cl-assert (not (string-match "[][*+\\|?]" from)))
-    (cl-assert (not (string-match "[][*+\\|?]" to)))
+    (cl-assert (not (string-match "[][*\\|?]" from)))
+    (cl-assert (not (string-match "[][*\\|?]" to)))
     (format "--transform=s|^packages/%s/%s|packages/%s/%s|"
             pkgname
             (if (string-match "/\\'" from)
@@ -321,8 +332,8 @@ Return non-nil if a new tarball was created."
         (elpaa--make pkg-spec dir)
         (elpaa--write-pkg-file dir pkgname metadata)
         ;; FIXME: Allow renaming files or selecting a subset of the files!
-        (cl-assert (not (string-match "[][*+\\|?]" pkgname)))
-        (cl-assert (not (string-match "[][*+\\|?]" vers)))
+        (cl-assert (not (string-match "[][*\\|?]" pkgname)))
+        (cl-assert (not (string-match "[][*\\|?]" vers)))
         (apply #'elpaa--call
                nil "tar"
                `("--exclude-vcs"
@@ -330,7 +341,7 @@ Return non-nil if a new tarball was created."
                     (ignores
                      (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
                              ignores))
-                    ((file-readable-p elpaignore) `("-X" elpaignore)))
+                    ((file-readable-p elpaignore) `("-X" ,elpaignore)))
                  ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r)) renames)
                  "--transform"
                  ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
@@ -407,13 +418,16 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
+  (elpaa-read-config)
   (let* ((specs (elpaa--get-specs)))
     (dolist (spec specs)
-      (with-demoted-errors "Build error: %S"
-        (elpaa--make-one-package spec)))))
+      (condition-case err
+          (elpaa--make-one-package spec)
+        (error (message "Build error for %s: %S" (car spec) err))))))
 
 (defun elpaa-batch-make-one-package (&rest _)
   "Build the new tarballs (if needed) for one particular package."
+  (elpaa-read-config)
   (while command-line-args-left
     (elpaa--make-one-package (elpaa--get-package-spec
                                 (pop command-line-args-left)))))
@@ -488,7 +502,7 @@ Return non-nil if a new tarball was created."
              tarball dir pkg-spec metadata
              (lambda ()
                (elpaa--get-release-revision
-                dir pkgname vers
+                dir pkg-spec vers
                 (plist-get (cdr pkg-spec) :version-map))))
             (elpaa--release-email pkg-spec metadata dir))))))))
 
@@ -527,10 +541,8 @@ Signal an error if the command did not finish with exit code 0."
                    (buffer-string))
           (error "Error-indicating exit code in elpaa--call-sandboxed"))))))
 
-(defconst elpaa--revno-re "[0-9a-f]+")
-
-(defconst elpaa--default-url-format (concat elpaa--url "%s.html"))
-(defconst elpaa--default-url-re (format elpaa--default-url-format ".*"))
+(defun elpaa--default-url-format () (concat elpaa--url "%s.html"))
+(defun elpaa--default-url-re () (format (elpaa--default-url-format) ".*"))
 
 
 (defun elpaa--override-version (pkg-spec orig-fun header)
@@ -597,7 +609,7 @@ PKG is the name of the package and DIR is the directory where it is."
             (push (cons :keywords keywords) extras))
           (unless found-url
             ;; Provide a good default URL.
-            (push (cons :url (format elpaa--default-url-format pkg)) extras))
+            (push (cons :url (format (elpaa--default-url-format) pkg)) extras))
           (list simple
 		(package-version-join version)
 		(package-desc-summary pkg-desc)
@@ -605,29 +617,6 @@ PKG is the name of the package and DIR is the directory where it is."
                 extras))))
      (t
       (error "Can't find main file %s file in %s" mainfile dir)))))
-
-(defun elpaa--make-changelog (dir srcdir)
-  "Export Git log info of DIR into a ChangeLog file."
-  (message "Refreshing ChangeLog in %S" dir)
-  (let ((default-directory (elpaa--dirname dir)))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      (let ((coding-system-for-read 'binary)
-            (coding-system-for-write 'binary))
-        (when (file-readable-p "ChangeLog") (insert-file-contents "ChangeLog"))
-        (let ((old-md5 (md5 (current-buffer))))
-          (erase-buffer)
-          (let ((default-directory (elpaa--dirname dir srcdir)))
-            (elpaa--call t "git" "log" "--date=short"
-                         "--format=%cd  %aN  <%ae>%n%n%w(80,8,8)%B%n"
-                         "."))
-          (tabify (point-min) (point-max))
-          (goto-char (point-min))
-          (while (re-search-forward "\n\n\n+" nil t)
-            (replace-match "\n\n"))
-          (if (equal old-md5 (md5 (current-buffer)))
-              (message "ChangeLog's md5 unchanged for %S" dir)
-            (write-region (point-min) (point-max) "ChangeLog" nil 'quiet)))))))
 
 (defun elpaa--alist-to-plist-args (alist)
   (mapcar (lambda (x)
@@ -847,7 +836,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
   (when url
     (insert (format "<dt>Home page</dt> <dd><a href=%S>%s</a></dd>\n"
                     url (elpaa--html-quote url)))
-    (when (string-match elpaa--default-url-re url)
+    (when (string-match (elpaa--default-url-re) url)
       (setq url nil)))
   (let* ((git-sv "http://git.savannah.gnu.org/")
          (urls
@@ -1002,9 +991,6 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                  (buffer-string))))))
 
 ;;; Maintain external packages.
-
-(defconst elpaa--elpa-git-url "git://git.sv.gnu.org/emacs/elpa")
-(defconst elpaa--emacs-git-url "git://git.sv.gnu.org/emacs.git")
 
 (defun elpaa--sync-emacs-repo ()
   "Sync Emacs repository, if applicable.
@@ -1227,10 +1213,12 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun elpaa-add/remove/update-externals ()
   "Remove non-package directories and fetch external packages."
+  (elpaa-read-config)
   (let ((command-line-args-left '("-")))
     (elpaa-batch-archive-update-worktrees)))
 
 (defun elpaa-batch-archive-update-worktrees (&rest _)
+  (elpaa-read-config)
   (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left)
         (with-core (elpaa--sync-emacs-repo)))
@@ -1266,8 +1254,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (while pending
       (pcase (pop pending)
         ((pred (lambda (f) (member f ignores))))
-        ((pred file-symlink-p))
-        ((and (pred file-directory-p) d)
+        ((and d (guard (and (file-directory-p d) (not (file-symlink-p d)))))
          (setq pending (nconc (mapcar (lambda (f) (concat d "/" f))
                                       (funcall dir-files d))
                               pending)))
@@ -1322,6 +1309,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (error "Abort")))))
 
 (defun elpaa-batch-copyright-check (&rest _)
+  (elpaa-read-config)
   (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left))
     (setq command-line-args-left nil)
@@ -1529,9 +1517,11 @@ More at " elpaa--url pkgname ".html")
           (elpaa--fetch pkg-spec k))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)
+  (elpaa-read-config)
   (elpaa--batch-fetch-and #'ignore))
 
 (defun elpaa-batch-fetch-and-push (&rest _)
+  (elpaa-read-config)
   (elpaa--batch-fetch-and #'elpaa--push))
 
 ;;; ERT test support
