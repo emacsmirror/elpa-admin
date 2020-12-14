@@ -528,6 +528,7 @@ The INFILE and DISPLAY arguments are fixed as nil."
 (defconst elpaa--bwrap-args
   '("--unshare-all"
     "--ro-bind" "/lib" "/lib"
+    "--ro-bind" "/lib64" "/lib64"
     "--ro-bind" "/usr" "/usr"
     "--ro-bind" "/etc/alternatives" "/etc/alternatives"
     "--ro-bind" "/etc/emacs" "/etc/emacs"
