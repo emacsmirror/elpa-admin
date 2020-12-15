@@ -47,6 +47,7 @@
 (defvar elpaa--copyright-file "copyright_exceptions")
 (defvar elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
 (defvar elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
+(defvar elpaa--email-reply-to nil)
 
 (defvar elpaa--sandbox t
   "If non-nil, run some of the less trusted commands in a sandbox.
@@ -70,6 +71,7 @@ on some Debian systems.")
               ('copyright-file		elpaa--copyright-file)
               ('email-to		elpaa--email-to)
               ('email-from		elpaa--email-from)
+              ('email-reply-to		elpaa--email-reply-to)
               ('sandbox			elpaa--sandbox)
               ('debug			elpaa--debug))
             val))))
@@ -555,8 +557,8 @@ Signal an error if the command did not finish with exit code 0."
                    (buffer-string))
           (error "Error-indicating exit code in elpaa--call-sandboxed"))))))
 
-(defun elpaa--default-url-format () (concat elpaa--url "%s.html"))
-(defun elpaa--default-url-re () (format (elpaa--default-url-format) ".*"))
+(defun elpaa--default-url (pkgname) (concat elpaa--url pkgname ".html"))
+(defun elpaa--default-url-re () (elpaa--default-url ".*"))
 
 
 (defun elpaa--override-version (pkg-spec orig-fun header)
@@ -623,7 +625,7 @@ PKG is the name of the package and DIR is the directory where it is."
             (push (cons :keywords keywords) extras))
           (unless found-url
             ;; Provide a good default URL.
-            (push (cons :url (format (elpaa--default-url-format) pkg)) extras))
+            (push (cons :url (elpaa--default-url pkg)) extras))
           (list simple
 		(package-version-join version)
 		(package-desc-summary pkg-desc)
@@ -1350,7 +1352,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (message-setup `((From    . ,elpaa--email-from)
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
-                                             elpaa--name name version))))
+                                             elpaa--name name version))
+                         ,@(if elpaa--email-reply-to
+                               `((Reply-To . ,elpaa--email-reply-to)))))
         (insert "Version " version
                 " of package " name
                 " has just been released in " elpaa--name " ELPA.
@@ -1359,7 +1363,7 @@ You can now find it in M-x package-list RET.
 " name " describes itself as:
   " (nth 2 metadata) "
 
-More at " elpaa--url pkgname ".html")
+More at " (elpaa--default-url pkgname))
         (let ((news (elpaa--get-NEWS pkg-spec dir)))
           (when news
             (insert "\n\nRecent NEWS:\n\n" news)))
