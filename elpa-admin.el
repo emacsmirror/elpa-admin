@@ -506,20 +506,20 @@ Return non-nil if a new tarball was created."
                    (metadata `(nil ,(car last-rel) . ,(nthcdr 2 metadata))))
               (if (not last-rel)
                   (elpaa--message "Package %s not released yet!" pkgname)
-                (elpaa--make-one-tarball
-                 tarball dir pkg-spec metadata
-                 (lambda () (cdr last-rel)))
-                (elpaa--release-email pkg-spec metadata dir))))))
+                (when (elpaa--make-one-tarball
+                       tarball dir pkg-spec metadata
+                       (lambda () (cdr last-rel)))
+                  (elpaa--release-email pkg-spec metadata dir)))))))
          (t
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
-            (elpaa--make-one-tarball
-             tarball dir pkg-spec metadata
-             (lambda ()
-               (elpaa--get-release-revision
-                dir pkg-spec vers
-                (plist-get (cdr pkg-spec) :version-map))))
-            (elpaa--release-email pkg-spec metadata dir))))))))
+            (when (elpaa--make-one-tarball
+                   tarball dir pkg-spec metadata
+                   (lambda ()
+                     (elpaa--get-release-revision
+                      dir pkg-spec vers
+                      (plist-get (cdr pkg-spec) :version-map))))
+              (elpaa--release-email pkg-spec metadata dir)))))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
