@@ -57,8 +57,17 @@ on some Debian systems.")
 
 (defvar elpaa--debug nil)
 
-(defun elpaa-read-config (&optional file)
-  (let ((config (elpaa--form-from-file-contents (or file "elpa-config"))))
+(defun elpaa--form-from-file-contents (filename)
+  (with-temp-buffer
+    (insert-file-contents filename)
+    ;; This is unnecessary because ‘with-temp-buffer’ generates a new
+    ;; (empty) buffer, and ‘insert-file-contents’ inserts after point.
+    ;; In other words, point is alraedy at bob.
+    ;;- (goto-char (point-min))
+    (read (current-buffer))))
+
+(defun elpaa-read-config (file)
+  (let ((config (elpaa--form-from-file-contents file)))
     (pcase-dolist (`(,var ,val) config)
       (cl-assert (or (stringp val) (booleanp val)) t)
       (setf (pcase-exhaustive var
@@ -75,6 +84,8 @@ on some Debian systems.")
               ('sandbox			elpaa--sandbox)
               ('debug			elpaa--debug))
             val))))
+
+(when (file-readable-p "elpa-config") (elpaa-read-config "elpa-config"))
 
 (defun elpaa--message (&rest args)
   (when elpaa--debug (apply #'message args)))
@@ -433,7 +444,6 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
-  (elpaa-read-config)
   (let* ((specs (elpaa--get-specs)))
     (dolist (spec specs)
       (condition-case err
@@ -442,7 +452,6 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa-batch-make-one-package (&rest _)
   "Build the new tarballs (if needed) for one particular package."
-  (elpaa-read-config)
   (while command-line-args-left
     (elpaa--make-one-package (elpaa--get-package-spec
                                 (pop command-line-args-left)))))
@@ -674,15 +683,6 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (unless dont-rename (rename-file dir (concat pkg "-" vers)))
     (cons (intern pkg) (vector (elpaa--version-to-list vers)
                                req (nth 3 exp) 'tar extras))))
-
-(defun elpaa--form-from-file-contents (filename)
-  (with-temp-buffer
-    (insert-file-contents filename)
-    ;; This is unnecessary because ‘with-temp-buffer’ generates a new
-    ;; (empty) buffer, and ‘insert-file-contents’ inserts after point.
-    ;; In other words, point is alraedy at bob.
-    ;;- (goto-char (point-min))
-    (read (current-buffer))))
 
 (defun elpaa--multi-file-package-def (dir pkg)
   "Return the `define-package' form in the file DIR/PKG-pkg.el."
@@ -1229,12 +1229,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun elpaa-add/remove/update-externals ()
   "Remove non-package directories and fetch external packages."
-  (elpaa-read-config)
   (let ((command-line-args-left '("-")))
     (elpaa-batch-archive-update-worktrees)))
 
 (defun elpaa-batch-archive-update-worktrees (&rest _)
-  (elpaa-read-config)
   (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left)
         (with-core (elpaa--sync-emacs-repo)))
@@ -1303,7 +1301,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (buffer-string)))
 
 (defun elpaa--copyright-filter (collected)
-  (let ((res '()))
+  (let ((res '())
+        (find-file-suppress-same-file-warnings t))
     (with-current-buffer (find-file-noselect elpaa--copyright-file)
       (dolist (line (split-string collected "\n" t))
         (goto-char (point-min))
@@ -1325,7 +1324,6 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (error "Abort")))))
 
 (defun elpaa-batch-copyright-check (&rest _)
-  (elpaa-read-config)
   (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left))
     (setq command-line-args-left nil)
@@ -1481,9 +1479,10 @@ More at " (elpaa--default-url pkgname))
          ((let* ((ortb (elpaa--ortb pkg-spec))
                  (exists (elpaa--git-branch-p ortb)))
             (not (equal 0 (elpaa--call t "git" "log"
-                                         (if exists
-                                             (format "%s...%s" ortb urtb)
-                                           urtb)))))
+                                       "--format=%h  %<(16,trunc)%ae  %s"
+                                       (if exists
+                                           (format "%s...%s" ortb urtb)
+                                         urtb)))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
           (message "No pending upstream changes for %s" pkg))
@@ -1535,11 +1534,9 @@ More at " (elpaa--default-url pkgname))
           (elpaa--fetch pkg-spec k))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)
-  (elpaa-read-config)
   (elpaa--batch-fetch-and #'ignore))
 
 (defun elpaa-batch-fetch-and-push (&rest _)
-  (elpaa-read-config)
   (elpaa--batch-fetch-and #'elpaa--push))
 
 ;;; ERT test support

@@ -68,8 +68,7 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 # packages/aggressive-indent/aggressive-indent-autoloads.el: \
 #     packages/names/names-autoloads.el
 
-$(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
-%-autoloads.el:
+packages/%-autoloads.el:
 	@#echo 'Generating autoloads for $@'
 	@cd $(dir $@) && 						   \
 	  $(EMACS) -l $(CURDIR)/admin/elpa-admin.el 		   \
@@ -82,8 +81,8 @@ $(foreach al, $(autoloads), $(eval $(call RULE-srcdeps, $(al))))
 # I.e. one for each .el file in each package root, except for the -pkg.el,
 # the -autoloads.el, the .el files that are marked "no-byte-compile", and
 # files matching patterns in packages' .elpaignore files.
-included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
-                            --exclude-vcs packages 2>&1 | grep '\.el$$')
+# included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
+#                             --exclude-vcs packages 2>&1 | grep '\.el$$')
 
 # included_els := $(wildcard packages/*/*.el)
 
@@ -91,8 +90,8 @@ included_els := $(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
 # 					packages/*/*/*.el   \
 # 					packages/*/*/*/*.el \
 # 	                                packages/*/*/*/*/*.el))
-els := $(call FILTER-nonsrc, $(included_els))
-naive_elcs := $(patsubst %.el, %.elc, $(els))
+# els := $(call FILTER-nonsrc, $(included_els))
+# naive_elcs := $(patsubst %.el, %.elc, $(els))
 current_elcs := $(shell find packages -name '*.elc' -print)
 
 extra_els := $(call SET-diff, $(els), $(patsubst %.elc, %.el, $(current_elcs)))
@@ -101,28 +100,30 @@ nbc_els := $(foreach el, $(extra_els), \
 elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 
 # '(dolist (al (quote ($(patsubst %, "%", $(autoloads))))) (load (expand-file-name al) nil t))'
+.PRECIOUS: packages/%.elc
 packages/%.elc: packages/%.el
 	@echo 'Byte compiling $<'
-	@$(EMACS) 		  		       	       	     \
-	    --eval "(setq package-directory-list nil   	       	     \
+	@$(EMACS) 		  		       	     	     \
+	    --eval "(setq package-directory-list nil   	     	     \
 			  load-prefer-newer t			     \
-                          package-user-dir \"$(abspath packages)\")" \
-	    -f package-initialize 		       	       	     \
+	                  package-user-dir \"$(abspath packages)\")" \
+	    -f package-initialize 		       	     	     \
 	    -L $(dir $@) -f batch-byte-compile $<
 
-.PHONY: elcs
-elcs: $(elcs)
+# .PHONY: elcs
+# elcs: $(elcs)
 
 # Remove .elc files that don't have a corresponding .el file any more.
-extra_elcs := $(call SET-diff, $(current_elcs), $(naive_elcs))
+# FIXME
+# extra_elcs := $(call SET-diff, $(current_elcs), $(naive_elcs))
 .PHONY: $(extra_elcs)
-$(extra_elcs):; rm $@
+# $(extra_elcs):; rm $@
 
 # # Put into single_pkgs the set of -pkg.el files we need to keep up-to-date.
 # # I.e. all the -pkg.el files for the single-file packages.
 pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
-%-pkg.el: %.el
+packages/%-pkg.el: packages/%.el
 	@echo 'Generating description file $@'
 	@$(EMACS) -l admin/elpa-admin.el \
 	          -f elpaa-batch-generate-description-file "$@"
@@ -131,38 +132,54 @@ pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 # Use order-only prerequisites, so that autoloads are done first.
 all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
 
+define FILE-deps
+$(if $(findstring /, $(1)), 			     \
+     $(if $(patsubst %.elc,,$(1)),		     \
+          $(patsubst %.elc, %.el, $(1))),	     \
+     $(shell [ -d packages/$(1) ] && { 	  	     \
+               echo packages/$(1)/$(1)-pkg.el; 	     \
+               echo packages/$(1)/$(1)-autoloads.el; \
+               tar -cvhf /dev/null 		     \
+                   --exclude-ignore=.elpaignore      \
+		   --exclude='*-pkg.el'		     \
+		   --exclude='*-autoloads.el'	     \
+                   --exclude-vcs packages/$(1) 2>&1  \
+               | sed -ne 's/\.el$$/.elc/p';}))
+endef
 
-#### `make package/<pkgname>` to compile the files of a single package     ####
-
-# FIXME: `make` spends a lot of time at startup now, apparently
-# building all those singlepkg rules!
-
-# define RULE-singlepkg
-# $(filter $(1)/%, $(elcs)): $1/$(notdir $(1))-pkg.el \
-#                            $1/$(notdir $(1))-autoloads.el
-# $(1): $(filter $(1)/%, $(elcs))
+# define FILE-cmd
+# $(if $(findstring /, $(1)), 			  		       \
+#      $(if $(patsubst %.elc,,$(1)),		  		       \
+# 	  $(EMACS) 		  		       	       	       \
+# 	      --eval "(setq package-directory-list nil   	       \
+# 			    load-prefer-newer t			       \
+#                             package-user-dir \"$(abspath packages)\")" \
+# 	      -f package-initialize 		       	       	       \
+# 	      -L $(dir $@) -f batch-byte-compile $<,		       \
+#           echo YUP: $(1)),					       \
+# 	[ -d packages/$(1) ] || 				       \
+#             $(EMACS) -l admin/elpa-admin.el       		       \
+# 	             -f elpaa-batch-archive-update-worktrees "$(@F)")
 # endef
-# $(foreach pkg, $(pkgs), $(eval $(call RULE-singlepkg, $(pkg))))
 
+# define EMACS-update-tree-cmd
+# $(EMACS) -l admin/elpa-admin.el \
+#          -f elpaa-batch-archive-update-worktrees "$(@F)"
+# endef
+# define EMACS-update-tree-cmd
+# $(shell echo $(call EMACS-update-tree-cmd,$(1))) \
+# $(call EMACS-update-tree-cmd,$(1))
+# endef
 
-# #### `make package/<pkgname>` to populate one package's subdirectory       ####
-
-# MISSING_script := (sed -ne 's|^.("\([^"]*\)".*|packages/\1|p' externals-list; \
-#                    ls -1d packages/*; ls -1d packages/*)		      \
-#                   | sort | uniq -u
-# MISSING_PKGS := $(shell $(MISSING_script))
-
-# $(MISSING_PKGS):
-# 	$(EMACS) -l admin/elpa-admin.el \
-# 	         -f elpaa-batch-archive-update-worktrees "$(@F)"
+.PHONY: dummy
+dummy:
+#	# echo Making dummies
 
 .SECONDEXPANSION:
-packages/% : $$(shell tar -cvhf /dev/null --exclude-ignore=.elpaignore \
-                          --exclude-vcs packages/$$* 2>&1 | 	       \
-                      sed -ne 's/\.el$$$$/.elc/p')
-	[ -d packages/$* ] || 		\
-	$(EMACS) -l admin/elpa-admin.el \
-	         -f elpaa-batch-archive-update-worktrees "$(@F)"
+packages/% : dummy $$(call FILE-deps,$$*)
+	[ -d packages/$* ] || 		    \
+            $(EMACS) -l admin/elpa-admin.el \
+	             -f elpaa-batch-archive-update-worktrees "$(@F)"
 
 #### Fetching updates from upstream                                        ####
 
