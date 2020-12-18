@@ -203,10 +203,10 @@ sync-all:
 
 ############### Rules to prepare the externals ################################
 
-.PHONY:
-externals:
+.PHONY: externals worktrees
+externals worktrees:	# "externals" is the old name we used to use.
 	$(EMACS) -l admin/elpa-admin.el \
-	    -f elpaa-add/remove/update-externals
+	    -f elpaa-add/remove/update-worktrees
 
 
 ################### Testing ###############

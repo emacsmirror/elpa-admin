@@ -60,7 +60,7 @@ to do:
 
 The packages can be installed and used in-place.  First you need to make
 sure the package(s) you can about are placed in the =packages= subdirectory,
-e.g. with =make externals=, and then you can to add that =.../packages=
+e.g. with =make worktrees=, and then you can to add that =.../packages=
 to your =package-directory-list=.  And once that is done you can do:
 
 #+begin_src sh
@@ -194,7 +194,7 @@ packages with:
 
 Once it is decided we want to add a package =[PKG]=, here's what it takes:
 
-- Add a corresponding entry to the file =externals-list=, then
+- Add a corresponding entry to the file =elpa-packages=, then
 
   #+begin_src sh
     make fetch/<pkgname>
@@ -216,10 +216,10 @@ Once it is decided we want to add a package =[PKG]=, here's what it takes:
     make sync/<pkgname>
   #+end_src
 
-- Commit and push the change to =externals-list=:
+- Commit and push the change to =elpa-packages=:
 
   #+begin_src sh
-    git commit -m "* externals-list (<pkgname>): New package" -- externals-list
+    git commit -m "* elpa-packages (<pkgname>): New package" -- elpa-packages
     git push
   #+end_src
 

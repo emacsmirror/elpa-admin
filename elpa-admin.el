@@ -40,10 +40,10 @@
 (defvar elpaa--gitrepo "emacs/nongnu.git")
 (defvar elpaa--url "https://elpa.gnu.org/nongnu/")
 
-(defvar elpaa--branch-prefix "externals/")
-(defvar elpaa--release-branch-prefix "externals-release/")
+(defvar elpaa--branch-prefix "elpa/")
+(defvar elpaa--release-branch-prefix "elpa-release/")
 
-(defvar elpaa--specs-file "externals-list")
+(defvar elpaa--specs-file "elpa-packages")
 (defvar elpaa--copyright-file "copyright_exceptions")
 (defvar elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
 (defvar elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
@@ -141,7 +141,7 @@ Delete backup files also."
         (elpaa--html-make-index (cdr ac))))))
 
 (defun elpaa--get-specs ()
-  (elpaa--form-from-file-contents "externals-list"))
+  (elpaa--form-from-file-contents elpaa--specs-file))
 
 (defun elpaa--spec-get (pkg-spec prop &optional default)
   (or (plist-get (cdr pkg-spec) prop) default))
@@ -435,7 +435,7 @@ Return non-nil if a new tarball was created."
                                                         verdate))))
 
 (defun elpaa--get-package-spec (pkgname)
-  "Retrieve the property list for PKGNAME from `externals-list'."
+  "Retrieve the property list for PKGNAME from `elpaa--specs-file'."
   (let* ((specs (elpaa--get-specs))
          (spec (assoc pkgname specs)))
     (if (null spec)
@@ -463,7 +463,7 @@ Return non-nil if a new tarball was created."
          (dir (expand-file-name pkgname "packages"))
          (_ (if (eq (nth 1 pkg-spec) :core)
                 (elpaa--core-package-sync pkg-spec)
-              (elpaa--external-package-sync pkg-spec)))
+              (elpaa--worktree-sync pkg-spec)))
          (_ (elpaa--message "pkg-spec for %s: %S" pkgname pkg-spec))
          (metadata (elpaa--metadata dir pkg-spec))
          (vers (nth 1 metadata)))
@@ -1006,7 +1006,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                      " " "\n")
                  (buffer-string))))))
 
-;;; Maintain external packages.
+;;; Maintain worktrees in the `packages' subdirectory
 
 (defun elpaa--sync-emacs-repo ()
   "Sync Emacs repository, if applicable.
@@ -1035,10 +1035,10 @@ Return non-nil if there's an \"emacs\" repository present."
         (throw 'found-important-file file)))
     nil))
 
-(defun elpaa--cleanup-packages (externals-list with-core)
+(defun elpaa--cleanup-packages (specs with-core)
   "Remove unknown subdirectories of `packages/'.
 This is any subdirectory inside `packages/' that's not under
-version control nor listed in EXTERNALS-LIST.
+version control nor listed in SPECS.
 If WITH-CORE is non-nil, it means we manage :core packages as well."
   (when (file-directory-p (expand-file-name "packages/"))
     (let ((default-directory (expand-file-name "packages/")))
@@ -1047,15 +1047,15 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
          ((file-symlink-p dir)
           ;; There are normally no such thing, but the user may elect to
           ;; add symlinks to other projects.  If so, update them, as if they
-          ;; were "externals".
+          ;; were "our" worktrees.
           (when (file-directory-p (expand-file-name ".git" dir))
             (elpaa--pull dir)))
-         ((or (not (file-directory-p dir)) )
+         ((not (file-directory-p dir))
           ;; We only add/remove plain directories in elpa/packages (not
           ;; symlinks).
           nil)
          ((member dir '("." "..")) nil)
-         ((assoc dir externals-list) nil)
+         ((assoc dir specs) nil)        ;One of our packages.
          ((file-directory-p (expand-file-name (format "%s/.git" dir)))
           (let ((status
                  (with-temp-buffer
@@ -1082,8 +1082,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           ))))))
 
 
-(defun elpaa--external-package-sync (pkg-spec)
-  "Sync external package named PKG-SPEC."
+(defun elpaa--worktree-sync (pkg-spec)
+  "Sync worktree of PKG-SPEC."
   (let ((name (car pkg-spec))
         (default-directory (expand-file-name "packages/")))
     (unless (file-directory-p default-directory)
@@ -1128,7 +1128,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                      (buffer-string))))
              (message "Cloning branch %s:\n%s" name output)))
           ((not (file-exists-p (concat name "/.git")))
-           (message "%s is in the way of an external, please remove!" name))
+           (message "%s is in the way of our worktree, please remove!" name))
           (t (elpaa--pull name)))))
 
 (defun elpaa--core-package-empty-dest-p (dest)
@@ -1227,8 +1227,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           (elpaa--core-package-link-file
            file dest emacs-repo-root package-root exclude-regexp))))))
 
-(defun elpaa-add/remove/update-externals ()
-  "Remove non-package directories and fetch external packages."
+(defun elpaa-add/remove/update-worktrees ()
+  "Remove leftover worktrees and set worktrees for packages."
   (let ((command-line-args-left '("-")))
     (elpaa-batch-archive-update-worktrees)))
 
@@ -1242,7 +1242,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
       (let* ((pkg-spec (assoc pkg specs))
              (kind (nth 1 pkg-spec)))
         (pcase kind
-          (`:external (elpaa--external-package-sync pkg-spec))
+          ((or ':url `:external) (elpaa--worktree-sync pkg-spec))
           (`:core (when with-core (elpaa--core-package-sync pkg-spec)))
           (_ (if pkg-spec
                  (message "Unknown package kind `%S' for %s" kind pkg)
@@ -1437,12 +1437,11 @@ More at " (elpaa--default-url pkgname))
 ;;; Fetch updates from upstream
 
 (defun elpaa--branch (pkg-spec)
-  (elpaa--spec-get pkg-spec :branch "master"))
+  (elpaa--spec-get pkg-spec :branch))
 
 (defun elpaa--urtb (pkg-spec &optional branch)
   "Return our upstream remote tracking branch for PKG-SPEC."
-  (format "refs/remotes/upstream/%s/%s" (car pkg-spec)
-          (or branch (elpaa--branch pkg-spec))))
+  (format "refs/remotes/upstream/%s/%s" (car pkg-spec) (or branch "main")))
 
 (defun elpaa--ortb (pkg-spec)
   "Return our origin remote tracking branch for PKG-SPEC."
@@ -1456,17 +1455,19 @@ More at " (elpaa--default-url pkgname))
 
 (defun elpaa--fetch (pkg-spec &optional k)
   (let* ((pkg (car pkg-spec))
-         (url (elpaa--spec-get pkg-spec :external))
+         (url (or (elpaa--spec-get pkg-spec :external)
+                  (elpaa--spec-get pkg-spec :url)))
          (branch (elpaa--branch pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (urtb (elpaa--urtb pkg-spec))
-         (refspec (format "refs/heads/%s:%s" branch urtb))
+         ;; FIXME: Don't hardcode "master" here.
+         (refspec (format "+refs/heads/%s:%s" (or branch "master") urtb))
          (release-refspec (if release-branch
-                              (format "refs/heads/%s:%s"
+                              (format "+refs/heads/%s:%s"
                                       release-branch
-                                      (elpaa--urtb pkg-spec release-branch)))))
+                                      (elpaa--urtb pkg-spec "release")))))
     (if (not url)
-        (message "Missing upstream URL in externals-list for %s" pkg)
+        (message "No upstream URL in %s for %s" elpaa--specs-file pkg)
       (message "Fetching updates for %s..." pkg)
       (with-temp-buffer
         (cond
@@ -1491,8 +1492,6 @@ More at " (elpaa--default-url pkgname))
 
 (defun elpaa--push (pkg-spec)
   (let* ((pkg (car pkg-spec))
-         ;; (url (plist-get (cdr pkg-spec) :external))
-         ;; (branch (elpaa--branch pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
          (urtb (elpaa--urtb pkg-spec)))
@@ -1514,11 +1513,11 @@ More at " (elpaa--default-url pkgname))
                         (when release-branch
                           (list
                            (format "%s:refs/heads/%s%s"
-                                   (elpaa--urtb pkg-spec release-branch)
+                                   (elpaa--urtb pkg-spec "release")
                                    elpaa--release-branch-prefix pkg)))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
         (when (file-directory-p (expand-file-name (car pkg-spec) "packages"))
-          (elpaa--external-package-sync pkg-spec)))
+          (elpaa--worktree-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
 
@@ -1531,7 +1530,7 @@ More at " (elpaa--default-url pkgname))
       (let* ((pkg-spec (assoc pkg specs)))
         (if (not pkg-spec) (message "Unknown package: %s" pkg)
           ;; (unless (file-directory-p (expand-file-name pkg "packages"))
-          ;;   (elpaa--external-package-sync pkg-spec))
+          ;;   (elpaa--worktree-sync pkg-spec))
           (elpaa--fetch pkg-spec k))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)

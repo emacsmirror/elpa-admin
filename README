@@ -18,7 +18,7 @@ This code expects to be used in a directory that has the following layout:
 
 - =admin/=              -- Directory containing a copy of the here files
 - =GNUmakefile=         -- A copy of or symlink to =admin/GNUmakefile=
-- =externals-list=      -- The specifications of the packages
+- =elpa-packages=       -- The specifications of the packages
 - =copyright_exceptions= -- List of exceptions for the copyright-notices checks
 
 The =copyright_exceptions= file can be absent, in which case copyright notices
@@ -41,14 +41,16 @@ that should be part of the archive.  Each element has the form
 
 where NAME is the name of the ELisp package and PLIST is a property list
 giving additional info about that package.  It has to have either
-an =:external= or a =:core= property, all others are optional.
+a =:url= or a =:core= property, all others are optional.
 The properties are the following:
 
-** =:external URL=
+** =:url URL=
+This property has to come first.
 Gives the URL where the upstream Git repository for that package can be found.
 The URL can be =nil= if there is no upstream repository.
 
 ** =:core FILES=
+This property has to come first.
 Indicates that this is a special package which will be built by extracting
 files directly from Emacs's source code.  For this to work, the Emacs
 source code should be available in the =emacs= subdirectory.
@@ -139,15 +141,15 @@ instructions below, but the gist of it is that you:
 2. Push your package's code to its branch on elpa.git with:
 
    #+begin_src shell
-   git push elpa <mybranch>:refs/heads/externals/<pkgname>
+   git push elpa <mybranch>:refs/heads/elpa/<pkgname>
    #+end_src
 
    where =<mybranch>= will probably be =master= for most people.
 
-3. Edit the =externals-list= file to add an entry for =<pkgname>=.
-   It has to have an =:external= property specified but that
+3. Edit the =elpa-packages= file to add an entry for =<pkgname>=.
+   It has to have an =:url= property specified but that
    property can be nil.
-4. =git add externals-list=, =git commit= and =git push=.
+4. =git add elpa-packages=, =git commit= and =git push=.
 
 If you don't have push access to the repository, someone will do steps
 2-4 for you.
@@ -198,9 +200,7 @@ For some examples, see [[https://www.gnu.org/software/emacs/manual/html_node/eli
 *** Add a multi-file package as a directory: =packages/<pkg-name>=
 
 It needs to have a file named =packages/<pkg-name>/<pkg-name>.el= which follows the
-same rules as above.  Note that if your package is large, we recommend you
-add it as an "external" into its own branch, see below discussion of
-[[External branches][external branches]].
+same rules as above.
 
 It additionally follows the same guidelines described in [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Multi_002dfile-Packages.html][Multi-File Packages]]
 (web link) or in Emacs
@@ -282,16 +282,16 @@ upstream every once in a while.  This copy may include local changes,
 although these should be kept to a minimum.
 
 The copy of the code is not kept in =master= but in the
-=externals/<pkg-name>= branch in the =elpa.git= repository.
+=elpa/<pkg-name>= branch in the =elpa.git= repository.
 
 To add a new external package, first add this =elpa.git= repository as a
 new remote in your existing repository.
 
 Then push a local branch to a
-new remote branch in =elpa.git=, named =externals/<pkgname>=.  For example:
+new remote branch in =elpa.git=, named =elpa/<pkgname>=.  For example:
 
 #+begin_src shell
-   git push elpa <mybranch>:refs/heads/externals/<pkgname>
+   git push elpa <mybranch>:refs/heads/elpa/<pkgname>
 #+end_src
 
 For example, let's say that you want to add =realgud-ipdb= which is currently
@@ -300,32 +300,31 @@ checked out in =$HOME/github/realgud-ipdb=:
 #+begin_src shell
    cd $HOME/github/realgud-ipdb
    git remote add elpa ${USER}@git.sv.gnu.org:/srv/git/emacs/elpa.git
-   git push elpa master:refs/heads/externals/realgud-ipdb
+   git push elpa master:refs/heads/elpa/realgud-ipdb
 #+end_src
 
-Then edit the =externals-list= file as mentioned above, add the line
+Then edit the =elpa-packages= file as mentioned above, add the line
 
 #+begin_src elisp
-   ("realgud-ipdb" :external "https://github.com/realgud/realgud-ipdb")
+   ("realgud-ipdb" :url "https://github.com/realgud/realgud-ipdb")
 #+end_src
 
 and push that change to the master branch of =elpa=.  After it's added to
-the =externals-list= file, the package can be maintained just by
-pushing changes to the =externals/<pkgname>= branch.
+the =elpa-packages= file, the package can be maintained just by
+pushing changes to the =elpa/<pkgname>= branch.
 
-If you wish to check out all the external packages into the =packages=
+If you wish to check out all the packages into the =packages=
 directory, you can run the command:
 
 #+begin_src shell
-   make externals
+   make worktrees
 #+end_src
 
-You can check out a specific external =<pkgname>= into the =packages=
+You can check out a specific package =<pkgname>= into the =packages=
 directory with these commands:
 
-#+begin_src 
-   cd packages
-   git worktree add PACKAGE externals/<pkgname>
+#+begin_src
+   make packages/<pkgname>
 #+end_src
 
 If you already have a =packages/<pkgname>= directory with a previous
@@ -351,7 +350,7 @@ you have two choices:
 ** To install all the packages "in place":
 
 #+begin_src shell
-   make externals
+   make worktrees
    make
 #+end_src
 
