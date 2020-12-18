@@ -1460,8 +1460,8 @@ More at " (elpaa--default-url pkgname))
          (branch (elpaa--branch pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (urtb (elpaa--urtb pkg-spec))
-         ;; FIXME: Don't hardcode "master" here.
-         (refspec (format "+refs/heads/%s:%s" (or branch "master") urtb))
+         (refspec (if branch (format "+refs/heads/%s:%s" branch urtb)
+                    (format "+HEAD:%s" urtb)))
          (release-refspec (if release-branch
                               (format "+refs/heads/%s:%s"
                                       release-branch
