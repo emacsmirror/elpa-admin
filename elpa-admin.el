@@ -1517,7 +1517,8 @@ More at " (elpaa--default-url pkgname))
                                    (elpaa--urtb pkg-spec release-branch)
                                    elpaa--release-branch-prefix pkg)))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (elpaa--external-package-sync pkg-spec))
+        (when (file-directory-p (expand-file-name (car pkg-spec) "packages"))
+          (elpaa--external-package-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
 
