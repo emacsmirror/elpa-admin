@@ -988,16 +988,25 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
        ((file-directory-p ".git")
         (message "Running git pull in %S" default-directory)
         (elpaa--call t "git" "pull"))
-       ((file-exists-p ".git")
-        (if (with-temp-buffer
-              (let ((elpaa--debug nil))
-                (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
-              (goto-char (point-min))
-              ;; Nothing to pull (nor push, actually).
-              (search-forward "\n# branch.ab +0 -0" nil t))
-            (elpaa--message "%s up-to-date" dirname)
-          (message "Updating worktree in %S" default-directory)
-          (elpaa--call t "git" "merge")))
+       ((file-exists-p ".git")          ;A worktree, presumably.
+        (let ((status 
+               (with-temp-buffer
+                 (let ((elpaa--debug nil))
+                   (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
+                 (buffer-string))))
+          (if (string-match "\n# branch.ab +0 -0" status)
+              (elpaa--message "%s up-to-date" dirname)
+            (unless (or (string-match "\n# branch.upstream" status)
+                        (not (string-match
+                              (concat "\n# branch.head \\("
+                                      (regexp-quote elpaa--branch-prefix)
+                                      ".*\\)")
+                              status)))
+              ;; No upstream set yet.
+              (elpaa--call t "git" "branch" "--set-upstream-to"
+                           (concat "origin/" (match-string 1 status))))
+            (message "Updating worktree in %S" default-directory)
+            (elpaa--call t "git" "merge"))))
        (t (error "No .git in %S" default-directory)))
       (unless (and (eobp) (bobp))
         (message "Updated %s:%s%s" dirname
