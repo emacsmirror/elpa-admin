@@ -994,7 +994,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                  (let ((elpaa--debug nil))
                    (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
                  (buffer-string))))
-          (if (string-match "\n# branch.ab +0 -0" status)
+          (if (string-match (regexp-quote "\n# branch.ab +0 -0") status)
               (elpaa--message "%s up-to-date" dirname)
             (unless (or (string-match "\n# branch.upstream" status)
                         (not (string-match
