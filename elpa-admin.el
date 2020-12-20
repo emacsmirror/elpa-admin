@@ -345,9 +345,10 @@ Return non-nil if a new tarball was created."
         (when revision-function
           (elpaa--select-revision dir pkg-spec (funcall revision-function)))
         (elpaa--copyright-check pkg-spec)
-        ;; FIXME: Build Info files and corresponding `dir' file.
-        (elpaa--build-Info pkg-spec dir)
+        ;; Run `make' before building the Info file, so that the `make' rule
+        ;; can be used to build the Info/Texinfo file.
         (elpaa--make pkg-spec dir)
+        (elpaa--build-Info pkg-spec dir)
         (elpaa--write-pkg-file dir pkgname metadata)
         ;; FIXME: Allow renaming files or selecting a subset of the files!
         (cl-assert (not (string-match "[][*\\|?]" pkgname)))
@@ -1440,7 +1441,8 @@ More at " (elpaa--default-url pkgname))
     (when target
       (with-temp-buffer
         (let ((default-directory (elpaa--dirname dir)))
-          (elpaa--call-sandboxed t "make" target)
+          (apply #'elpaa--call-sandboxed t "make"
+                 (if (consp target) target (list target)))
           (elpaa--message "%s" (buffer-string)))))))
 
 ;;; Fetch updates from upstream
@@ -1589,6 +1591,33 @@ More at " (elpaa--default-url pkgname))
 
   (ert-run-tests-batch-and-exit t))
 
+;;; Make dependencies
+
+(defun elpaa-batch-pkg-spec-make-dependencies ()
+  (let ((dst (pop command-line-args-left)))
+    (with-temp-buffer
+      (dolist (pkg-spec (elpaa--get-specs))
+        (let ((pkgname (car pkg-spec)))
+          (insert
+           (format "packages/%s/%s-pkg.el: packages/%s/%s\n"
+                   pkgname pkgname pkgname (elpaa--main-file pkg-spec)))
+          (let ((make-targets (elpaa--spec-get pkg-spec :make)))
+            (when (consp make-targets)
+              (dolist (target make-targets)
+                (insert (format "packages/%s: packages/%s/%s\n"
+                                pkgname pkgname target))
+                (insert (format "packages/%s/%s:
+\tcd packages/%s; $(MAKE) %s\n"
+                                pkgname target pkgname target)))
+              (insert (format "clean-submake/%s:\n\t$(RM) %s\n"
+                              pkgname
+                              (mapconcat (lambda (f)
+                                           (concat "packages/" pkgname "/" f))
+                                         make-targets
+                                         " ")))
+              (insert (format "clean clean/%s: clean-submake/%s\n"
+                              pkgname pkgname))))))
+      (write-region (point-min) (point-max) dst nil 'silent))))
 
 (provide 'elpa-admin)
 ;;; elpa-admin.el ends here

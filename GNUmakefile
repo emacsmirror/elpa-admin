@@ -2,6 +2,9 @@
 #
 
 EMACS=emacs --batch
+RM=rm -f
+
+PKG_DESCS_MK=.pkg-descs.mk
 
 .PHONY: all
 all: all-in-place
@@ -24,8 +27,16 @@ build-all:
 .PHONY: clean
 clean:
 #	rm -rf archive $(ARCHIVE_TMP)
-	rm -f packages/*/*-autoloads.el
-	find packages -name '*.elc' -print0 | xargs -0 rm -f
+	$(RM) $(PKG_DESCS_MK)
+	$(RM) packages/*/*-autoloads.el
+	$(RM) packages/*/*-pkg.el
+	find packages -name '*.elc' -print0 | xargs -0 $(RM)
+
+.PHONY: clean/%
+clean/%:
+	$(RM) packages/$*/*-autoloads.el
+	$(RM) packages/$*/*-pkg.el
+	find packages/$* -name '*.elc' -print0 | xargs -0 $(RM)
 
 .PHONY: readme
 readme:
@@ -34,8 +45,7 @@ readme:
 			  (org-export-to-file 'html \"html/readme.html\"))"
 
 ########## Rules for in-place installation ####################################
-pkgs := $(foreach pkg, $(wildcard packages/*), \
-          $(if $(shell [ -d "$(pkg)" ] && echo true), $(pkg)))
+pkgs := $(wildcard packages/*)
 
 define SET-diff
 $(shell $(file > .tmp.setdiff, $(1))  \
@@ -119,20 +129,27 @@ packages/%.elc: packages/%.el
 .PHONY: $(extra_elcs)
 # $(extra_elcs):; rm $@
 
+
+include $(PKG_DESCS_MK)
+$(PKG_DESCS_MK): elpa-packages
+	$(EMACS) -Q -l admin/elpa-admin.el \
+	         -f elpaa-batch-pkg-spec-make-dependencies $@
+
 # # Put into single_pkgs the set of -pkg.el files we need to keep up-to-date.
 # # I.e. all the -pkg.el files for the single-file packages.
 pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
-packages/%-pkg.el: packages/%.el
+packages/%-pkg.el:
 	@echo 'Generating description file $@'
 	@$(EMACS) -l admin/elpa-admin.el \
 	          -f elpaa-batch-generate-description-file "$@"
 
 .PHONY: all-in-place
 # Use order-only prerequisites, so that autoloads are done first.
-all-in-place: | $(extra_elcs) $(autoloads) $(pkg_descs) elcs
+all-in-place: | $(autoloads) $(pkg_descs) $(pkgs) #$(extra_elcs)
 
-define FILE-deps
+# arg1 is the % of packages/%, returns the list of .el and .elc files
+define FILE-files
 $(if $(findstring /, $(1)), 			     \
      $(if $(patsubst %.elc,,$(1)),		     \
           $(patsubst %.elc, %.el, $(1))),	     \
@@ -143,8 +160,64 @@ $(if $(findstring /, $(1)), 			     \
                    --exclude-ignore=.elpaignore      \
 		   --exclude='*-pkg.el'		     \
 		   --exclude='*-autoloads.el'	     \
+		   --exclude='.dir-locals.el'	     \
                    --exclude-vcs packages/$(1) 2>&1  \
-               | sed -ne 's/\.el$$/.elc/p';}))
+               | sed -ne 's/\(\.elc*\)$$/\1/p';}))
+endef
+
+define FILE-els
+$(filter %.el, $(1))
+endef
+
+define FILE-elcs
+$(filter %.elc, $(1))
+endef
+
+# Takes two args: arg1 is a set of .el and arg2 a set of .elc
+# Return the set of .el files that don't yet have a .elc.
+define FILE-notyetcompiled
+$(call SET-diff, $(1), $(patsubst %.elc, %.el, $(2)))
+endef
+
+# Takes a set of .el files and returns those that can't be byte-compiled.
+define FILE-nobytecompile
+$(foreach el, $(1), \
+          $(if $(shell grep '^;.*no-byte-compile: *t' "$(el)"), $(el)))
+endef
+
+# Takes a set of .el in arg1 and .elc files in arg2
+# and generates the set of .elc files that need to be generated.
+define FILE-computeddeps2
+$(patsubst %.el, %.elc, 		 	\
+    $(call SET-diff, $(1), 		 	\
+                     $(call FILE-nobytecompile, \
+                            $(call FILE-notyetcompiled, $(1), $(2)))))
+endef
+
+# Takes a pkgname in arg1 and a set of .el and .elc files in arg2, and
+# generates the set of .elc files that need to be generated.
+define FILE-computeddeps1
+$(call FILE-computeddeps2, $(call FILE-els, $(1)), $(call FILE-elcs, $(1)))
+endef
+
+# Compute the dependencies for a file packages/%.
+# The main case is for the `packages/[PKGNAME]` directory.
+# FIXME: Remove outdated .elc files with no matching .el file!
+define FILE-deps
+$(if $(findstring /, $(1)), 			       \
+     $(if $(patsubst %.elc,,$(1)),		       \
+          $(patsubst %.elc, %.el, $(1))),	       \
+     packages/$(1)/$(1)-pkg.el      		       \
+     packages/$(1)/$(1)-autoloads.el                   \
+     $(call FILE-computeddeps1,			       \
+        $(shell [ -d packages/$(1) ] && { 	       \
+                  tar -cvhf /dev/null 		       \
+                      --exclude-ignore=.elpaignore     \
+                      --exclude='*-pkg.el'	       \
+                      --exclude='*-autoloads.el'       \
+                      --exclude='.dir-locals.el'       \
+                      --exclude-vcs packages/$(1) 2>&1 \
+                  | sed -ne 's/\(\.elc*\)$$/\1/p';})))
 endef
 
 # define FILE-cmd
@@ -177,9 +250,11 @@ dummy:
 
 .SECONDEXPANSION:
 packages/% : dummy $$(call FILE-deps,$$*)
-	[ -d packages/$* ] || 		    \
-            $(EMACS) -l admin/elpa-admin.el \
-	             -f elpaa-batch-archive-update-worktrees "$(@F)"
+	@[ -d packages/$* ] || {		       	 	      \
+            echo $(EMACS) -l admin/elpa-admin.el 		      \
+	             -f elpaa-batch-archive-update-worktrees "$(@F)"; \
+            $(EMACS) -l admin/elpa-admin.el 			      \
+	             -f elpaa-batch-archive-update-worktrees "$(@F)"; }
 
 #### Fetching updates from upstream                                        ####
 
