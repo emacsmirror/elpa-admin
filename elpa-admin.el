@@ -811,9 +811,10 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (with-temp-buffer
       (insert-file-contents (expand-file-name fsection srcdir))
       (buffer-string)))
-   ((file-readable-p (elpaa--main-file pkg-spec))
+   ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
     (with-temp-buffer
-      (insert-file-contents (elpaa--main-file pkg-spec))
+      (insert-file-contents
+       (expand-file-name (elpaa--main-file pkg-spec) srcdir))
       (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
       (let ((start (lm-section-start hsection)))
         (when start
