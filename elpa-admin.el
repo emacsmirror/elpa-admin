@@ -1362,7 +1362,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (pkgname (car pkg-spec))
              (name (capitalize pkgname))
              (maint (cdr (assq :maintainer (nth 4 metadata))))
-             (maintainer (if maint (concat (car maint) (cdr maint))))
+             (maintainer (if maint (concat (car maint) (cdr maint)))))
         (message-setup `((From    . ,elpaa--email-from)
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
