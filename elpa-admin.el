@@ -548,6 +548,8 @@ The INFILE and DISPLAY arguments are fixed as nil."
     "--proc" "/proc"
     "--tmpfs" "/tmp"))
 
+(defvar elpaa--sandboxed-extra-ro-dirs nil)
+
 (defun elpaa--call-sandboxed (destination &rest args)
   "Like ‘elpaa--call’ but sandboxed.
 More specifically, uses Bubblewrap such that the command is
@@ -559,6 +561,8 @@ Signal an error if the command did not finish with exit code 0."
     (let ((exitcode
            (apply #'elpaa--call destination "bwrap"
                   (append elpaa--bwrap-args
+                          (cl-mapcan (lambda (d) `("--ro-bind" ,d ,d))
+                                     elpaa--sandboxed-extra-ro-dirs)
                           `("--bind" ,default-directory ,default-directory)
                           args))))
       (unless (eq exitcode 0)
@@ -1440,7 +1444,9 @@ More at " (elpaa--default-url pkgname))
   (let ((target (elpaa--spec-get pkg-spec :make)))
     (when target
       (with-temp-buffer
-        (let ((default-directory (elpaa--dirname dir)))
+        (let ((elpaa--sandboxed-extra-ro-dirs
+               (cons elpaa--sandboxed-extra-ro-dirs default-directory))
+              (default-directory (elpaa--dirname dir)))
           (apply #'elpaa--call-sandboxed t "make"
                  (if (consp target) target (list target)))
           (elpaa--message "%s" (buffer-string)))))))
