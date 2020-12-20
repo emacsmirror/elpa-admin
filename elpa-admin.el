@@ -21,6 +21,10 @@
 
 ;;;; TODO
 
+;; - bug#45345: [elpa-archive] "make build/<package>" should not pull
+;;   unconditionally
+;; - bug#45346: make it easier to ignore all the files in <directory>
+;;   except for a few exceptions.
 ;; - support for conveniently rebuilding individual files like
 ;;   index.html, archive-contents, or <pkg>.html
 ;; - render the README and News in the HTML rather than as <pre> block!
@@ -1362,7 +1366,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (pkgname (car pkg-spec))
              (name (capitalize pkgname))
              (maint (cdr (assq :maintainer (nth 4 metadata))))
-             (maintainer (if maint (concat (car maint) (cdr maint)))))
+             (maintainer (if (and (stringp (cdr-safe maint))
+                                  (string-match "@" (cdr maint)))
+                             (format "%s <%s>" (car maint) (cdr maint)))))
         (message-setup `((From    . ,elpaa--email-from)
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
