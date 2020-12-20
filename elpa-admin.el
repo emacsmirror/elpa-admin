@@ -1445,7 +1445,8 @@ More at " (elpaa--default-url pkgname))
     (when target
       (with-temp-buffer
         (let ((elpaa--sandboxed-extra-ro-dirs
-               (cons elpaa--sandboxed-extra-ro-dirs default-directory))
+               (cons (expand-file-name default-directory)
+                     elpaa--sandboxed-extra-ro-dirs))
               (default-directory (elpaa--dirname dir)))
           (apply #'elpaa--call-sandboxed t "make"
                  (if (consp target) target (list target)))
