@@ -1360,11 +1360,15 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
       (message-mode)
       (let* ((version (nth 1 metadata))
              (pkgname (car pkg-spec))
-             (name (capitalize pkgname)))
+             (name (capitalize pkgname))
+             (maint (cdr (assq :maintainer (nth 4 metadata))))
+             (maintainer (if maint (concat (car maint) (cdr maint))))
         (message-setup `((From    . ,elpaa--email-from)
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
                                              elpaa--name name version))
+                         ,@(if (stringp maintainer)
+                               `((Cc . ,maintainer)))
                          ,@(if elpaa--email-reply-to
                                `((Reply-To . ,elpaa--email-reply-to)))))
         (insert "Version " version
