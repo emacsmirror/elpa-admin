@@ -297,9 +297,8 @@ Do it without leaving the current branch."
       (with-temp-buffer
         (elpaa--call t "git" "status" "--porcelain")
         (unless (zerop (buffer-size))
-          (elpaa--call t "git" "add" ".")
           (if (zerop
-               (elpaa--call t "git" "stash" "push" "-m"
+               (elpaa--call t "git" "stash" "push" "-u" "-m"
                             "Saved changes while building tarball"))
               (elpaa--temp-file
                (lambda ()
@@ -319,7 +318,7 @@ Do it without leaving the current branch."
              (elpaa--message "%s" (buffer-string)))))))))
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
-                                 &optional revision-function)
+                                 &optional revision-function one-tarball)
   "Create file TARBALL for PKGNAME if not done yet.
 Return non-nil if a new tarball was created."
   (elpaa--message "Building tarball %s..." tarball)
@@ -333,7 +332,8 @@ Return non-nil if a new tarball was created."
         dir
       (let* ((destdir (file-name-directory tarball))
              (pkgname (car pkg-spec))
-             (_ (unless (file-directory-p destdir) (make-directory destdir)))
+             (_ (when (and destdir (not (file-directory-p destdir)))
+                  (make-directory destdir)))
              (vers (nth 1 metadata))
              (elpaignore (expand-file-name ".elpaignore" dir))
              (ignores (elpaa--spec-get pkg-spec :ignored-files))
@@ -341,11 +341,12 @@ Return non-nil if a new tarball was created."
              (re (concat "\\`" (regexp-quote pkgname)
                          "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
              (oldtarballs
-              (mapcar
-               (lambda (file)
-                 (string-match re file)
-                 (cons (match-string 1 file) file))
-               (directory-files destdir nil re))))
+              (unless one-tarball
+                (mapcar
+                 (lambda (file)
+                   (string-match re file)
+                   (cons (match-string 1 file) file))
+                 (directory-files destdir nil re)))))
         (when revision-function
           (elpaa--select-revision dir pkg-spec (funcall revision-function)))
         (elpaa--copyright-check pkg-spec)
@@ -370,45 +371,46 @@ Return non-nil if a new tarball was created."
                  ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
                  "-chf" ,tarball
                  ,(concat "packages/" pkgname)))
-        (let* ((pkgdesc
-                ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
-                ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
-                ;; reads it back.  We could/should skip the middle man.
-                (elpaa--process-multi-file-package
-                 dir pkgname 'dont-rename)))
-          (elpaa--message "%s: %S" pkgname pkgdesc)
-          (elpaa--update-archive-contents pkgdesc destdir)
-          (when (and nil revision-function) ;FIXME: Circumstantial evidence.
-            ;; Various problems:
-            ;; - If "make build/foo" is used by the developers in order to test
-            ;;   the build of their package, they'll end up with those spurious
-            ;;   tags which may end up spreading to unintended places.
-            ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
-            ;;   because that account can't push to git.sv.gnu.org anyway.
-            (let ((default-directory (elpaa--dirname dir)))
-              (elpaa--call nil "git" "tag" "-f"
-                           (format "%s-release/%s-%s"
-                                   elpaa--name pkgname vers))))
-          (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-            (when (file-symlink-p link) (delete-file link))
-            (make-symbolic-link (file-name-nondirectory tarball) link))
-          (dolist (oldtarball oldtarballs)
-            ;; Compress oldtarballs.
-            (let ((file (cdr oldtarball)))
-              (when (string-match "\\.\\(tar\\|el\\)\\'" file)
-                ;; Don't compress the file we just created.
-                (unless (equal file (file-name-nondirectory tarball))
-                  ;; (elpaa--message "not equal %s and %s" file tarball)
-                  (elpaa--call nil "lzip" (expand-file-name file destdir))
-                  (setf (cdr oldtarball) (concat file ".lz"))))))
-          (let* ((default-directory (expand-file-name destdir)))
-            ;; Apparently this also creates the <pkg>-readme.txt file.
-            (elpaa--html-make-pkg pkgdesc pkg-spec
-                                  `((,vers . ,(file-name-nondirectory tarball))
-                                    . ,oldtarballs)
-                                  dir))
-          (message "Built new package %s!" tarball)
-          'new)))))
+        (unless one-tarball
+          (let* ((pkgdesc
+                  ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
+                  ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
+                  ;; reads it back.  We could/should skip the middle man.
+                  (elpaa--process-multi-file-package
+                   dir pkgname 'dont-rename)))
+            (elpaa--message "%s: %S" pkgname pkgdesc)
+            (elpaa--update-archive-contents pkgdesc destdir)
+            (when (and nil revision-function) ;FIXME: Circumstantial evidence.
+              ;; Various problems:
+              ;; - If "make build/foo" is used by the developers in order to test
+              ;;   the build of their package, they'll end up with those spurious
+              ;;   tags which may end up spreading to unintended places.
+              ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
+              ;;   because that account can't push to git.sv.gnu.org anyway.
+              (let ((default-directory (elpaa--dirname dir)))
+                (elpaa--call nil "git" "tag" "-f"
+                             (format "%s-release/%s-%s"
+                                     elpaa--name pkgname vers))))
+            (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+              (when (file-symlink-p link) (delete-file link))
+              (make-symbolic-link (file-name-nondirectory tarball) link))
+            (dolist (oldtarball oldtarballs)
+              ;; Compress oldtarballs.
+              (let ((file (cdr oldtarball)))
+                (when (string-match "\\.\\(tar\\|el\\)\\'" file)
+                  ;; Don't compress the file we just created.
+                  (unless (equal file (file-name-nondirectory tarball))
+                    ;; (elpaa--message "not equal %s and %s" file tarball)
+                    (elpaa--call nil "lzip" (expand-file-name file destdir))
+                    (setf (cdr oldtarball) (concat file ".lz"))))))
+            (let* ((default-directory (expand-file-name destdir)))
+              ;; Apparently this also creates the <pkg>-readme.txt file.
+              (elpaa--html-make-pkg pkgdesc pkg-spec
+                                    `((,vers . ,(file-name-nondirectory tarball))
+                                      . ,oldtarballs)
+                                    dir))
+            (message "Built new package %s!" tarball)
+            'new))))))
 
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
@@ -461,14 +463,26 @@ Return non-nil if a new tarball was created."
     (elpaa--make-one-package (elpaa--get-package-spec
                                 (pop command-line-args-left)))))
 
-(defun elpaa--make-one-package (pkg-spec)
-  "Build the new tarballs (if needed) for PKG-SPEC."
+(defun elpaa-batch-make-one-tarball (&rest _)
+  "Build a tarball for a particular package."
+  (while command-line-args-left
+    (let* ((tarball (pop command-line-args-left))
+           (pkgname (file-name-sans-extension tarball))
+           (pkg-spec (elpaa--get-package-spec pkgname)))
+      (delete-file tarball)
+      (elpaa--make-one-package pkg-spec tarball))))
+
+(defun elpaa--make-one-package (pkg-spec &optional one-tarball)
+  "Build the new tarballs (if needed) for PKG-SPEC.
+If ONE-TARBALL is non-nil, don't try and select some other revision and
+place the resulting tarball into the file named ONE-TARBALL."
   (elpaa--message "Checking package %s for updates..." (car pkg-spec))
   (let* ((pkgname (car pkg-spec))
          (dir (expand-file-name pkgname "packages"))
-         (_ (if (eq (nth 1 pkg-spec) :core)
-                (elpaa--core-package-sync pkg-spec)
-              (elpaa--worktree-sync pkg-spec)))
+         (_ (cond
+             (one-tarball nil)
+             ((eq (nth 1 pkg-spec) :core) (elpaa--core-package-sync pkg-spec))
+             (t (elpaa--worktree-sync pkg-spec))))
          (_ (elpaa--message "pkg-spec for %s: %S" pkgname pkg-spec))
          (metadata (elpaa--metadata dir pkg-spec))
          (vers (nth 1 metadata)))
@@ -490,18 +504,21 @@ Return non-nil if a new tarball was created."
              (devel-vers
               (concat vers (if (string-match "[0-9]\\'" vers) ".")
                       "0." date-version))
-             (tarball (concat elpaa--devel-subdir
-                              (format "%s-%s.tar" pkgname devel-vers)))
+             (tarball (or one-tarball
+                          (concat elpaa--devel-subdir
+                                  (format "%s-%s.tar" pkgname devel-vers))))
              (new
               (let ((elpaa--name (concat elpaa--name "-devel")))
                 ;; Build the archive-devel tarball.
                 (elpaa--make-one-tarball tarball
-                                           dir pkg-spec
-                                           `(nil ,devel-vers
-                                                 . ,(nthcdr 2 metadata))))))
+                                         dir pkg-spec
+                                         `(nil ,devel-vers
+                                               . ,(nthcdr 2 metadata))
+                                         nil one-tarball))))
 
         ;; Try and build the latest release tarball.
         (cond
+         (one-tarball nil)
          ((or (equal vers "0")
               ;; -4 is used for "NN.MMsnapshot" and "NN.MM-git"
               (member '-4 (version-to-list vers)))

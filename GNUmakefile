@@ -15,7 +15,7 @@ check/%:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-copyright-check $*
 
-.PHONY: build/% build-all
+.PHONY: build/% build-all %.tar
 build/%:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-one-package $*
@@ -23,6 +23,10 @@ build/%:
 build-all:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
 	         -f elpaa-batch-make-all-packages
+
+%.tar: dummy
+	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
+	         -f elpaa-batch-make-one-tarball $@
 
 .PHONY: clean
 clean:

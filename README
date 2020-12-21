@@ -131,6 +131,9 @@ If the directory does not exist yet, it checks it out as a Git worktree.
 Else, it generates the auxiliary files like =[PKGNAME]-pkg.el= and
 =[PKGNAME]-autoloads.el= and compiles the Elisp source files.
 
+** =[PKGNAME].tar=
+Build that tarball from the commit currently in =packages/[PKGNAME]=
+
 ** =build/[PKGNAME]=
 Build the ELPA tarball(s) for PKGNAME.  The result is placed in
 the =archive= and =archive-devel= subdirectories.
