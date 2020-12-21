@@ -818,9 +818,13 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
       (let ((start (lm-section-start hsection)))
         (when start
+          ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
+          ;; our own ad-hoc replacement.
+          (goto-char start) (forward-line 1)
+          (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
           (insert
            (prog1
-               (buffer-substring start (lm-section-end hsection))
+               (buffer-substring start (match-beginning 0))
              (erase-buffer)))
           (emacs-lisp-mode)
           (goto-char (point-min))
