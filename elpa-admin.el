@@ -1214,10 +1214,12 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
            source package-file-name
            emacs-repo-root package-root exclude-regexp))))))
 
-(defun elpaa--core-package-sync (definition)
-  "Sync core package from DEFINITION."
-  (pcase-let*
-      ((`(,name . (:core ,file-patterns :excludes ,excludes)) definition)
+(defun elpaa--core-package-sync (pkg-spec)
+  "Sync core package from PKG-SPEC."
+  (let*
+      ((name (car pkg-spec))
+       (file-patterns (elpaa--spec-get pkg-spec :core))
+       (excludes (elpaa--spec-get pkg-spec :excludes))
        (emacs-repo-root (expand-file-name "emacs"))
        (package-root (elpaa--dirname name "packages"))
        (default-directory package-root)
