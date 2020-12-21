@@ -151,7 +151,7 @@ packages with:
    We will consider exceptions to that rule, but we will need to
    consider them carefully, to make sure that the practices are
    safe for Emacs users, not just in one package but when used in
-   many prackages.  Each time we approve such an exception, we will
+   many packages.  Each time we approve such an exception, we will
    say so in comments in the package, with an explanation of our reasoning.
 
 *** The package must deliver its full functionality and convenience on a
@@ -184,7 +184,7 @@ packages with:
 *** A general Savannah rule about advertisements
 
    In general, you may not advertise anything commercial with material
-   in the NonGNU ELPA package or this repositor.  However, as
+   in the NonGNU ELPA package or this repository.  However, as
    exceptions, you can point people to commercial support offerings for
    the package, and you can mention fan items that you sell directly to
    the users.
