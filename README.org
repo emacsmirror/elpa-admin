@@ -1,5 +1,5 @@
 #+TITLE: NonGNU ELPA README
-#+DATE: 2020-12-01
+#+DATE: 2020-12-21
 
 Copyright (C) 2020 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
@@ -192,7 +192,8 @@ packages with:
 
 * Adding a package
 
-Once it is decided we want to add a package =[PKG]=, here's what it takes:
+Once the NonGNU ELPA maintainers decides that we want to add a package =[PKG]=,
+here's what it takes:
 
 - Add a corresponding entry to the file =elpa-packages=, then
 
@@ -210,7 +211,7 @@ Once it is decided we want to add a package =[PKG]=, here's what it takes:
     make packages/<pkgname>
   #+end_src
 
-- Push the package's code to =nongnu.git=:
+- Push the package's code to the repository =nongnu.git=:
 
   #+begin_src sh
     make sync/<pkgname>
