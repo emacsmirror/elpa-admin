@@ -269,7 +269,7 @@ fetch/%:
 
 .PHONY: fetch-all
 fetch-all:
-	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-show "-"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-show :
 
 .PHONY: sync/%
 sync/%:
@@ -277,7 +277,12 @@ sync/%:
 
 .PHONY: sync-all
 sync-all:
-	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-push "-"
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-push :
+
+# Only sync those packages which enable the `:auto-sync` property.
+.PHONY: sync-some
+sync-some:
+	$(EMACS) -l admin/elpa-admin.el -f elpaa-batch-fetch-and-push :auto-sync
 
 
 
