@@ -1474,14 +1474,20 @@ More at " (elpaa--default-url pkgname))
           (message "%s" (buffer-string)))))))
 
 (defun elpaa--make (pkg-spec dir)
-  (let ((target (elpaa--spec-get pkg-spec :make)))
-    (when target
+  (let ((target (elpaa--spec-get pkg-spec :make))
+        (cmd (elpaa--spec-get pkg-spec :shell-command)))
+    (when (or cmd target)
       (with-temp-buffer
         (let ((elpaa--sandboxed-ro-binds
                (cons default-directory elpaa--sandboxed-ro-binds))
               (default-directory (elpaa--dirname dir)))
-          (apply #'elpaa--call-sandboxed t "make"
-                 (if (consp target) target (list target)))
+          (when cmd
+            (elpaa--call-sandboxed t shell-file-name
+                                   shell-command-switch
+                                   cmd))
+          (when target
+            (apply #'elpaa--call-sandboxed t "make"
+                   (if (consp target) target (list target))))
           (elpaa--message "%s" (buffer-string)))))))
 
 ;;; Fetch updates from upstream
