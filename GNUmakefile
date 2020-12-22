@@ -1,7 +1,8 @@
 # Makefile for GNU Emacs Lisp Package Archive.
 #
 
-EMACS=emacs --batch
+EMACSBIN=emacs
+EMACS=$(EMACSBIN) --batch
 RM=rm -f
 
 PKG_DESCS_MK=.pkg-descs.mk
