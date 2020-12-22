@@ -1419,8 +1419,12 @@ More at " (elpaa--default-url pkgname))
 ;;; Build Info files from Texinfo
 
 (defun elpaa--build-Info (pkg-spec dir)
-  (let* ((default-directory (elpaa--dirname dir))
-         (docfile (elpaa--spec-get pkg-spec :doc)))
+  (let ((docfile (elpaa--spec-get pkg-spec :doc)))
+    (dolist (f (if (listp docfile) docfile (list docfile)))
+      (elpaa--build-Info f dir))))
+
+(defun elpaa--build-Info-1 (docfile dir)
+  (let* ((default-directory (elpaa--dirname dir)))
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.org\\'" docfile))
       (with-temp-buffer
