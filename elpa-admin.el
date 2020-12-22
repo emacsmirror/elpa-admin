@@ -560,32 +560,31 @@ The INFILE and DISPLAY arguments are fixed as nil."
 
 (defconst elpaa--bwrap-args
   '("--unshare-all"
-    "--ro-bind" "/lib" "/lib"
-    "--ro-bind" "/lib64" "/lib64"
-    "--ro-bind" "/usr" "/usr"
-    "--ro-bind" "/etc/alternatives" "/etc/alternatives"
-    "--ro-bind" "/etc/emacs" "/etc/emacs"
     "--dev" "/dev"
     "--proc" "/proc"
     "--tmpfs" "/tmp"))
 
-(defvar elpaa--sandboxed-extra-ro-dirs nil)
+(defvar elpaa--sandboxed-ro-binds
+  '("/lib" "/lib64" "/usr" "/etc/alternatives" "/etc/emacs"))
 
 (defun elpaa--call-sandboxed (destination &rest args)
   "Like ‘elpaa--call’ but sandboxed.
 More specifically, uses Bubblewrap such that the command is
-confined to write to the  is writable.
+confined to only have write access to the `default-directory'.
 Signal an error if the command did not finish with exit code 0."
   (if (not elpaa--sandbox)
       (apply #'elpaa--call destination args)
     (elpaa--message "call-sandboxed %S" args)
+    (let ((dd (expand-file-name default-directory))) ;No `~' allowed!
+      (setq args (nconc `("--bind" ,dd ,dd) args)))
+    ;; Add read-only dirs in reverse order.
+    (dolist (b elpaa--sandboxed-ro-binds)
+      (when (file-exists-p b)         ;`brwap' burps on binds that don't exist!
+        (setq b (expand-file-name b))
+        (setq args (nconc `("--ro-bind" ,b ,b) args))))
     (let ((exitcode
            (apply #'elpaa--call destination "bwrap"
-                  (append elpaa--bwrap-args
-                          (cl-mapcan (lambda (d) `("--ro-bind" ,d ,d))
-                                     elpaa--sandboxed-extra-ro-dirs)
-                          `("--bind" ,default-directory ,default-directory)
-                          args))))
+                  (append elpaa--bwrap-args args))))
       (unless (eq exitcode 0)
         (if (eq destination t)
             (error "Error-indicating exit code in elpaa--call-sandboxed:\n%s"
@@ -1478,9 +1477,8 @@ More at " (elpaa--default-url pkgname))
   (let ((target (elpaa--spec-get pkg-spec :make)))
     (when target
       (with-temp-buffer
-        (let ((elpaa--sandboxed-extra-ro-dirs
-               (cons (expand-file-name default-directory)
-                     elpaa--sandboxed-extra-ro-dirs))
+        (let ((elpaa--sandboxed-ro-binds
+               (cons default-directory elpaa--sandboxed-ro-binds))
               (default-directory (elpaa--dirname dir)))
           (apply #'elpaa--call-sandboxed t "make"
                  (if (consp target) target (list target)))
@@ -1575,15 +1573,20 @@ More at " (elpaa--default-url pkgname))
 
 (defun elpaa--batch-fetch-and (k)
   (let ((specs (elpaa--get-specs))
-        (pkgs command-line-args-left))
+        (pkgs command-line-args-left)
+        (clal command-line-args-left))
     (setq command-line-args-left nil)
-    (if (equal pkgs '("-")) (setq pkgs (mapcar #'car specs)))
+    (if (member pkgs '(("-") ("?"))) (setq pkgs (mapcar #'car specs)))
     (dolist (pkg pkgs)
       (let* ((pkg-spec (assoc pkg specs)))
-        (if (not pkg-spec) (message "Unknown package: %s" pkg)
+        (cond
+         ((not pkg-spec) (message "Unknown package: %s" pkg))
+         ((and (equal clal '("?")) (not (elpaa--spec-get pkg-spec :auto-sync)))
+          nil)
+         (t
           ;; (unless (file-directory-p (expand-file-name pkg "packages"))
           ;;   (elpaa--worktree-sync pkg-spec))
-          (elpaa--fetch pkg-spec k))))))
+          (elpaa--fetch pkg-spec k)))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)
   (elpaa--batch-fetch-and #'ignore))
