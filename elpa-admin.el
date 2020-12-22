@@ -1421,7 +1421,7 @@ More at " (elpaa--default-url pkgname))
 (defun elpaa--build-Info (pkg-spec dir)
   (let ((docfile (elpaa--spec-get pkg-spec :doc)))
     (dolist (f (if (listp docfile) docfile (list docfile)))
-      (elpaa--build-Info f dir))))
+      (elpaa--build-Info-1 f dir))))
 
 (defun elpaa--build-Info-1 (docfile dir)
   (let* ((default-directory (elpaa--dirname dir)))

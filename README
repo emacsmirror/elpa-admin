@@ -109,6 +109,7 @@ in the main file.
 ** =:doc FILE=
 Name of the documentation file for the package.
 It can be either an Info file, a Texinfo file, or an Org file.
+FILE can also be a list of those.
 
 ** =:make TARGET=
 Indicates that we should run ~make TARGET~ in order to build some files.
