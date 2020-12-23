@@ -1542,7 +1542,7 @@ More at " (elpaa--default-url pkgname))
             (not (equal 0 (elpaa--call t "git" "log"
                                        "--format=%h  %<(16,trunc)%ae  %s"
                                        (if exists
-                                           (format "%s...%s" ortb urtb)
+                                           (format "%s..%s" ortb urtb)
                                          urtb)))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
