@@ -260,15 +260,15 @@ Start your message with an explanation about the package.  A
 copy-paste of the package's =Summary= and =Commentary= is perfectly fine
 here, but you can write more or less than that if you'd like.
 
-At the bottom of the message contents include the changes you're going
-to make (the patch).  For a single-file package this can be the
-package file itself instead of the patch.  If you prefer (and if you
+In your message include the URL of a Git repository where your package can
+be found (or if that's not convenient and the package is small enough,
+include a copy of its code as an attachment).  If you prefer (and if you
 have push access), you can push your changes to a branch called
 =scratch/<pkg-name>=, and mention the branch in your message.
 
 After 48 hours, or once any issues have been addressed, someone will push
 your changes for you.  You should probably also subscribe to
-[[https://lists.gnu.org/mailman/listinfo/emacs-devel][emacs-devel@gnu.org]], since that's where we discuss about GNU Elpa, and
+[[https://lists.gnu.org/mailman/listinfo/emacs-devel][emacs-devel@gnu.org]], since that's where we discuss about GNU ELPA, and
 to [[https://lists.gnu.org/mailman/listinfo/bug-gnu-emacs][bug-gnu-emacs@gnu.org]], since that's where people will report bugs
 about your package.
 
