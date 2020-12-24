@@ -152,7 +152,8 @@ Delete backup files also."
 
 (defun elpaa--main-file (pkg-spec)
   (or (elpaa--spec-get pkg-spec :main-file)
-      (concat (car pkg-spec) ".el")))
+      (let ((ldir (elpaa--spec-get pkg-spec :lisp-dir)))
+        (concat (if ldir (file-name-as-directory ldir)) (car pkg-spec) ".el"))))
 
 (defun elpaa--get-release-revision (dir pkg-spec &optional vers version-map)
   "Get the REVISION that corresponds to current release.
@@ -338,6 +339,7 @@ Return non-nil if a new tarball was created."
              (elpaignore (expand-file-name ".elpaignore" dir))
              (ignores (elpaa--spec-get pkg-spec :ignored-files))
              (renames (elpaa--spec-get pkg-spec :renames))
+             (ldir    (elpaa--spec-get pkg-spec :lisp-dir))
              (re (concat "\\`" (regexp-quote pkgname)
                          "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
              (oldtarballs
@@ -347,6 +349,8 @@ Return non-nil if a new tarball was created."
                    (string-match re file)
                    (cons (match-string 1 file) file))
                  (directory-files destdir nil re)))))
+        (when ldir
+          (cl-pushnew (list (file-name-as-directory ldir) "") renames))
         (when revision-function
           (elpaa--select-revision dir pkg-spec (funcall revision-function)))
         (elpaa--copyright-check pkg-spec)
@@ -366,7 +370,8 @@ Return non-nil if a new tarball was created."
                      (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
                              ignores))
                     ((file-readable-p elpaignore) `("-X" ,elpaignore)))
-                 ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r)) renames)
+                 ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r))
+                           renames)
                  "--transform"
                  ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
                  "-chf" ,tarball

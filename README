@@ -61,24 +61,16 @@ It can be a single file name or a list of file names.
 Specifies the branch to follow in the upstream Git repository, in case
 it should be different from the default branch.
 
+** =:lisp-dir=
+Subdirectory in which the main ELisp found are found.
+Defaults to the top-level directory.
+
 ** =:main-file FILE=
 Gives the name of the main file of the package, i.e. the file in which
 the metadata can be found in the form of pseudo-headers like "Version:".
 It needs to be an ELisp file formatted following the proper conventions.
-This is normally the file [PKG].el, but in some rare circumstances,
-the file is named differently, typically because it is placed in
-a subdirectory.
-
-** =:version-map MAP=
-A list of elements of the form (ORIG-VERSION REMAPPED-VERSION REVISION).
-This allows replacing the ORIG-VERSION from the [PKG].el file
-with REMAPPED-VERSION (e.g. because the ORIG-VERSION is not a valid
-version number, is missing, or because we want to create a new package
-from the same code version).
-It also makes it possible to specify which REVISION corresponds to
-this ORIG-VERSION (or REMAPPED-VERSION if non-nil) to override
-the default heuristic which uses the last revision that modified the
-"Version:" header.
+This is normally the file [PKG].el in the LISP-DIR, but in some rare
+circumstances the file is named differently.
 
 ** =:release-branch BRANCH=
 The upstream BRANCH from which releases are cut.  This is only used
@@ -94,6 +86,8 @@ Names of files or directories that should not be included in the tarballs.
 Mapping from the source layout to the layout used in the tarball.
 RENAMES is a list of element (FROM TO) where FROM should terminate with =/=
 if it's a directory.
+If =:lisp-dir= is set, then that directory is renamed to =""= without
+having to specify it here.
 
 ** =:readme FILE=
 Name of the file to use as the description of the package.  By default
@@ -111,16 +105,27 @@ Name of the documentation file for the package.
 It can be either an Info file, a Texinfo file, or an Org file.
 FILE can also be a list of those.
 
-** =:lisp-dir=
-Subdirectory in which the main ELisp found are found.
-Defaults to the top-level directory.
-
 ** =:make TARGET=
 Indicates that we should run ~make TARGET~ in order to build some files.
 This is run before processing =:doc=, so it can be used to generate
 the Info and Texinfo file from some other format.
 TARGET can also be a list, in which case each target should be
 an actual file name (rather than a "phony target").
+
+** =:shell-command COMMAND=
+If running =make= is not good enough, this lets you run the shell COMMAND
+to build (or modify, rename, delete, younameit) some of the files.
+
+** =:version-map MAP=
+A list of elements of the form (ORIG-VERSION REMAPPED-VERSION REVISION).
+This allows replacing the ORIG-VERSION from the [PKG].el file
+with REMAPPED-VERSION (e.g. because the ORIG-VERSION is not a valid
+version number, is missing, or because we want to create a new package
+from the same code version).
+It also makes it possible to specify which REVISION corresponds to
+this ORIG-VERSION (or REMAPPED-VERSION if non-nil) to override
+the default heuristic which uses the last revision that modified the
+"Version:" header.
 
 * Make targets
 
