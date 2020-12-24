@@ -111,6 +111,10 @@ Name of the documentation file for the package.
 It can be either an Info file, a Texinfo file, or an Org file.
 FILE can also be a list of those.
 
+** =:lisp-dir=
+Subdirectory in which the main ELisp found are found.
+Defaults to the top-level directory.
+
 ** =:make TARGET=
 Indicates that we should run ~make TARGET~ in order to build some files.
 This is run before processing =:doc=, so it can be used to generate

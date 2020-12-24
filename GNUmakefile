@@ -83,14 +83,10 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 # packages/aggressive-indent/aggressive-indent-autoloads.el: \
 #     packages/names/names-autoloads.el
 
-packages/%-autoloads.el:
+packages/%-autoloads.el: elpa-packages
 	@#echo 'Generating autoloads for $@'
-	@cd $(dir $@) && 						   \
-	  $(EMACS) -l $(CURDIR)/admin/elpa-admin.el 		   \
-	      --eval "(require 'package)" 				   \
-	      --eval "(load (expand-file-name \"../names/names-autoloads.el\") t t)" \
-	      --eval "(package-generate-autoloads \"$$(basename $$(pwd))\" \
-	                                          \"$$(pwd)\")"
+	$(EMACS) -l admin/elpa-admin.el 		   	   	   \
+	         -f elpaa-batch-generate-autoloads $@
 
 # Put into elcs the set of elc files we need to keep up-to-date.
 # I.e. one for each .el file in each package root, except for the -pkg.el,
@@ -134,9 +130,11 @@ packages/%.elc: packages/%.el
 .PHONY: $(extra_elcs)
 # $(extra_elcs):; rm $@
 
+packages:
+	mkdir $@
 
 include $(PKG_DESCS_MK)
-$(PKG_DESCS_MK): elpa-packages
+$(PKG_DESCS_MK): elpa-packages packages
 	$(EMACS) -Q -l admin/elpa-admin.el \
 	         -f elpaa-batch-pkg-spec-make-dependencies $@
 
@@ -152,23 +150,6 @@ packages/%-pkg.el:
 .PHONY: all-in-place
 # Use order-only prerequisites, so that autoloads are done first.
 all-in-place: | $(autoloads) $(pkg_descs) $(pkgs) #$(extra_elcs)
-
-# arg1 is the % of packages/%, returns the list of .el and .elc files
-define FILE-files
-$(if $(findstring /, $(1)), 			     \
-     $(if $(patsubst %.elc,,$(1)),		     \
-          $(patsubst %.elc, %.el, $(1))),	     \
-     $(shell [ -d packages/$(1) ] && { 	  	     \
-               echo packages/$(1)/$(1)-pkg.el; 	     \
-               echo packages/$(1)/$(1)-autoloads.el; \
-               tar -cvhf /dev/null 		     \
-                   --exclude-ignore=.elpaignore      \
-		   --exclude='*-pkg.el'		     \
-		   --exclude='*-autoloads.el'	     \
-		   --exclude='.dir-locals.el'	     \
-                   --exclude-vcs packages/$(1) 2>&1  \
-               | sed -ne 's/\(\.elc*\)$$/\1/p';}))
-endef
 
 define FILE-els
 $(filter %.el, $(1))
@@ -205,15 +186,20 @@ define FILE-computeddeps1
 $(call FILE-computeddeps2, $(call FILE-els, $(1)), $(call FILE-elcs, $(1)))
 endef
 
+define TRACE
+$(info TRACE($(1)): $(2))$(2)
+endef
+
 # Compute the dependencies for a file packages/%.
 # The main case is for the `packages/[PKGNAME]` directory.
 # FIXME: Remove outdated .elc files with no matching .el file!
 define FILE-deps
-$(if $(findstring /, $(1)), 			       \
+$(if $(findstring /, $(1)), 	       		       \
      $(if $(patsubst %.elc,,$(1)),		       \
           $(patsubst %.elc, %.el, $(1))),	       \
-     packages/$(1)/$(1)-pkg.el      		       \
-     packages/$(1)/$(1)-autoloads.el                   \
+     $(if $(wildcard packages/$(1)/*),		       \
+          packages/$(1)/$(1)-pkg.el      	       \
+          packages/$(1)/$(1)-autoloads.el)             \
      $(call FILE-computeddeps1,			       \
         $(shell [ -d packages/$(1) ] && { 	       \
                   tar -cvhf /dev/null 		       \
@@ -224,30 +210,6 @@ $(if $(findstring /, $(1)), 			       \
                       --exclude-vcs packages/$(1) 2>&1 \
                   | sed -ne 's/\(\.elc*\)$$/\1/p';})))
 endef
-
-# define FILE-cmd
-# $(if $(findstring /, $(1)), 			  		       \
-#      $(if $(patsubst %.elc,,$(1)),		  		       \
-# 	  $(EMACS) 		  		       	       	       \
-# 	      --eval "(setq package-directory-list nil   	       \
-# 			    load-prefer-newer t			       \
-#                             package-user-dir \"$(abspath packages)\")" \
-# 	      -f package-initialize 		       	       	       \
-# 	      -L $(dir $@) -f batch-byte-compile $<,		       \
-#           echo YUP: $(1)),					       \
-# 	[ -d packages/$(1) ] || 				       \
-#             $(EMACS) -l admin/elpa-admin.el       		       \
-# 	             -f elpaa-batch-archive-update-worktrees "$(@F)")
-# endef
-
-# define EMACS-update-tree-cmd
-# $(EMACS) -l admin/elpa-admin.el \
-#          -f elpaa-batch-archive-update-worktrees "$(@F)"
-# endef
-# define EMACS-update-tree-cmd
-# $(shell echo $(call EMACS-update-tree-cmd,$(1))) \
-# $(call EMACS-update-tree-cmd,$(1))
-# endef
 
 .PHONY: dummy
 dummy:

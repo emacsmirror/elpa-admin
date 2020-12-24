@@ -446,7 +446,7 @@ Return non-nil if a new tarball was created."
   (let* ((specs (elpaa--get-specs))
          (spec (assoc pkgname specs)))
     (if (null spec)
-        (error "Unknown package `%S`" pkgname)
+        (error "Unknown package %S" pkgname)
       spec)))
 
 (defun elpaa-batch-make-all-packages (&rest _)
@@ -1652,27 +1652,44 @@ More at " (elpaa--default-url pkgname))
   (let ((dst (pop command-line-args-left)))
     (with-temp-buffer
       (dolist (pkg-spec (elpaa--get-specs))
-        (let ((pkgname (car pkg-spec)))
-          (insert
-           (format "packages/%s/%s-pkg.el: packages/%s/%s\n"
-                   pkgname pkgname pkgname (elpaa--main-file pkg-spec)))
-          (let ((make-targets (elpaa--spec-get pkg-spec :make)))
-            (when (consp make-targets)
-              (dolist (target make-targets)
-                (insert (format "packages/%s: packages/%s/%s\n"
-                                pkgname pkgname target))
-                (insert (format "packages/%s/%s:
-\tcd packages/%s; $(MAKE) %s\n"
-                                pkgname target pkgname target)))
-              (insert (format "clean-submake/%s:\n\t$(RM) %s\n"
-                              pkgname
-                              (mapconcat (lambda (f)
-                                           (concat "packages/" pkgname "/" f))
-                                         make-targets
-                                         " ")))
-              (insert (format "clean clean/%s: clean-submake/%s\n"
-                              pkgname pkgname))))))
+        (let* ((pkgname (car pkg-spec))
+               (dir (concat "packages/" pkgname)))
+          (when (file-directory-p dir)
+            (insert
+             (format "%s/%s-pkg.el: %s/%s\n"
+                     dir pkgname dir (elpaa--main-file pkg-spec)))
+            (let ((make-targets (elpaa--spec-get pkg-spec :make)))
+              (when (consp make-targets)
+                (dolist (target make-targets)
+                  (insert (format "%s: %s/%s\n" dir dir target))
+                  (insert (format "%s/%s:\n\tcd %s; $(MAKE) %s\n"
+                                  dir target dir target)))
+                (insert (format "clean-submake/%s:\n\t$(RM) %s\n"
+                                pkgname
+                                (mapconcat (lambda (f) (concat dir "/" f))
+                                           make-targets
+                                           " ")))
+                (insert (format "clean clean/%s: clean-submake/%s\n"
+                                pkgname pkgname)))))))
       (write-region (point-min) (point-max) dst nil 'silent))))
+
+;; Generate autoloads for in-place use
+
+(defun elpaa-batch-generate-autoloads (&rest _)
+  (let* ((alf (pop command-line-args-left))
+         (dir (file-name-directory alf))
+         (pkgname (file-name-nondirectory (directory-file-name dir)))
+         (pkg-spec (elpaa--get-package-spec pkgname))
+         (lisp-dir (elpaa--spec-get pkg-spec :lisp-dir)))
+    (require 'package)
+    (if (null lisp-dir)
+        (progn
+          (cl-assert (equal alf (concat dir pkgname "-autoloads.el")))
+          (package-generate-autoloads pkgname dir))
+      (package-generate-autoloads pkgname (concat dir lisp-dir))
+      (write-region (format "(load (concat (file-name-directory #$) %S))\n"
+                            (concat lisp-dir "/" pkgname "-autoloads.el"))
+                    nil alf nil 'silent))))
 
 (provide 'elpa-admin)
 ;;; elpa-admin.el ends here
