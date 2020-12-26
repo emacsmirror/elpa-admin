@@ -350,7 +350,8 @@ Return non-nil if a new tarball was created."
                    (cons (match-string 1 file) file))
                  (directory-files destdir nil re)))))
         (when ldir
-          (cl-pushnew (list (file-name-as-directory ldir) "") renames))
+          (cl-pushnew (list (file-name-as-directory ldir) "") renames
+                      :test #'equal))
         (when revision-function
           (elpaa--select-revision dir pkg-spec (funcall revision-function)))
         (elpaa--copyright-check pkg-spec)
@@ -1429,7 +1430,8 @@ More at " (elpaa--default-url pkgname))
       (elpaa--build-Info-1 f dir))))
 
 (defun elpaa--build-Info-1 (docfile dir)
-  (let* ((default-directory (elpaa--dirname dir)))
+  (let* ((default-directory (elpaa--dirname dir))
+         (tmpfiles '()))
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.org\\'" docfile))
       (with-temp-buffer
@@ -1441,6 +1443,7 @@ More at " (elpaa--default-url pkgname))
         (when (re-search-backward "ELPATEXI=\\(.*\\)\n?" nil t)
           (setq docfile (concat (file-name-directory docfile)
                                 (match-string 1)))
+          (push docfile tmpfiles)
           (elpaa--temp-file docfile))))
 
     (when (and docfile (file-readable-p docfile)
@@ -1473,6 +1476,8 @@ More at " (elpaa--default-url pkgname))
         (elpaa--temp-file info-file)
         (copy-file docfile info-file)
         (setq docfile info-file)))
+
+    (mapc #'delete-file tmpfiles)     ;Avoid intermediate files in the tarball.
 
     (when (and docfile (file-readable-p docfile))
       (let ((dir-file (expand-file-name "dir")))
@@ -1695,6 +1700,20 @@ More at " (elpaa--default-url pkgname))
       (write-region (format "(load (concat (file-name-directory #$) %S))\n"
                             (concat lisp-dir "/" pkgname "-autoloads.el"))
                     nil alf nil 'silent))))
+
+;;; Main files
+
+(defun elpaa-batch-main-files ()
+  (let ((dstfile (pop command-line-args-left)))
+    (with-temp-buffer
+      (dolist (pkg-spec (elpaa--get-specs))
+        (let* ((pkgname (car pkg-spec))
+               (defmf (concat pkgname ".el"))
+               (mf (elpaa--main-file pkg-spec)))
+          (unless (equal mf defmf)
+            (insert (format "%s:%s\n" pkgname mf)))))
+      (write-region (point-min) (point-max)
+                    dstfile nil 'silent))))
 
 (provide 'elpa-admin)
 ;;; elpa-admin.el ends here
