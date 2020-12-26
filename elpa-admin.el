@@ -1025,22 +1025,28 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (message "Running git pull in %S" default-directory)
         (elpaa--call t "git" "pull"))
        ((file-exists-p ".git")          ;A worktree, presumably.
-        (let ((status 
+        (let ((status
                (with-temp-buffer
                  (let ((elpaa--debug nil))
                    (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
                  (buffer-string))))
           (if (string-match (regexp-quote "\n# branch.ab +0 -0") status)
               (elpaa--message "%s up-to-date" dirname)
-            (unless (or (string-match "\n# branch.upstream" status)
-                        (not (string-match
-                              (concat "\n# branch.head \\("
-                                      (regexp-quote elpaa--branch-prefix)
-                                      ".*\\)")
-                              status)))
-              ;; No upstream set yet.
-              (elpaa--call t "git" "branch" "--set-upstream-to"
-                           (concat "origin/" (match-string 1 status))))
+            ;; Set upstream if applicable.
+            (when (and
+                   ;; Upstream not set yet!
+                   (not (string-match "\n# branch.upstream" status))
+                   ;; This is one of the "elpa-managed" branches.
+                   (string-match
+                    (concat "\n# branch.head \\("
+                            (regexp-quote elpaa--branch-prefix)
+                            ".*\\)")
+                    status))
+              (let* ((br (match-string 1 status))
+                     (ortb (concat "origin/" br)))
+                ;; There is an upstream to set it to!
+                (when (elpaa--git-branch-p ortb)
+                  (elpaa--call t "git" "branch" "--set-upstream-to" ortb))))
             (message "Updating worktree in %S" default-directory)
             (elpaa--call t "git" "merge"))))
        (t (error "No .git in %S" default-directory)))
