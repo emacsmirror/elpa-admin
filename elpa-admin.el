@@ -1043,7 +1043,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                             ".*\\)")
                     status))
               (let* ((br (match-string 1 status))
-                     (ortb (concat "origin/" br)))
+                     (ortb (concat "refs/remotes/origin/" br)))
                 ;; There is an upstream to set it to!
                 (when (elpaa--git-branch-p ortb)
                   (elpaa--call t "git" "branch" "--set-upstream-to" ortb))))
