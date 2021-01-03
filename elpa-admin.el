@@ -447,12 +447,15 @@ Return non-nil if a new tarball was created."
                               (replace-regexp-in-string "[^.0-9]+" ""
                                                         verdate))))
 
-(defun elpaa--get-package-spec (pkgname)
+(defun elpaa--get-package-spec (pkgname &optional noerror)
   "Retrieve the property list for PKGNAME from `elpaa--specs-file'."
   (let* ((specs (elpaa--get-specs))
          (spec (assoc pkgname specs)))
     (if (null spec)
-        (error "Unknown package %S" pkgname)
+	(if (not noerror)
+            (error "Unknown package %S" pkgname)
+	  (message "Unknown package %S" pkgname)
+	  (list pkgname))
       spec)))
 
 (defun elpaa-batch-make-all-packages (&rest _)
@@ -1695,7 +1698,7 @@ More at " (elpaa--default-url pkgname))
   (let* ((alf (pop command-line-args-left))
          (dir (file-name-directory alf))
          (pkgname (file-name-nondirectory (directory-file-name dir)))
-         (pkg-spec (elpaa--get-package-spec pkgname))
+         (pkg-spec (elpaa--get-package-spec pkgname 'noerror))
          (lisp-dir (elpaa--spec-get pkg-spec :lisp-dir)))
     (require 'package)
     (if (null lisp-dir)

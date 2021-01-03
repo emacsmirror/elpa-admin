@@ -69,6 +69,7 @@ endef
 
 # Compute the set of autolods files and their dependencies.
 autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
+descs := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 
 # FIXME: In 99% of the cases, autoloads can be generated in any order.
 # But the `names' package is an exception because it sets up an advice that
@@ -83,6 +84,7 @@ autoloads := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-autoloads.el)
 # packages/aggressive-indent/aggressive-indent-autoloads.el: \
 #     packages/names/names-autoloads.el
 
+# .PRECIOUS: packages/%-autoloads.el
 packages/%-autoloads.el: elpa-packages
 	@#echo 'Generating autoloads for $@'
 	$(EMACS) -l admin/elpa-admin.el 		   	   	   \
@@ -138,18 +140,17 @@ $(PKG_DESCS_MK): elpa-packages packages
 	$(EMACS) -Q -l admin/elpa-admin.el \
 	         -f elpaa-batch-pkg-spec-make-dependencies $@
 
-# # Put into single_pkgs the set of -pkg.el files we need to keep up-to-date.
-# # I.e. all the -pkg.el files for the single-file packages.
-pkg_descs:=$(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
-#$(foreach al, $(single_pkgs), $(eval $(call RULE-srcdeps, $(al))))
 packages/%-pkg.el:
 	@echo 'Generating description file $@'
 	@$(EMACS) -l admin/elpa-admin.el \
 	          -f elpaa-batch-generate-description-file "$@"
 
-.PHONY: all-in-place
+.PHONY: all-in-place autoloads descs install-in-place
 # Use order-only prerequisites, so that autoloads are done first.
-all-in-place: | $(autoloads) $(pkg_descs) $(pkgs) #$(extra_elcs)
+all-in-place: | install-in-place $(pkgs) #$(extra_elcs)
+autoloads: $(autoloads)
+descs: $(descs)
+install-in-place: autoloads descs
 
 define FILE-els
 $(filter %.el, $(1))
