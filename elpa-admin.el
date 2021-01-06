@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2020  Free Software Foundation, Inc
+;; Copyright (C) 2011-2021  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -1072,9 +1072,7 @@ Return non-nil if there's an \"emacs\" repository present."
   ;; So make the handling of :core packages depend on whether or not the user
   ;; has setup a clone of Emacs under the "emacs" subdirectory.
   (let ((emacs-repo-root (expand-file-name "emacs")))
-    (if (not (file-directory-p emacs-repo-root))
-        (progn (message "No \"emacs\" subdir: will skip :core packages")
-               nil)
+    (when (file-directory-p emacs-repo-root)
       (elpaa--pull emacs-repo-root)
       t)))
 
@@ -1291,7 +1289,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 (defun elpaa-batch-archive-update-worktrees (&rest _)
   (let ((specs (elpaa--get-specs))
         (pkgs command-line-args-left)
-        (with-core (elpaa--sync-emacs-repo)))
+        (with-core (elpaa--sync-emacs-repo))
+        msg-done)
     (setq command-line-args-left nil)
     (if (equal pkgs '("-")) (setq pkgs (mapcar #'car specs)))
     (dolist (pkg pkgs)
@@ -1299,7 +1298,12 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (kind (nth 1 pkg-spec)))
         (pcase kind
           ((or ':url `:external) (elpaa--worktree-sync pkg-spec))
-          (`:core (when with-core (elpaa--core-package-sync pkg-spec)))
+          (`:core
+           (if (not with-core)
+               (unless msg-done
+                 (setq msg-done t)
+                 (message "No \"emacs\" subdir: skipping :core packages"))
+             (elpaa--core-package-sync pkg-spec)))
           (_ (if pkg-spec
                  (message "Unknown package kind `%S' for %s" kind pkg)
                (message "Unknown package %s" pkg))))))))
