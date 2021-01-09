@@ -1,7 +1,7 @@
 #+TITLE: NonGNU ELPA README
 #+DATE: 2020-12-21
 
-Copyright (C) 2020 Free Software Foundation, Inc. \\
+Copyright (C) 2020-2021 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
 This repository contains the sources, deployment scripts, and auxiliary files
@@ -12,6 +12,26 @@ This file explains the repository layout, how to add and edit packages, and how
 to deploy the archive (either on =elpa.nongnu.org=, or a local copy for testing
 purposes).
 
+* Initial setup
+
+To do anything with, you first have to have a local clone, which you can get
+with:
+
+#+begin_src sh
+    git clone .../nongnu.git $FOO
+#+end_src
+
+and which you may have done already if you're reading this file.
+The main branch on =nongnu.git= only holds the list of specifications
+of the packages included, but not the scripts to build them.
+So after doing this, you need to do:
+
+#+begin_src sh
+    make
+#+end_src
+
+This will fetch a branch from =elpa.git= containing all the build scripts
+and makefiles and place them where needed.
 
 * Building the archive
 
@@ -25,13 +45,6 @@ directory.  This format is described in the Emacs Lisp Reference Manual chapter
 #+end_src
 
 To build the archive(s), all it takes is:
-
-#+begin_src sh
-    git clone .../nongnu.git $FOO
-#+end_src
-
-which you presumably have done already if you're reading this file.
-And then
 
 #+begin_src sh
     cd .../nongnu
