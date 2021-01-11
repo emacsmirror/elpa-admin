@@ -12,6 +12,36 @@ the [[https://elpa.gnu.org/][GNU ELPA]] and NonGNU ELPA archives.
 Start with source that is cloned directly from Savannah.  See [[https://savannah.gnu.org/git/?group=emacs][the Savannah page]]
 and look for "ELPA".  Using a clone of a clone does not work.
 
+You must then do some setup:
+#+begin_src shell
+   make setup
+#+end_src
+
+That leaves the =packages= directory empty; you must check out the
+ones you want.
+
+If you wish to check out all the packages into the =packages=
+directory, you can run the command:
+
+#+begin_src shell
+   make worktrees
+#+end_src
+
+You can check out a specific package =<pkgname>= into the =packages=
+directory with this command:
+
+#+begin_src
+   make packages/<pkgname>
+#+end_src
+
+If you already have a =packages/<pkgname>= directory with a previous
+checkout, you can update it like this:
+
+#+begin_src
+   cd packages/PACKAGE
+   git pull
+#+end_src
+
 * Directory layout
 
 This code expects to be used in a directory that has the following layout:
@@ -390,28 +420,6 @@ Then edit the =elpa-packages= file as mentioned above, add the line
 and push that change to the default branch of =elpa=.  After it's added to
 the =elpa-packages= file, the package can be maintained just by
 pushing changes to the =elpa/<pkgname>= branch.
-
-If you wish to check out all the packages into the =packages=
-directory, you can run the command:
-
-#+begin_src shell
-   make worktrees
-#+end_src
-
-You can check out a specific package =<pkgname>= into the =packages=
-directory with these commands:
-
-#+begin_src
-   make packages/<pkgname>
-#+end_src
-
-If you already have a =packages/<pkgname>= directory with a previous
-checkout, you can update it like this:
-
-#+begin_src 
-   cd packages/PACKAGE
-   git pull
-#+end_src
 
 ** Public incubation
 
