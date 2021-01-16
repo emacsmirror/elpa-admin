@@ -761,7 +761,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (let* ((file (pop command-line-args-left))
            (dir (file-name-directory file))
            (pkg (file-name-nondirectory (directory-file-name dir)))
-           (pkg-spec (elpaa--get-package-spec pkg)))
+           (pkg-spec (elpaa--get-package-spec pkg 'noerror)))
       (elpaa--write-pkg-file dir pkg
                                (elpaa--metadata dir pkg-spec)))))
 
@@ -1710,9 +1710,10 @@ More at " (elpaa--default-url pkgname))
           (cl-assert (equal alf (concat dir pkgname "-autoloads.el")))
           (package-generate-autoloads pkgname dir))
       (package-generate-autoloads pkgname (concat dir lisp-dir))
-      (write-region (format "(load (concat (file-name-directory #$) %S))\n"
-                            (concat lisp-dir "/" pkgname "-autoloads.el"))
-                    nil alf nil 'silent))))
+      (write-region
+       (format "(load (concat (file-name-directory #$) %S) nil 'nomsg)\n"
+               (concat lisp-dir "/" pkgname "-autoloads.el"))
+       nil alf nil 'silent))))
 
 ;;; Main files
 
