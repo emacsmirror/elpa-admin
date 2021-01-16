@@ -318,6 +318,83 @@ Do it without leaving the current branch."
                (elpaa--call t "git" "checkout" "--" "."))
              (elpaa--message "%s" (buffer-string)))))))))
 
+(defconst elpaa--keep-max 20)
+
+(defun elpaa--keep-old (vers oldtarballs n)
+  (cl-assert (and (integerp n) (> n 0)))
+  (cl-assert (not (assoc vers oldtarballs)))
+  (if (not (nthcdr n oldtarballs))
+      ;; We can keep them all.
+      oldtarballs
+    (let ((buckets ())
+          (buckets2 ())
+          (kept ()))
+      (dolist (oldtarball oldtarballs)
+        (let* ((tvers (car oldtarball))
+               (common-prefix (try-completion "" (list vers tvers)))
+               (len (length (if (stringp common-prefix) common-prefix vers))))
+          (push oldtarball (alist-get len buckets))
+          (push oldtarball
+                (alist-get (substring tvers 0 (min (length tvers) (1+ len)))
+                           buckets2 nil nil #'equal))))
+      (when (<= (length buckets2) n)
+        (setq buckets buckets2))
+      (while
+          (let ((bucket-size (/ n (length buckets)))
+                repeat)
+            (dolist (bucket buckets)
+              (when (<= (1- (length bucket)) bucket-size)
+                (setq kept (nconc (cdr bucket) kept))
+                (setq n (- n (1- (length bucket))))
+                (setq buckets (delq bucket buckets))
+                (setq repeat t)))
+            repeat))
+      (let ((bucket-size (/ n (length buckets))))
+        (dolist (bucket buckets)
+          (setq bucket (sort (cdr bucket)
+                             (lambda (t1 t2)
+                               (version<= (car t1) (car t2)))))
+          (let ((last (last bucket)))
+            (push (car last) kept)
+            (cond
+             ;; If there's only room for 2 elements, keep the first and
+             ;; the last.
+             ((and (cdr bucket) (= bucket-size 2))
+              (push (car bucket) kept))
+             ((> bucket-size 2)
+              (setq kept (nconc (elpaa--keep-old (caar last)
+                                                 (butlast bucket)
+                                                 (1- bucket-size))
+                                kept)))))))
+      kept)))
+
+(defun elpaa--prune-old-tarballs (vers tarball oldtarballs destdir)
+  ;; Make sure we don't count ourselves among the "old" tarballs.
+  (let ((self (rassoc (file-name-nondirectory tarball) oldtarballs)))
+    (when self
+      (setq oldtarballs (delq self oldtarballs))))
+  (when (nthcdr elpaa--keep-max oldtarballs)
+    (let* ((keep (elpaa--keep-old vers oldtarballs elpaa--keep-max))
+           (skeep (nreverse (sort keep
+                                  (lambda (t1 t2)
+                                    (version<= (car t1) (car t2)))))))
+      (message "Keeping: %s" (mapcar #'cdr skeep))
+      (dolist (oldtarball oldtarballs)
+        (unless (memq oldtarball keep)
+          (cl-assert (not (equal (cdr oldtarball)
+                                 (file-name-nondirectory tarball))))
+          (message "Deleting %s" (cdr oldtarball))))
+      (setq oldtarballs skeep)))
+  (dolist (oldtarball oldtarballs)
+    ;; Compress oldtarballs.
+    (let ((file (cdr oldtarball)))
+      (when (string-match "\\.\\(tar\\|el\\)\\'" file)
+        ;; Make sure we don't compress the file we just created.
+        (cl-assert (not (equal file (file-name-nondirectory tarball))))
+        ;; (elpaa--message "not equal %s and %s" file tarball)
+        (elpaa--call nil "lzip" (expand-file-name file destdir))
+        (setf (cdr oldtarball) (concat file ".lz"))))))
+
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
                                  &optional revision-function one-tarball)
   "Create file TARBALL for PKGNAME if not done yet.
@@ -400,15 +477,8 @@ Return non-nil if a new tarball was created."
             (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
               (when (file-symlink-p link) (delete-file link))
               (make-symbolic-link (file-name-nondirectory tarball) link))
-            (dolist (oldtarball oldtarballs)
-              ;; Compress oldtarballs.
-              (let ((file (cdr oldtarball)))
-                (when (string-match "\\.\\(tar\\|el\\)\\'" file)
-                  ;; Don't compress the file we just created.
-                  (unless (equal file (file-name-nondirectory tarball))
-                    ;; (elpaa--message "not equal %s and %s" file tarball)
-                    (elpaa--call nil "lzip" (expand-file-name file destdir))
-                    (setf (cdr oldtarball) (concat file ".lz"))))))
+            (setq oldtarballs
+                  (elpaa--prune-old-tarballs vers tarball oldtarballs destdir))
             (let* ((default-directory (expand-file-name destdir)))
               ;; Apparently this also creates the <pkg>-readme.txt file.
               (elpaa--html-make-pkg pkgdesc pkg-spec
