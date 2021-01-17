@@ -320,70 +320,124 @@ Do it without leaving the current branch."
 
 (defconst elpaa--keep-max 20)
 
-(defun elpaa--keep-old (vers oldtarballs n)
-  (cl-assert (and (integerp n) (> n 0)))
-  (cl-assert (not (assoc vers oldtarballs)))
-  (if (not (nthcdr n oldtarballs))
-      ;; We can keep them all.
-      oldtarballs
-    (let ((buckets ())
-          (buckets2 ())
-          (kept ()))
-      (dolist (oldtarball oldtarballs)
-        (let* ((tvers (car oldtarball))
-               (common-prefix (try-completion "" (list vers tvers)))
-               (len (length (if (stringp common-prefix) common-prefix vers))))
-          (push oldtarball (alist-get len buckets))
-          (push oldtarball
-                (alist-get (substring tvers 0 (min (length tvers) (1+ len)))
-                           buckets2 nil nil #'equal))))
-      (when (<= (length buckets2) n)
-        (setq buckets buckets2))
-      (while
-          (let ((bucket-size (/ n (length buckets)))
-                repeat)
-            (dolist (bucket buckets)
-              (when (<= (1- (length bucket)) bucket-size)
-                (setq kept (nconc (cdr bucket) kept))
-                (setq n (- n (1- (length bucket))))
-                (setq buckets (delq bucket buckets))
-                (setq repeat t)))
-            repeat))
-      (let ((bucket-size (/ n (length buckets))))
-        (dolist (bucket buckets)
-          (setq bucket (sort (cdr bucket)
+(defun elpaa--keep-old (oldtarballs n)
+  "Select N tarballs to keep among those in OLDTARBALLS."
+  ;; It's not clear which ones to select.  My main goal here was to try and keep
+  ;; more of the last releases than of the old releases, and also to favor the
+  ;; last release in a given line, so for example for Emacs releases, we might
+  ;; prefer to keep: 24.5 24.4 24.3 24.2 24.1 23.4 22.3 21.3 20.4
+  ;; rather than   : 24.3 24.1 23.3 23.2 23.1 21.1 20.3 20.2 20.1
+  ;; Also, we want this to work for "any" release numbering scheme, including
+  ;; the pseudo release numbers YYYYMMMDD used for snapshots.
+  ;;
+  ;; I'm not very satisfied with the code below:
+  ;; - It was tested mostly on sets where N is significantly smaller than the
+  ;;   input set size, whereas in practice it'll probably mostly be used with
+  ;;   N being 20 and OLDTARBALLS containing 21 elements, so... we'll see.
+  ;; - I don't think this algorithm enjoys any kind of "stability" property
+  ;;   such as a guarantee that if you first select 50 elements and then you
+  ;;   select 20 elements out of that you get the same result as if you
+  ;;   directly selected 20 elements from the original set.
+  (cl-assert (natnump n))
+  (cond
+   ((< n 1) nil)
+   ((not (nthcdr n oldtarballs)) oldtarballs) ;; We can keep them all.
+   (t
+    (setq oldtarballs (nreverse
+                       (sort (copy-sequence oldtarballs)
                              (lambda (t1 t2)
-                               (version<= (car t1) (car t2)))))
-          (let ((last (last bucket)))
-            (push (car last) kept)
-            (cond
-             ;; If there's only room for 2 elements, keep the first and
-             ;; the last.
-             ((and (cdr bucket) (= bucket-size 2))
-              (push (car bucket) kept))
-             ((> bucket-size 2)
-              (setq kept (nconc (elpaa--keep-old (caar last)
-                                                 (butlast bucket)
-                                                 (1- bucket-size))
-                                kept)))))))
-      kept)))
+                               (version<= (car t1) (car t2))))))
+    (cond
+     ((< n 2)
+      ;; If we have to pick one, keep the latest.
+      (list (car oldtarballs)))
+     ((< n 3)
+      ;; If there's only room for 2 elements, keep the first and the last.
+      (cons (car oldtarballs) (last oldtarballs)))
+     (t
+      ;; The general idea here is to split the input into buckets
+      ;; which represent a kind of "logarithm of distance to the latest"
+      ;; and then we pick the same number of elements from each bucket
+      ;; (the log(distance) is actually taken to be the length of the common
+      ;; prefix between the two versions).
+      (let* ((latest (pop oldtarballs))
+             (vers (car latest))
+             (buckets ())
+             (kept (list latest)))
+        (dolist (oldtarball oldtarballs)
+          (let* ((tvers (car oldtarball))
+                 (common-prefix (try-completion "" (list vers tvers))))
+            (push oldtarball (alist-get (length common-prefix) buckets))))
 
-(defun elpaa--prune-old-tarballs (vers tarball oldtarballs destdir)
+        ;; Make sure there are fewer buckets than target elements.
+        (while (> (length buckets) (- n (length kept)))
+          ;; (message "Too many buckets (%s/%s): Merging...."
+          ;;          (length buckets) (- n (length kept)))
+          (let ((target-size (1+ (/ (length oldtarballs) n)))
+                (new t))
+            (dolist (bucket (prog1 buckets (setq buckets nil)))
+              (if (or new (> (length bucket) target-size))
+                  (progn (push bucket buckets) (setq new nil))
+                (setq new t)
+                (setf (cdar buckets) (nconc (cdr bucket) (cdar buckets)))))))
+
+        ;; "Spread" some buckets: for a two-level release numbering scheme,
+        ;; we might end up with 2 buckets: one with the latest minor releases
+        ;; and the other with everything else.  When we recurse on the
+        ;; "everything else", the same will tend to happen again, and overall
+        ;; this tends to select too many "recent minor releases" in favor of
+        ;; keeping older major releases.
+        ;; We try to compensate here by splitting "furtherest" buckets into
+        ;; smaller buckets based on the first char that differs between their
+        ;; release number.
+        (setq buckets (sort buckets (lambda (b1 b2) (<= (car b1) (car b2)))))
+        (while
+            (let* ((bucket (car buckets))
+                   (len (length (try-completion "" bucket)))
+                   (newbuckets ()))
+              (dolist (oldtarball (cdr bucket))
+                (let ((tvers (car oldtarball)))
+                  (push oldtarball
+                        (alist-get (substring tvers 0
+                                              (min (length tvers) (1+ len)))
+                                   newbuckets nil nil #'equal))))
+              (when (< (+ (length newbuckets) (length (cdr buckets)))
+                       (- n (length kept)))
+                ;; (message "Spreading one bucket")
+                (setq buckets (nconc (cdr buckets)
+                                     (mapcar (lambda (b)
+                                               (cons (length (car b)) (cdr b)))
+                                             newbuckets)))
+                t)))
+        ;; Finally, evenly select elements from every bucket.
+        (setq buckets (sort buckets (lambda (b1 b2) (<= (length b1) (length b2)))))
+        (while buckets
+          (let ((bucket-size (/ (- n (length kept)) (length buckets)))
+                (bucket (cdr (pop buckets))))
+            (setq kept (nconc (elpaa--keep-old bucket
+                                               bucket-size)
+                              kept))))
+        kept))))))
+
+(defun elpaa--prune-old-tarballs (tarball oldtarballs destdir)
   ;; Make sure we don't count ourselves among the "old" tarballs.
   (let ((self (rassoc (file-name-nondirectory tarball) oldtarballs)))
     (when self
       (setq oldtarballs (delq self oldtarballs))))
   (when (nthcdr elpaa--keep-max oldtarballs)
-    (let* ((keep (elpaa--keep-old vers oldtarballs elpaa--keep-max))
+    (let* ((keep (elpaa--keep-old oldtarballs elpaa--keep-max))
            (skeep (nreverse (sort keep
-                                  (lambda (t1 t2)
-                                    (version<= (car t1) (car t2)))))))
+                                  (lambda (t1 t2) (version<= (car t1) (car t2)))))))
       (message "Keeping: %s" (mapcar #'cdr skeep))
       (dolist (oldtarball oldtarballs)
         (unless (memq oldtarball keep)
           (cl-assert (not (equal (cdr oldtarball)
                                  (file-name-nondirectory tarball))))
-          (message "Deleting %s" (cdr oldtarball))))
+          (message "Deleting %s" (cdr oldtarball))
+          (let ((oldd (expand-file-name "old" destdir)))
+            (make-directory oldd t)
+            (rename-file (expand-file-name (cdr oldtarball) destdir)
+                         (expand-file-name (cdr oldtarball) oldd)))))
       (setq oldtarballs skeep)))
   (dolist (oldtarball oldtarballs)
     ;; Compress oldtarballs.
@@ -478,7 +532,7 @@ Return non-nil if a new tarball was created."
               (when (file-symlink-p link) (delete-file link))
               (make-symbolic-link (file-name-nondirectory tarball) link))
             (setq oldtarballs
-                  (elpaa--prune-old-tarballs vers tarball oldtarballs destdir))
+                  (elpaa--prune-old-tarballs tarball oldtarballs destdir))
             (let* ((default-directory (expand-file-name destdir)))
               ;; Apparently this also creates the <pkg>-readme.txt file.
               (elpaa--html-make-pkg pkgdesc pkg-spec
@@ -1040,7 +1094,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
         (dolist (file
-                 (sort files (lambda (f1 f2) (version< (car f2) (car f1)))))
+                 (sort files (lambda (f1 f2) (version<= (car f2) (car f1)))))
           (unless (equal (pop file) latest)
             (let ((attrs (file-attributes file)))
               (insert (format "<tr><td><a href=%S>%s</a></td><td>%s</td><td>%s</td>\n"
