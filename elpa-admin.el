@@ -447,7 +447,8 @@ Do it without leaving the current branch."
         (cl-assert (not (equal file (file-name-nondirectory tarball))))
         ;; (elpaa--message "not equal %s and %s" file tarball)
         (elpaa--call nil "lzip" (expand-file-name file destdir))
-        (setf (cdr oldtarball) (concat file ".lz"))))))
+        (setf (cdr oldtarball) (concat file ".lz")))))
+  oldtarballs)
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
                                  &optional revision-function one-tarball)
