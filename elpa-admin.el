@@ -567,7 +567,7 @@ Return non-nil if a new tarball was created."
               (elpaa--call t "date" "-d" gitdate "+%Y%m%d.%H%M%S")
               (buffer-string)))))
     ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
-    (replace-regexp-in-string "\\(?:\\`\\|[^0-9]\\)0+" "\\1"
+    (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+" "\\1"
                               ;; Remove trailing newline or anything untoward.
                               (replace-regexp-in-string "[^.0-9]+" ""
                                                         verdate))))
