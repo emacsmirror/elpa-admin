@@ -446,7 +446,8 @@ Do it without leaving the current branch."
                    (mvfun (lambda (f)
                             (let ((src (expand-file-name f destdir)))
                               (when (file-exists-p src)
-                                (rename-file src (expand-file-name olddir)))))))
+                                (rename-file src
+                                             (expand-file-name f olddir)))))))
               (make-directory olddir t)
               (funcall mvfun filename)
               (funcall mvfun sig))))
