@@ -245,21 +245,21 @@ Assumes that the current worktree holds a snapshot version."
 (defun elpaa--select-revision (dir pkg-spec rev)
   "Checkout revision REV in DIR of PKG-SPEC.
 Do it without leaving the current branch."
-  (let ((cur-rev
+  (let* ((ftn (file-truename
+               (expand-file-name (elpaa--main-file pkg-spec) dir)))
          ;; FIXME: Emacs-26's `vc-git-working-revision' ignores its arg and
          ;; uses uses the `default-directory' to get the revision.
-         (let* ((ftn (file-truename
-                      (expand-file-name (elpaa--main-file pkg-spec) dir)))
-                (default-directory (file-name-directory ftn)))
-           (vc-working-revision ftn))))
+         (default-directory (file-name-directory ftn))
+         (cur-rev (vc-working-revision ftn)))
     ;; Don't fail in case `rev' is not known.
     (if (or (not rev) (equal rev cur-rev))
         (elpaa--message "Current revision is already desired revision!")
       (with-temp-buffer
-        (let ((default-directory (elpaa--dirname dir)))
-          (elpaa--call t "git" "reset" "--merge" rev)
-          (elpaa--message "Reverted to release revision %s\n%s"
-                          rev (buffer-string)))))))
+        ;; Run it within the true-filename directory holding the mainfile,
+        ;; so that for :core packages we properly affect the Emacs tree.
+        (elpaa--call t "git" "reset" "--merge" rev)
+        (elpaa--message "Reverted to release revision %s\n%s"
+                        rev (buffer-string))))))
 
 (defun elpaa--make-tar-transform (pkgname r)
   (let ((from (nth 0 r)) (to (nth 1 r)))
@@ -1044,8 +1044,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
               (let* ((files (nth 2 pkg-spec))
                      (file (if (listp files)
                                (directory-file-name
-                                (file-name-directory
-                                 (try-completion "" files)))
+                                (or (file-name-directory
+                                     (try-completion "" files))
+                                    ""))
                              files)))
                 (mapcar (lambda (s) (concat s file))
                         `("cgit/emacs.git/tree/"
@@ -1588,13 +1589,19 @@ More at " (elpaa--default-url pkgname))
       (elpaa--build-Info-1 f dir))))
 
 (defun elpaa--build-Info-1 (docfile dir)
-  (let* ((default-directory (elpaa--dirname dir))
+  (let* ((elpaa--sandboxed-ro-binds
+          (cons default-directory elpaa--sandboxed-ro-binds))
+         (default-directory (elpaa--dirname dir))
          (tmpfiles '()))
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.org\\'" docfile))
       (with-temp-buffer
         (elpaa--call-sandboxed
-         t "emacs" "--batch" "-l" "ox-texinfo" docfile
+         t "emacs" "--batch" "-l" "ox-texinfo"
+         ;; When building :core packages, don't follow the symlink,
+         ;; otherwise Org will want to export into the Emacs tree!
+         "--eval" "(setq vc-follow-symlinks nil)"
+         docfile
          "--eval" "(message \"ELPATEXI=%s\" (org-texinfo-export-to-texinfo))")
         (message "%s" (buffer-string))
         (goto-char (point-max))
