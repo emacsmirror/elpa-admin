@@ -163,7 +163,13 @@ commit which modified the \"Version:\" pseudo header."
               (not (member vers (car version-map))))
     (pop version-map))
   (or (nth 2 (car version-map))
-      (let* ((default-directory (elpaa--dirname dir))
+      ;; When the mainfile is a symlink (e.g. for :core packages), run Git
+      ;; in the directory that holds the actual file, otherwise Git won't
+      ;; know what file we're talking about.
+      (let* ((mainfile (file-truename
+                        (expand-file-name (elpaa--main-file pkg-spec)
+                                          (elpaa--dirname dir))))
+             (default-directory (file-name-directory mainfile))
              (release-rev
               (with-temp-buffer
                 (if (equal 0         ;Don't signal an error if call errors out.
@@ -172,7 +178,7 @@ commit which modified the \"Version:\" pseudo header."
                       "git" "log" "-n1" "--oneline" "--no-patch"
                       "--pretty=format:%H"
                       "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                   (elpaa--main-file pkg-spec))))
+                                   (file-name-nondirectory mainfile))))
                     (buffer-string)
                   (cons 'error (buffer-string))))))
         (if (stringp release-rev)
@@ -246,7 +252,8 @@ Do it without leaving the current branch."
                       (expand-file-name (elpaa--main-file pkg-spec) dir)))
                 (default-directory (file-name-directory ftn)))
            (vc-working-revision ftn))))
-    (if (equal rev cur-rev)
+    ;; Don't fail in case `rev' is not known.
+    (if (or (not rev) (equal rev cur-rev))
         (elpaa--message "Current revision is already desired revision!")
       (with-temp-buffer
         (let ((default-directory (elpaa--dirname dir)))
