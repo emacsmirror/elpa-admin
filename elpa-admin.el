@@ -1694,6 +1694,7 @@ More at " (elpaa--default-url pkgname))
                   (elpaa--spec-get pkg-spec :url)))
          (branch (elpaa--branch pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
+         (ortb (elpaa--ortb pkg-spec))
          (urtb (elpaa--urtb pkg-spec))
          (refspec (if branch (format "+refs/heads/%s:%s" branch urtb)
                     (format "+HEAD:%s" urtb)))
@@ -1712,6 +1713,11 @@ More at " (elpaa--default-url pkgname))
                                (if release-refspec
                                    (list release-refspec)))))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
+         ((and
+           (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                                    ortb urtb)))
+           (elpaa--git-branch-p ortb))
+          (message "Upstream of %s has diverged" pkg))
          ((let* ((ortb (elpaa--ortb pkg-spec))
                  (exists (elpaa--git-branch-p ortb)))
             (not (equal 0 (elpaa--call t "git" "log"
