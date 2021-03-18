@@ -673,12 +673,12 @@ place the resulting tarball into the file named ONE-TARBALL."
         ;; Try and build the latest release tarball.
         (cond
          (one-tarball nil)
-         ((or (equal vers "0")
-              ;; -4 is used for "NN.MMsnapshot" and "NN.MM-git"
-              (member '-4 (version-to-list vers)))
+         ((equal vers "0")
+          (elpaa--message "Package %s not released yet!" pkgname))
+         ;; negative version numbers are used for pre-releases
+         ;; (i.e. snapshots, alpha, beta, and rc).
+         ((< (apply #'min (version-to-list vers)) 0)
           (cond
-           ((equal vers "0")
-            (elpaa--message "Package %s not released yet!" pkgname))
            ((not new)
             (elpaa--message "Nothing new for package %s!" pkgname))
            (t
