@@ -1461,7 +1461,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (let* ((pkgname (car pkg-spec))
          (default-directory (elpaa--dirname pkgname "packages"))
          (ignores (elpaa--spec-get pkg-spec :ignored-files))
-         (all-ignores '("." ".." ".git" "test" ".dir-locals.el"))
+         (all-ignores '("." ".." ".git" "test" "tests" ".dir-locals.el"))
          (dir-files (lambda (d)
                       (cl-set-difference (directory-files d)
                                          all-ignores :test #'equal)))
@@ -1688,7 +1688,7 @@ More at " (elpaa--default-url pkgname))
   "Return non-nil iff BRANCH is an existing branch."
   (equal 0 (elpaa--call t "git" "show-ref" "--verify" "--quiet" branch)))
 
-(defun elpaa--fetch (pkg-spec &optional k)
+(defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
          (url (or (elpaa--spec-get pkg-spec :external)
                   (elpaa--spec-get pkg-spec :url)))
@@ -1714,12 +1714,26 @@ More at " (elpaa--default-url pkgname))
                                    (list release-refspec)))))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
          ((and
+           (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                               urtb ortb))
+           (elpaa--git-branch-p ortb))
+          (message "Nothing new upstream for %s" pkg))
+         ((and
            (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
                                     ortb urtb)))
            (elpaa--git-branch-p ortb))
-          (message "Upstream of %s has diverged" pkg))
-         ((let* ((ortb (elpaa--ortb pkg-spec))
-                 (exists (elpaa--git-branch-p ortb)))
+          (message "Upstream of %s has DIVERGED!\n" pkg)
+          (when show-diverged
+            (elpaa--call t "git" "log"
+                         "--format=%h  %<(16,trunc)%ae  %s"
+                         (format "%s..%s" urtb ortb))
+            (message "  Local changes:\n%s" (buffer-string))
+            (erase-buffer)
+            (elpaa--call t "git" "log"
+                         "--format=%h  %<(16,trunc)%ae  %s"
+                         (format "%s..%s" ortb urtb))
+            (message "  Upstream changes:\n%s" (buffer-string))))
+         ((let* ((exists (elpaa--git-branch-p ortb)))
             (not (equal 0 (elpaa--call t "git" "log"
                                        "--format=%h  %<(16,trunc)%ae  %s"
                                        (if exists
@@ -1763,11 +1777,13 @@ More at " (elpaa--default-url pkgname))
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
 
 (defun elpaa--batch-fetch-and (k)
-  (let ((specs (elpaa--get-specs))
-        (pkgs command-line-args-left)
-        (condition ':))
+  (let* ((specs (elpaa--get-specs))
+         (pkgs command-line-args-left)
+         (show-diverged (not (cdr pkgs)))
+         (condition ':))
     (setq command-line-args-left nil)
     (when (and (null (cdr pkgs)) (string-match "\\`:" (car pkgs)))
+      (setq show-diverged nil)
       (setq condition (intern (car pkgs)))
       (setq pkgs (mapcar #'car specs)))
     (dolist (pkg pkgs)
@@ -1778,7 +1794,7 @@ More at " (elpaa--default-url pkgname))
               (elpaa--spec-get pkg-spec condition))
           ;; (unless (file-directory-p (expand-file-name pkg "packages"))
           ;;   (elpaa--worktree-sync pkg-spec))
-          (elpaa--fetch pkg-spec k)))))))
+          (elpaa--fetch pkg-spec k show-diverged)))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)
   (elpaa--batch-fetch-and #'ignore))
