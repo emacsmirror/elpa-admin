@@ -385,11 +385,11 @@ correctly in the commit.
 ** External branches
 
 A copy of the code of every package is kept in the =elpa.git= repository
-(not in the default branch) and if applicable should be sync'd with the
+(not in the =main= branch) and if applicable should be sync'd with the
 upstream every once in a while.  This copy may include local changes,
 although these should be kept to a minimum.
 
-The copy of the code is not kept in the default branch but in the
+The copy of the code is not kept in the =main= branch but in the
 =elpa/<pkg-name>= branch in the =elpa.git= repository.
 
 To add a new package, first add this =elpa.git= repository as a
@@ -417,7 +417,7 @@ Then edit the =elpa-packages= file as mentioned above, add the line
    ("realgud-ipdb" :url "https://github.com/realgud/realgud-ipdb")
 #+end_src
 
-and push that change to the default branch of =elpa=.  After it's added to
+and push that change to the =main= branch of =elpa=.  After it's added to
 the =elpa-packages= file, the package can be maintained just by
 pushing changes to the =elpa/<pkgname>= branch.
 
