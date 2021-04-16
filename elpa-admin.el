@@ -53,6 +53,8 @@
 (defvar elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
 (defvar elpaa--email-reply-to nil)
 
+(defvar elpaa--sandbox-extra-ro-dirs nil)
+
 (defvar elpaa--sandbox t
   "If non-nil, run some of the less trusted commands in a sandbox.
 This is recommended when building packages from untrusted sources,
@@ -86,6 +88,7 @@ on some Debian systems.")
               ('email-from		elpaa--email-from)
               ('email-reply-to		elpaa--email-reply-to)
               ('sandbox			elpaa--sandbox)
+              ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
               ('debug			elpaa--debug))
             val))))
 
@@ -718,7 +721,7 @@ The INFILE and DISPLAY arguments are fixed as nil."
     "--proc" "/proc"
     "--tmpfs" "/tmp"))
 
-(defvar elpaa--sandboxed-ro-binds
+(defvar elpaa--sandbox-ro-binds
   '("/lib" "/lib64" "/bin" "/usr" "/etc/alternatives" "/etc/emacs"))
 
 (defun elpaa--call-sandboxed (destination &rest args)
@@ -732,7 +735,8 @@ Signal an error if the command did not finish with exit code 0."
     (let ((dd (expand-file-name default-directory))) ;No `~' allowed!
       (setq args (nconc `("--bind" ,dd ,dd) args)))
     ;; Add read-only dirs in reverse order.
-    (dolist (b elpaa--sandboxed-ro-binds)
+    (dolist (b (append elpaa--sandbox-ro-binds
+                       elpaa--sandbox-extra-ro-dirs))
       (when (file-exists-p b)         ;`brwap' burps on binds that don't exist!
         (setq b (expand-file-name b))
         (setq args (nconc `("--ro-bind" ,b ,b) args))))
@@ -1589,8 +1593,8 @@ More at " (elpaa--default-url pkgname))
       (elpaa--build-Info-1 f dir))))
 
 (defun elpaa--build-Info-1 (docfile dir)
-  (let* ((elpaa--sandboxed-ro-binds
-          (cons default-directory elpaa--sandboxed-ro-binds))
+  (let* ((elpaa--sandbox-ro-binds
+          (cons default-directory elpaa--sandbox-ro-binds))
          (default-directory (elpaa--dirname dir))
          (tmpfiles '()))
     (when (and docfile (file-readable-p docfile)
@@ -1657,8 +1661,8 @@ More at " (elpaa--default-url pkgname))
         (cmd (elpaa--spec-get pkg-spec :shell-command)))
     (when (or cmd target)
       (with-temp-buffer
-        (let ((elpaa--sandboxed-ro-binds
-               (cons default-directory elpaa--sandboxed-ro-binds))
+        (let ((elpaa--sandbox-ro-binds
+               (cons default-directory elpaa--sandbox-ro-binds))
               (default-directory (elpaa--dirname dir)))
           (when cmd
             (elpaa--call-sandboxed t shell-file-name
