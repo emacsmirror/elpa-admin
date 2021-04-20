@@ -431,7 +431,7 @@ Do it without leaving the current branch."
                               kept))))
         kept))))))
 
-(defun elpaa--prune-old-tarballs (tarball oldtarballs destdir)
+(defun elpaa--prune-old-tarballs (tarball oldtarballs destdir &optional minage)
   ;; Make sure we don't count ourselves among the "old" tarballs.
   (let ((self (rassoc (file-name-nondirectory tarball) oldtarballs)))
     (when self
@@ -455,11 +455,23 @@ Do it without leaving the current branch."
                                   filename)
                                 ".sig"))
                    (mvfun (lambda (f)
-                            (let ((src (expand-file-name f destdir)))
-                              (if (not (file-exists-p src))
-                                  (message "Not existing/moving: %S" src)
+                            (let* ((src (expand-file-name f destdir))
+                                   (fa (file-attributes src)))
+                              (cond
+                               ((not fa)
+                                (message "Not existing/moving: %S" src))
+                               ((and minage
+                                     (< (float-time
+                                         (time-subtract
+                                          (current-time)
+                                          (file-attribute-modification-time
+                                           fa)))
+                                        ;; One year.
+                                        minage))
+                                (message "File too young: %S" src))
+                               (t
                                 (rename-file src
-                                             (expand-file-name f olddir)))))))
+                                             (expand-file-name f olddir))))))))
               (make-directory olddir t)
               (funcall mvfun filename)
               (funcall mvfun sig))))
@@ -558,7 +570,11 @@ Return non-nil if a new tarball was created."
               (when (file-symlink-p link) (delete-file link))
               (make-symbolic-link (file-name-nondirectory tarball) link))
             (setq oldtarballs
-                  (elpaa--prune-old-tarballs tarball oldtarballs destdir))
+                  (elpaa--prune-old-tarballs tarball oldtarballs destdir
+                                             ;; Keep release versions at
+                                             ;; least 2 years.
+                                             (if revision-function
+                                                 (* 60 60 24 365 2))))
             (let* ((default-directory (expand-file-name destdir)))
               ;; Apparently this also creates the <pkg>-readme.txt file.
               (elpaa--html-make-pkg pkgdesc pkg-spec
