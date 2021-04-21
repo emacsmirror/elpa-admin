@@ -972,7 +972,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                   <a href=\"https://creativecommons.org/licenses/by-nd/4.0/\">CC BY-ND 4.0</a>
                   International License.
                 </p>
-                <p><a href=\"/jslicense.html\">JavaScript Licenses</a></p>
+                <p><a href=\"/jslicense.html\" data-jslicense=\"1\">JavaScript Licenses</a></p>
             </div>
         </div>
 
