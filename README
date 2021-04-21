@@ -461,7 +461,7 @@ To access the archive via HTTP, have a symlink (say) =/var/www/packages=
 pointing to =DEST/packages=, and set up Emacs with
 
 #+begin_src elisp
-  (setq package-archives '(("new-elpa" . "http://foo.com/packages")))
+  (setq package-archives '(("new-elpa" . "https://foo.com/packages")))
 #+end_src
 
 You can also access the archive via normal file access.  Such "local

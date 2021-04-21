@@ -15,7 +15,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -966,7 +966,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         <div class=\"footer\">
             <div class=\"container\">
                 <p>Copyright 2016-%s <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
-                <p>Design provided by <a href=\"http://nicolas.petton.fr\">Nicolas Petton</a></p>
+                <p>Design provided by <a href=\"https://nicolas.petton.fr\">Nicolas Petton</a></p>
                 <p>
                   This website is licensed under the
                   <a href=\"https://creativecommons.org/licenses/by-nd/4.0/\">CC BY-ND 4.0</a>
@@ -1078,7 +1078,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                     url (elpaa--html-quote url)))
     (when (string-match (elpaa--default-url-re) url)
       (setq url nil)))
-  (let* ((git-sv "http://git.savannah.gnu.org/")
+  (let* ((git-sv "https://git.savannah.gnu.org/")
          (urls
           (if (eq (nth 1 pkg-spec) :core)
               (let* ((files (nth 2 pkg-spec))
