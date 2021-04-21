@@ -968,9 +968,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                 <p>Copyright 2016-%s <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
                 <p>Design provided by <a href=\"http://nicolas.petton.fr\">Nicolas Petton</a></p>
                 <p>
-                   This website is licensed under the
-                   <a href=\"https://creativecommons.org/licenses/by-nd/3.0/us/\">CC BY-ND 3.0</a>
-                   US License.
+                  This website is licensed under the
+                  <a href=\"https://creativecommons.org/licenses/by-nd/4.0/\">CC BY-ND 4.0</a>
+                  International License.
                 </p>
                 <p><a href=\"/jslicense.html\">JavaScript Licenses</a></p>
             </div>
