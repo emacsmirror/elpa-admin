@@ -961,6 +961,24 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
             <div class=\"container\">\n"
           title (or header title)))
 
+(defun elpaa--html-footer ()
+  (format "\n
+        <div class=\"footer\">
+            <div class=\"container\">
+                <p>Copyright 2016-%s <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
+                <p>Design provided by <a href=\"http://nicolas.petton.fr\">Nicolas Petton</a></p>
+                <p>
+                   This website is licensed under the
+                   <a href=\"https://creativecommons.org/licenses/by-nd/3.0/us/\">CC BY-ND 3.0</a>
+                   US License.
+                </p>
+                <p><a href=\"/jslicense.html\">JavaScript Licenses</a></p>
+            </div>
+        </div>
+
+</body>\n"
+          (format-time-string "%Y")))
+
 (defun elpaa--html-bytes-format (bytes) ;Aka memory-usage-format.
   (if (null bytes)
       "??KiB"
@@ -1149,7 +1167,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
           (insert "<h2>News</h2><pre>\n" (elpaa--html-quote news) "\n</pre>\n")))
-      (insert "</body>\n")
+      (insert (elpaa--html-footer))
       (write-region (point-min) (point-max) (concat name ".html")))))
 
 (defun elpaa--html-make-index (pkgs)
@@ -1165,21 +1183,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (insert "                </table>
             </div>
             <div class=\"push\"></div>
-        </div>
-
-        <div class=\"footer\">
-            <div class=\"container\">
-                <p>Copyright 2016 <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
-                <p>Design provided by <a href=\"http://nicolas.petton.fr\">Nicolas Petton</a></p>
-                <p>
-                   This website is licensed under the
-                   <a href=\"https://creativecommons.org/licenses/by-nd/3.0/us/\">CC BY-ND 3.0</a>
-                   US License.
-                </p>
-            </div>
-        </div>
-
-</body>\n")
+        </div>")
+    (insert (elpaa--html-footer))
     (write-region (point-min) (point-max) "index.html")))
 
 (defun elpaa--pull (dirname)
