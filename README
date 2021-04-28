@@ -359,6 +359,7 @@ and the web-pages from this source code:
   in the format used for single-file packages: the =<pkg-name>-pkg.el= file is
   auto-generated from it.
 - Every package should have both a =Version:= /and/ a =Maintainer:=.
+- The =Version:= must be acceptable to =version-to-list=.
 - The =URL:= header can be used to specify the home page
   of the package, if it's maintained externally.
 - A =News:= section (or "NEWS" file) can/should be used to list the
