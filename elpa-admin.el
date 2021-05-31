@@ -649,15 +649,14 @@ Return non-nil if a new tarball was created."
 
 (defun elpaa--string-width (str)
   "Determine string width in pixels of STR."
-  (let ((output (shell-command-to-string
-                 (format "convert -debug annotate xc: -font DejaVu-Sans\
-                         -pointsize 110 -annotate 0 %s null: 2>&1"
-                         (shell-quote-argument str)))))
-    (save-match-data
-      (if (string-match
-           "Metrics:.*?width: \\([0-9]+\\)"
-           output)
-          (string-to-number (match-string 1 output))
+  (with-temp-buffer
+    (elpaa--call (current-buffer)
+                 "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
+                 "-pointsize" "110" "-annotate" "0" str "null:")
+    (save-match-data ;;FIXME: Why?
+      (goto-char (point-min))
+      (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
+          (string-to-number (match-string 1))
         (error "Could not determine string width")))))
 
 (defun elpaa--make-badge (file left right)
@@ -676,6 +675,7 @@ Return non-nil if a new tarball was created."
                 (width . ,width)
                 (color . ,color)
                 (pad . ,pad))))
+    ;; FIXME: Use `svg.el'?
     (with-temp-buffer
       (insert
        (replace-regexp-in-string
@@ -821,10 +821,12 @@ place the resulting tarball into the file named ONE-TARBALL."
               (elpaa--release-email pkg-spec metadata dir)))))
 
         ;; Generate missing badges
+        ;; FIXME: Why here?
         (unless (and (not new) (file-exists-p devel-badge))
           (elpaa--make-badge devel-badge
                              (format "%s-devel ELPA" elpaa--name)
                              (format "%s %s" pkgname devel-vers)))
+        ;; FIXME: Shouldn't it be made already above?
         (unless (file-exists-p release-badge)
           (elpaa--make-badge release-badge
                              (format "%s ELPA" elpaa--name)
