@@ -647,6 +647,94 @@ Return non-nil if a new tarball was created."
       (delete-file tarball)
       (elpaa--make-one-package pkg-spec tarball))))
 
+(defun elpaa--string-width (str)
+  "Determine string width in pixels of STR."
+  (let ((output (shell-command-to-string
+                 (format "convert -debug annotate xc: -font DejaVu-Sans\
+                         -pointsize 110 -annotate 0 %s null: 2>&1"
+                         (shell-quote-argument str)))))
+    (save-match-data
+      (if (string-match
+           "Metrics:.*?width: \\([0-9]+\\)"
+           output)
+          (string-to-number (match-string 1 output))
+        (error "Could not determine string width")))))
+
+(defun elpaa--make-badge (file left right)
+  "Make badge svg FILE with LEFT and RIGHT string."
+  (let* ((lw (elpaa--string-width left))
+         (rw (elpaa--string-width right))
+         (pad (elpaa--string-width "x"))
+         (color "#bb3955")
+         (width (/ (+ lw rw (* 4 pad)) 10))
+         (offset -10) ;; Small alignment correction
+         (ctx `((offset . ,offset)
+                (left . ,left)
+                (right . ,right)
+                (lw . ,lw)
+                (rw . ,rw)
+                (width . ,width)
+                (color . ,color)
+                (pad . ,pad))))
+    (with-temp-buffer
+      (insert
+       (replace-regexp-in-string
+        "[ \t\n]+" " "
+        (replace-regexp-in-string
+         "{\\([^}]+\\)}"
+         (lambda (str)
+           (format "%s" (eval (read (match-string 1 str)) ctx)))
+         (replace-regexp-in-string
+          "'" "\""
+          "<?xml version='1.0'?>
+<svg xmlns='http://www.w3.org/2000/svg'
+     xmlns:xlink='http://www.w3.org/1999/xlink'
+     width='{width}'
+     height='20'
+     role='img'
+     aria-label='{left}: {right}'>
+  <title>{left}: {right}</title>
+  <linearGradient id='s' x2='0' y2='100%'>
+    <stop offset='0' stop-color='#bbb' stop-opacity='.1'/>
+    <stop offset='1' stop-opacity='.1'/>
+  </linearGradient>
+  <clipPath id='r'>
+    <rect width='{width}' height='20' rx='3' fill='#fff'/>
+  </clipPath>
+  <g clip-path='url(#r)'>
+    <rect width='{(/ (+ lw (* 2 pad)) 10)}'
+          height='20' fill='#555'/>
+    <rect x='{(1- (/ (+ lw (* 2 pad)) 10))}'
+          width='{width}' height='20' fill='{color}'/>
+    <rect width='{width}' height='20' fill='url(#s)'/>
+  </g>
+  <g fill='#fff'
+     text-anchor='middle'
+     font-family='Verdana,Geneva,DejaVu Sans,sans-serif'
+     font-size='110'
+     text-rendering='geometricPrecision'>
+    <text aria-hidden='true'
+          x='{(+ (/ lw 2) pad offset)}'
+          y='150'
+          fill='#010101' fill-opacity='.3'
+          transform='scale(.1)' textLength='{lw}'>{left}</text>
+    <text x='{(+ (/ lw 2) pad offset)}'
+          y='140' transform='scale(.1)'
+          fill='#fff'
+          textLength='{lw}'>{left}</text>
+    <text aria-hidden='true'
+          x='{(+ lw (/ rw 2) (* 3 pad) offset)}'
+          y='150'
+          fill='#010101'  fill-opacity='.3'
+          transform='scale(.1)' textLength='{rw}'>{right}</text>
+    <text x='{(+ lw (/ rw 2) (* 3 pad) offset)}'
+          y='140'
+          transform='scale(.1)'
+          fill='#fff' textLength='{rw}'>{right}</text>
+  </g>
+</svg>"))))
+      (write-region (point-min) (point-max) file))))
+
 (defun elpaa--make-one-package (pkg-spec &optional one-tarball)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If ONE-TARBALL is non-nil, don't try and select some other revision and
@@ -679,6 +767,8 @@ place the resulting tarball into the file named ONE-TARBALL."
              (devel-vers
               (concat vers (if (string-match "[0-9]\\'" vers) ".")
                       "0." date-version))
+             (release-badge (format "%s/%s.svg" elpaa--release-subdir pkgname))
+             (devel-badge (format "%s/%s.svg" elpaa--devel-subdir pkgname))
              (tarball (or one-tarball
                           (concat elpaa--devel-subdir
                                   (format "%s-%s.tar" pkgname devel-vers))))
@@ -725,7 +815,20 @@ place the resulting tarball into the file named ONE-TARBALL."
                      (elpaa--get-release-revision
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map))))
-              (elpaa--release-email pkg-spec metadata dir)))))))))
+              (elpaa--make-badge release-badge
+                                 (format "%s ELPA" elpaa--name)
+                                 (format "%s %s" pkgname vers))
+              (elpaa--release-email pkg-spec metadata dir)))))
+
+        ;; Generate missing badges
+        (unless (and (not new) (file-exists-p devel-badge))
+          (elpaa--make-badge devel-badge
+                             (format "%s-devel ELPA" elpaa--name)
+                             (format "%s %s" pkgname devel-vers)))
+        (unless (file-exists-p release-badge)
+          (elpaa--make-badge release-badge
+                             (format "%s ELPA" elpaa--name)
+                             (format "%s %s" pkgname vers)))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
@@ -1143,6 +1246,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
            (elpaa--get-prop "URL" name srcdir mainsrcfile)))
+      (insert (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n" (elpaa--html-quote name)))
       (insert "</dl>")
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
