@@ -242,7 +242,8 @@ Assumes that the current worktree holds a snapshot version."
               (cond
                ((null vl)
                 (elpaa--message "Invalid previous release version"))
-               ((member -4 vl)
+               ((or (equal vers "0") (< (apply #'min vl) 0))
+                ;; FIXME: Maybe we could look further into the past?
                 (elpaa--message "Previous version was also snapshot"))
                (t
                 (cons (package-version-join vl) rev))))))))))
