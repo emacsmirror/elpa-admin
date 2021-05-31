@@ -654,11 +654,10 @@ Return non-nil if a new tarball was created."
     (elpaa--call (current-buffer)
                  "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
                  "-pointsize" "110" "-annotate" "0" str "null:")
-    (save-match-data ;;FIXME: Why?
-      (goto-char (point-min))
-      (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
-          (string-to-number (match-string 1))
-        (error "Could not determine string width")))))
+    (goto-char (point-min))
+    (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
+        (string-to-number (match-string 1))
+      (error "Could not determine string width"))))
 
 (defun elpaa--make-badge (file left right)
   "Make badge svg FILE with LEFT and RIGHT string."
@@ -736,6 +735,20 @@ Return non-nil if a new tarball was created."
 </svg>"))))
       (write-region (point-min) (point-max) file))))
 
+(defun elpaa--add-badge-link (file name)
+  "Add badge link to FILE for package NAME."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let ((contents (buffer-string)))
+      (unless (string-match-p "<dt>Badge</dt>" contents)
+        (erase-buffer)
+        (insert
+         (replace-regexp-in-string "</dl>"
+                                   (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n</dl>"
+                                           (elpaa--html-quote name))
+                                   contents))
+        (write-region (point-min) (point-max) file)))))
+
 (defun elpaa--make-one-package (pkg-spec &optional one-tarball)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If ONE-TARBALL is non-nil, don't try and select some other revision and
@@ -768,8 +781,6 @@ place the resulting tarball into the file named ONE-TARBALL."
              (devel-vers
               (concat vers (if (string-match "[0-9]\\'" vers) ".")
                       "0." date-version))
-             (release-badge (format "%s/%s.svg" elpaa--release-subdir pkgname))
-             (devel-badge (format "%s/%s.svg" elpaa--devel-subdir pkgname))
              (tarball (or one-tarball
                           (concat elpaa--devel-subdir
                                   (format "%s-%s.tar" pkgname devel-vers))))
@@ -816,22 +827,23 @@ place the resulting tarball into the file named ONE-TARBALL."
                      (elpaa--get-release-revision
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map))))
-              (elpaa--make-badge release-badge
-                                 (format "%s ELPA" elpaa--name)
-                                 (format "%s %s" pkgname vers))
               (elpaa--release-email pkg-spec metadata dir)))))
 
-        ;; Generate missing badges
-        ;; FIXME: Why here?
-        (unless (and (not new) (file-exists-p devel-badge))
-          (elpaa--make-badge devel-badge
-                             (format "%s-devel ELPA" elpaa--name)
-                             (format "%s %s" pkgname devel-vers)))
-        ;; FIXME: Shouldn't it be made already above?
-        (unless (file-exists-p release-badge)
-          (elpaa--make-badge release-badge
-                             (format "%s ELPA" elpaa--name)
-                             (format "%s %s" pkgname vers)))))))
+        ;; Generate missing badges (temporary code)
+        (let ((release-badge (format "%s/%s.svg" elpaa--release-subdir pkgname))
+              (devel-badge (format "%s/%s.svg" elpaa--devel-subdir pkgname))
+              (release-html (format "%s/%s.html" elpaa--release-subdir pkgname))
+              (devel-html (format "%s/%s.html" elpaa--devel-subdir pkgname)))
+          (unless (file-exists-p devel-badge)
+            (elpaa--make-badge devel-badge
+                               (format "%s-devel ELPA" elpaa--name)
+                               (format "%s %s" pkgname devel-vers))
+            (elpaa--add-badge-link devel-html pkgname))
+          (unless (file-exists-p release-badge)
+            (elpaa--make-badge release-badge
+                               (format "%s ELPA" elpaa--name)
+                               (format "%s %s" pkgname vers))
+            (elpaa--add-badge-link release-html pkgname)))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
@@ -1219,6 +1231,9 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (mainsrcfile (expand-file-name (elpaa--main-file pkg-spec) srcdir))
          (desc (aref (cdr pkg) 2)))
     (cl-assert (equal name (car pkg-spec)))
+    (elpaa--make-badge (concat name ".svg")
+                       (format "%s ELPA" elpaa--name)
+                       (format "%s %s" name latest))
     (with-temp-buffer
       (insert (elpaa--html-header
                (format "%s ELPA - %s" elpaa--name name)
