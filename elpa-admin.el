@@ -489,7 +489,7 @@ Do it without leaving the current branch."
   oldtarballs)
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
-                                 &optional revision-function one-tarball)
+                                 &optional revision-function one-tarball no-symlink)
   "Create file TARBALL for PKGNAME if not done yet.
 Return non-nil if a new tarball was created."
   (elpaa--message "Building tarball %s..." tarball)
@@ -567,9 +567,10 @@ Return non-nil if a new tarball was created."
                 (elpaa--call nil "git" "tag" "-f"
                              (format "%s-release/%s-%s"
                                      elpaa--name pkgname vers))))
-            (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-              (when (file-symlink-p link) (delete-file link))
-              (make-symbolic-link (file-name-nondirectory tarball) link))
+	    (unless no-symlink
+              (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+		(when (file-symlink-p link) (delete-file link))
+		(make-symbolic-link (file-name-nondirectory tarball) link)))
             (setq oldtarballs
                   (elpaa--prune-old-tarballs tarball oldtarballs destdir
                                              ;; Keep release versions at
@@ -638,6 +639,23 @@ Return non-nil if a new tarball was created."
   (while command-line-args-left
     (elpaa--make-one-package (elpaa--get-package-spec
                                 (pop command-line-args-left)))))
+
+(defun elpaa-batch-make-one-devel (&rest _)
+  "Build the new devel tarball (if needed) for packages listed on command line."
+  (while command-line-args-left
+    (let* ((pkgname (pop command-line-args-left))
+	   (pkg-spec (elpaa--get-package-spec pkgname))
+	   (elpaa--sandbox (not (eq system-type 'windows-nt))))
+      (elpaa--make-one-package pkg-spec nil t))))
+
+(defun elpaa-batch-make-one-info (&rest _)
+  "Build the info files for packages listed on command line."
+  (while command-line-args-left
+    (let* ((pkgname (pop command-line-args-left))
+	   (pkg-spec (elpaa--get-package-spec pkgname))
+	   (dir (expand-file-name pkgname "packages"))
+	   (elpaa--sandbox (not (eq system-type 'windows-nt))))
+      (elpaa--build-Info pkg-spec dir))))
 
 (defun elpaa-batch-make-one-tarball (&rest _)
   "Build a tarball for a particular package."
@@ -749,10 +767,11 @@ Return non-nil if a new tarball was created."
                                    contents))
         (write-region (point-min) (point-max) file)))))
 
-(defun elpaa--make-one-package (pkg-spec &optional one-tarball)
+(defun elpaa--make-one-package (pkg-spec &optional one-tarball devel-only)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If ONE-TARBALL is non-nil, don't try and select some other revision and
-place the resulting tarball into the file named ONE-TARBALL."
+place the resulting tarball into the file named ONE-TARBALL.
+If DEVEL-ONLY is non-nil, only build the devel tarball."
   (elpaa--message "Checking package %s for updates..." (car pkg-spec))
   (let* ((pkgname (car pkg-spec))
          (dir (expand-file-name pkgname "packages"))
@@ -791,7 +810,7 @@ place the resulting tarball into the file named ONE-TARBALL."
                                          dir pkg-spec
                                          `(nil ,devel-vers
                                                . ,(nthcdr 2 metadata))
-                                         nil one-tarball))))
+                                         nil one-tarball devel-only))))
 
         ;; Try and build the latest release tarball.
         (cond
