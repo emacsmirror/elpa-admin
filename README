@@ -477,6 +477,7 @@ archives" are useful for debugging:
 
 ** Notes specific to =elpa.gnu.org=
 
+*** Periodic builds
 The way things are set up on this machine, we refresh the archive by
 a cron job.  You can do it by hand by logging in (access set up by FSF
 admins), and
@@ -490,6 +491,25 @@ admins), and
 Which makes a full archive deployment, as discussed above.  The symlink
 =/var/www/packages= points to the corresponding directory under
 =/home/elpa/=.
+
+*** Release and devel archives
+elpa.gnu.org serves the gnu and nongnu package collections (roughly,
+gnu requires FSF copyright assign, nongnu doesn't, but these terms are
+not fully defined here).
+
+In addition, elpa.gnu.org serves release and devel versions of each
+package. The release version is defined by a change in the =Version:=
+header of a package; the devel version is the latest commit.
+
+The release version is accessed at:
+
+gnu    - https://elpa.gnu.org/packages/
+nongnu - https://elpa.nongnu.org/nongnu/
+
+The devel version is accessed at:
+
+gnu    - https://elpa.gnu.org/devel
+nongnu - https://elpa.nongnu.org/nongnu-devel/
 
 * License
 This file is part of GNU Emacs.
