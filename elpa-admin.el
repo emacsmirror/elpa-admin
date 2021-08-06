@@ -184,7 +184,11 @@ commit which modified the \"Version:\" pseudo header."
                       "--pretty=format:%H"
                       "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
                                    (file-name-nondirectory mainfile))))
-                    (buffer-string)
+                    ;; The --no-patch (aka -s) option does not work
+                    ;; with "git log -L<from>,<to>:<path>" before git
+                    ;; version 2.22; so capture only the first line.
+                    (buffer-substring-no-properties
+                     (goto-char (point-min)) (line-end-position))
                   (cons 'error (buffer-string))))))
         (if (stringp release-rev)
             (progn
