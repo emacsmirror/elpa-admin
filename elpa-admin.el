@@ -493,7 +493,7 @@ Do it without leaving the current branch."
   oldtarballs)
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
-                                 &optional revision-function one-tarball no-symlink)
+                                 &optional revision-function tarball-only no-symlink)
   "Create file TARBALL for PKGNAME if not done yet.
 Return non-nil if a new tarball was created."
   (elpaa--message "Building tarball %s..." tarball)
@@ -503,92 +503,103 @@ Return non-nil if a new tarball was created."
       (progn
         (elpaa--message "Tarball %s already built!" tarball)
         nil)
-    (elpaa--with-temp-files
-        dir
-      (let* ((destdir (file-name-directory tarball))
-             (pkgname (car pkg-spec))
-             (_ (when (and destdir (not (file-directory-p destdir)))
-                  (make-directory destdir)))
-             (vers (nth 1 metadata))
-             (elpaignore (expand-file-name ".elpaignore" dir))
-             (ignores (elpaa--spec-get pkg-spec :ignored-files))
-             (renames (elpaa--spec-get pkg-spec :renames))
-             (ldir    (elpaa--spec-get pkg-spec :lisp-dir))
-             (re (concat "\\`" (regexp-quote pkgname)
-                         "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
-             (oldtarballs
-              (unless one-tarball
-                (mapcar
-                 (lambda (file)
-                   (string-match re file)
-                   (cons (match-string 1 file) file))
-                 (directory-files destdir nil re)))))
-        (when ldir
-          (cl-pushnew (list (file-name-as-directory ldir) "") renames
-                      :test #'equal))
-        (when revision-function
-          (elpaa--select-revision dir pkg-spec (funcall revision-function)))
-        (elpaa--copyright-check pkg-spec)
-        ;; Run `make' before building the Info file, so that the `make' rule
-        ;; can be used to build the Info/Texinfo file.
-        (elpaa--make pkg-spec dir)
-        (elpaa--build-Info pkg-spec dir)
-        (elpaa--write-pkg-file dir pkgname metadata)
-        ;; FIXME: Allow renaming files or selecting a subset of the files!
-        (cl-assert (not (string-match "[][*\\|?]" pkgname)))
-        (cl-assert (not (string-match "[][*\\|?]" vers)))
-        (apply #'elpaa--call
-               nil "tar"
-               `("--exclude-vcs"
-                 ,@(cond
-                    (ignores
-                     (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
-                             ignores))
-                    ((file-readable-p elpaignore) `("-X" ,elpaignore)))
-                 ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r))
-                           renames)
-                 "--transform"
-                 ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
-                 "-chf" ,tarball
-                 ,(concat "packages/" pkgname)))
-        (unless one-tarball
-          (let* ((pkgdesc
-                  ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
-                  ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
-                  ;; reads it back.  We could/should skip the middle man.
-                  (elpaa--process-multi-file-package
-                   dir pkgname 'dont-rename)))
-            (elpaa--message "%s: %S" pkgname pkgdesc)
-            (elpaa--update-archive-contents pkgdesc destdir)
-            (when (and nil revision-function) ;FIXME: Circumstantial evidence.
-              ;; Various problems:
-              ;; - If "make build/foo" is used by the developers in order to test
-              ;;   the build of their package, they'll end up with those spurious
-              ;;   tags which may end up spreading to unintended places.
-              ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
-              ;;   because that account can't push to git.sv.gnu.org anyway.
-              (let ((default-directory (elpaa--dirname dir)))
-                (elpaa--call nil "git" "tag" "-f"
-                             (format "%s-release/%s-%s"
-                                     elpaa--name pkgname vers))))
-	    (unless no-symlink
-              (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-		(when (file-symlink-p link) (delete-file link))
-		(make-symbolic-link (file-name-nondirectory tarball) link)))
-            (setq oldtarballs
-                  (elpaa--prune-old-tarballs tarball oldtarballs destdir
-                                             ;; Keep release versions at
-                                             ;; least 2 years.
-                                             (if revision-function
-                                                 (* 60 60 24 365 2))))
-            (let* ((default-directory (expand-file-name destdir)))
-              ;; Apparently this also creates the <pkg>-readme.txt file.
-              (elpaa--html-make-pkg pkgdesc pkg-spec
-                                    `((,vers . ,(file-name-nondirectory tarball))
-                                      . ,oldtarballs)
-                                    dir))
-            (message "Built new package %s!" tarball)
-            'new))))))
+    (message "######## Building tarball %s... ########" tarball)
+    (let ((res nil))
+      (unwind-protect
+          (setq res (elpaa--make-one-tarball-1
+                     tarball dir pkg-spec metadata
+                     revision-function tarball-only no-symlink))
+        (message (if res "======== Built new package %s!"
+                   "======== Build of package %s FAILED!!")
+                 tarball)))))
+
+(defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata
+                                 &optional revision-function tarball-only no-symlink)
+  (elpaa--with-temp-files
+   dir
+   (let* ((destdir (file-name-directory tarball))
+          (pkgname (car pkg-spec))
+          (_ (when (and destdir (not (file-directory-p destdir)))
+               (make-directory destdir)))
+          (vers (nth 1 metadata))
+          (elpaignore (expand-file-name ".elpaignore" dir))
+          (ignores (elpaa--spec-get pkg-spec :ignored-files))
+          (renames (elpaa--spec-get pkg-spec :renames))
+          (ldir    (elpaa--spec-get pkg-spec :lisp-dir))
+          (re (concat "\\`" (regexp-quote pkgname)
+                      "-\\([0-9].*\\)\\.\\(tar\\|el\\)\\(\\.[a-z]*z\\)?\\'"))
+          (oldtarballs
+           (unless tarball-only
+             (mapcar
+              (lambda (file)
+                (string-match re file)
+                (cons (match-string 1 file) file))
+              (directory-files destdir nil re)))))
+     (when ldir
+       (cl-pushnew (list (file-name-as-directory ldir) "") renames
+                   :test #'equal))
+     (when revision-function
+       (elpaa--select-revision dir pkg-spec (funcall revision-function)))
+     (elpaa--copyright-check pkg-spec)
+     ;; Run `make' before building the Info file, so that the `make' rule
+     ;; can be used to build the Info/Texinfo file.
+     (elpaa--make pkg-spec dir)
+     (elpaa--build-Info pkg-spec dir)
+     (elpaa--write-pkg-file dir pkgname metadata)
+     ;; FIXME: Allow renaming files or selecting a subset of the files!
+     (cl-assert (not (string-match "[][*\\|?]" pkgname)))
+     (cl-assert (not (string-match "[][*\\|?]" vers)))
+     (apply #'elpaa--call
+            nil "tar"
+            `("--exclude-vcs"
+              ,@(cond
+                 (ignores
+                  (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
+                          ignores))
+                 ((file-readable-p elpaignore) `("-X" ,elpaignore)))
+              ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r))
+                        renames)
+              "--transform"
+              ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
+              "-chf" ,tarball
+              ,(concat "packages/" pkgname)))
+     (unless tarball-only
+       (let* ((pkgdesc
+               ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
+               ;; <pkg>-pkg.el and then `elpaa--process-multi-file-package'
+               ;; reads it back.  We could/should skip the middle man.
+               (elpaa--process-multi-file-package
+                dir pkgname 'dont-rename)))
+         (elpaa--message "%s: %S" pkgname pkgdesc)
+         (elpaa--update-archive-contents pkgdesc destdir)
+         (when (and nil revision-function) ;FIXME: Circumstantial evidence.
+           ;; Various problems:
+           ;; - If "make build/foo" is used by the developers in order to test
+           ;;   the build of their package, they'll end up with those spurious
+           ;;   tags which may end up spreading to unintended places.
+           ;; - The tags created in elpa.gnu.org won't spread to nongnu.git
+           ;;   because that account can't push to git.sv.gnu.org anyway.
+           (let ((default-directory (elpaa--dirname dir)))
+             (elpaa--call nil "git" "tag" "-f"
+                          (format "%s-release/%s-%s"
+                                  elpaa--name pkgname vers))))
+	 (unless no-symlink
+           (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+	     (when (file-symlink-p link) (delete-file link))
+	     (make-symbolic-link (file-name-nondirectory tarball) link)))
+         (setq oldtarballs
+               (elpaa--prune-old-tarballs tarball oldtarballs destdir
+                                          ;; Keep release versions at
+                                          ;; least 2 years.
+                                          (if revision-function
+                                              (* 60 60 24 365 2))))
+         (let* ((default-directory (expand-file-name destdir)))
+           ;; Apparently this also creates the <pkg>-readme.txt file.
+           (elpaa--html-make-pkg pkgdesc pkg-spec
+                                 `((,vers . ,(file-name-nondirectory tarball))
+                                   . ,oldtarballs)
+                                 dir))
+         'new)))))
 
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
@@ -771,16 +782,16 @@ Return non-nil if a new tarball was created."
                                    contents))
         (write-region (point-min) (point-max) file)))))
 
-(defun elpaa--make-one-package (pkg-spec &optional one-tarball devel-only)
+(defun elpaa--make-one-package (pkg-spec &optional tarball-only devel-only)
   "Build the new tarballs (if needed) for PKG-SPEC.
-If ONE-TARBALL is non-nil, don't try and select some other revision and
-place the resulting tarball into the file named ONE-TARBALL.
+If TARBALL-ONLY is non-nil, don't try and select some other revision and
+place the resulting tarball into the file named TARBALL-ONLY.
 If DEVEL-ONLY is non-nil, only build the devel tarball."
   (elpaa--message "Checking package %s for updates..." (car pkg-spec))
   (let* ((pkgname (car pkg-spec))
          (dir (expand-file-name pkgname "packages"))
          (_ (cond
-             (one-tarball nil)
+             (tarball-only nil)
              ((eq (nth 1 pkg-spec) :core) (elpaa--core-package-sync pkg-spec))
              (t (elpaa--worktree-sync pkg-spec))))
          (_ (elpaa--message "pkg-spec for %s: %S" pkgname pkg-spec))
@@ -804,7 +815,7 @@ If DEVEL-ONLY is non-nil, only build the devel tarball."
              (devel-vers
               (concat vers (if (string-match "[0-9]\\'" vers) ".")
                       "0." date-version))
-             (tarball (or one-tarball
+             (tarball (or tarball-only
                           (concat elpaa--devel-subdir
                                   (format "%s-%s.tar" pkgname devel-vers))))
              (new
@@ -814,11 +825,11 @@ If DEVEL-ONLY is non-nil, only build the devel tarball."
                                          dir pkg-spec
                                          `(nil ,devel-vers
                                                . ,(nthcdr 2 metadata))
-                                         nil one-tarball devel-only))))
+                                         nil tarball-only devel-only))))
 
         ;; Try and build the latest release tarball.
         (cond
-         (one-tarball nil)
+         (tarball-only nil)
          ((equal vers "0")
           (elpaa--message "Package %s not released yet!" pkgname))
          ;; negative version numbers are used for pre-releases
