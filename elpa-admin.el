@@ -503,14 +503,16 @@ Return non-nil if a new tarball was created."
       (progn
         (elpaa--message "Tarball %s already built!" tarball)
         nil)
-    (message "######## Building tarball %s... ########" tarball)
+    (message "======== Building tarball %s..." tarball)
     (let ((res nil))
       (unwind-protect
-          (setq res (elpaa--make-one-tarball-1
-                     tarball dir pkg-spec metadata
-                     revision-function tarball-only no-symlink))
-        (message (if res "======== Built new package %s!"
-                   "======== Build of package %s FAILED!!")
+          (condition-case err
+              (setq res (elpaa--make-one-tarball-1
+                         tarball dir pkg-spec metadata
+                         revision-function tarball-only no-symlink))
+            (error (message "Build error for %s: %S" tarball err)))
+        (message (if res "######## Built new package %s!"
+                   "######## Build of package %s FAILED!!")
                  tarball)))))
 
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata
@@ -598,8 +600,8 @@ Return non-nil if a new tarball was created."
            (elpaa--html-make-pkg pkgdesc pkg-spec
                                  `((,vers . ,(file-name-nondirectory tarball))
                                    . ,oldtarballs)
-                                 dir))
-         'new)))))
+                                 dir))))
+     'new)))
 
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
@@ -868,12 +870,14 @@ If DEVEL-ONLY is non-nil, only build the devel tarball."
               (devel-badge (format "%s/%s.svg" elpaa--devel-subdir pkgname))
               (release-html (format "%s/%s.html" elpaa--release-subdir pkgname))
               (devel-html (format "%s/%s.html" elpaa--devel-subdir pkgname)))
-          (unless (file-exists-p devel-badge)
+          (unless (or (file-exists-p devel-badge)
+                      (not (file-exists-p devel-html)))
             (elpaa--make-badge devel-badge
                                (format "%s-devel ELPA" elpaa--name)
                                (format "%s %s" pkgname devel-vers))
             (elpaa--add-badge-link devel-html pkgname))
-          (unless (file-exists-p release-badge)
+          (unless (or (file-exists-p release-badge)
+                      (not (file-exists-p release-html)))
             (elpaa--make-badge release-badge
                                (format "%s ELPA" elpaa--name)
                                (format "%s %s" pkgname vers))
