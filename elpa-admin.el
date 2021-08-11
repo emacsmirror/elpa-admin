@@ -510,7 +510,8 @@ Return non-nil if a new tarball was created."
               (setq res (elpaa--make-one-tarball-1
                          tarball dir pkg-spec metadata
                          revision-function tarball-only no-symlink))
-            (error (message "Build error for %s: %S" tarball err)))
+            (error (message "Build error for %s: %S" tarball err)
+                   nil))
         (message (if res "######## Built new package %s!"
                    "######## Build of package %s FAILED!!")
                  tarball)))))
