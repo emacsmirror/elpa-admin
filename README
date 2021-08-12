@@ -1,7 +1,7 @@
 #+TITLE: ELPA-Admin README
 #+DATE: 2020-11-28
 
-Copyright (C) 2010-2020 Free Software Foundation, Inc. \\
+Copyright (C) 2010-2021 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
 This branch contains the source code used to build and manage
@@ -19,6 +19,7 @@ This code expects to be used in a directory that has the following layout:
 - =admin/=              -- Directory containing a copy of the here files
 - =GNUmakefile=         -- A copy of or symlink to =admin/GNUmakefile=
 - =elpa-packages=       -- The specifications of the packages
+- =elpa-config=         -- Some configuration settings for the build scripts
 - =copyright_exceptions= -- List of exceptions for the copyright-notices checks
 
 The =copyright_exceptions= file can be absent, in which case copyright notices
@@ -31,7 +32,7 @@ the following elements:
 - =archive/=            -- Directory holding the generated files for the archive
 - =archive-devel/=      -- Same for the "bleeding edge" version of the archive
 
-* Specifications
+* Specifications (elpa-packages)
 
 The specifications of packages is a `lisp-data-mode` file containing
 a single Lisp list where each element describe a particular ELisp package
@@ -126,6 +127,29 @@ It also makes it possible to specify which REVISION corresponds to
 this ORIG-VERSION (or REMAPPED-VERSION if non-nil) to override
 the default heuristic which uses the last revision that modified the
 "Version:" header.
+
+* Configuration (elpa-config)
+
+The configuration file is a `lisp-data-mode` file containing
+a single Lisp list setting various options.  Each entry in the list is of
+the form
+
+    (NAME VALUE)
+
+where NAME is one of:
+** =name= The name of the ELPA archive, used in the HTML pages.
+** =url= The public URL of the ELPA archive.
+** =gitrepo=  The base URL of the Git repository holding the packages.
+** =branch-prefix= A prefix added to the packages's branches in the gitrepo.
+** =release-branch-prefix= Same but for the release branches.
+** =specs-file= Name of the specification file (default: =elpa-packages=).
+** =email-to= Email address to which to send announcement of new releases.
+** =email-from= Email address to use in the `From:` field.
+** =email-reply-to= Email address to use in the `Reply-To:` field.
+** =sandbox= If non-nil, use a `bwrap` sandbox to run commands (default: =t=).
+** =sandbox-extra-ro-dirs= Additional directories to make readable to `bwrap`.
+** =debug= If non-nil, emit more detailed messages.
+** =copyright-file= Name of a file containing copyright check exceptions.
 
 * Make targets
 
