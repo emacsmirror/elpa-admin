@@ -55,11 +55,17 @@
 
 (defvar elpaa--sandbox-extra-ro-dirs nil)
 
-(defvar elpaa--sandbox t
+(defvar elpaa--sandbox
+  ;; Currently sandboxing is implemented using `bwrap' which AFAIK doesn't
+  ;; exist for w32 nor for macos, so there's no point defaulting to non-nil
+  ;; on those platforms.
+  ;; On GNU/linux we do default to non-nil regardless if we find `bwrap' in
+  ;; $PATH just out of paranoia (in case `bwrap' ends up missing by accident).
+  (not (memq system-type '(darwin ms-dos windows-nt cygwin)))
   "If non-nil, run some of the less trusted commands in a sandbox.
 This is recommended when building packages from untrusted sources,
-but this requires Bubblewrap to be installed and has only been tested
-on some Debian systems.")
+but this requires Bubblewrap (https://github.com/containers/bubblewrap)
+to be installed and has only been tested on some Debian systems.")
 
 (defvar elpaa--debug nil)
 
@@ -317,7 +323,17 @@ Do it without leaving the current branch."
         (unless (zerop (buffer-size))
           (if (zerop
                (elpaa--call t "git" "stash" "push" "-u" "-m"
-                            "Saved changes while building tarball"))
+                            "Saved changes while building tarball"
+                            ;; Don't stash the deletion of <foo>-pkg.el,
+                            ;; since it would cause a merge conflict
+                            ;; later in "stash apply".
+                            ;; Don't know when this was introduced into Git
+                            ;; and it seems somewhat fiddly (e.g. git-2.30.2
+                            ;; gives a weird behavior if the "*" is missing),
+                            ;; so not sure it's worth the trouble:
+                            ;;
+                            ;;     "--" "*" ":(exclude,glob)*-pkg.el"
+                            ))
               (elpaa--temp-file
                (lambda ()
                  (with-temp-buffer
@@ -493,7 +509,7 @@ Do it without leaving the current branch."
   oldtarballs)
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
-                                 &optional revision-function tarball-only no-symlink)
+                                 &optional revision-function tarball-only)
   "Create file TARBALL for PKGNAME if not done yet.
 Return non-nil if a new tarball was created."
   (elpaa--message "Building tarball %s..." tarball)
@@ -509,7 +525,7 @@ Return non-nil if a new tarball was created."
           (condition-case err
               (setq res (elpaa--make-one-tarball-1
                          tarball dir pkg-spec metadata
-                         revision-function tarball-only no-symlink))
+                         revision-function tarball-only))
             (error (message "Build error for %s: %S" tarball err)
                    nil))
         (message (if res "######## Built new package %s!"
@@ -517,7 +533,7 @@ Return non-nil if a new tarball was created."
                  tarball)))))
 
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata
-                                 &optional revision-function tarball-only no-symlink)
+                                 &optional revision-function tarball-only)
   (elpaa--with-temp-files
    dir
    (let* ((destdir (file-name-directory tarball))
@@ -586,9 +602,9 @@ Return non-nil if a new tarball was created."
              (elpaa--call nil "git" "tag" "-f"
                           (format "%s-release/%s-%s"
                                   elpaa--name pkgname vers))))
-	 (unless no-symlink
-           (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
-	     (when (file-symlink-p link) (delete-file link))
+         (let ((link (expand-file-name (format "%s.tar" pkgname) destdir)))
+	   (when (file-symlink-p link) (delete-file link))
+	   (ignore-error file-error     ;E.g. under w32!
 	     (make-symbolic-link (file-name-nondirectory tarball) link)))
          (setq oldtarballs
                (elpaa--prune-old-tarballs tarball oldtarballs destdir
@@ -657,23 +673,6 @@ Return non-nil if a new tarball was created."
   (while command-line-args-left
     (elpaa--make-one-package (elpaa--get-package-spec
                                 (pop command-line-args-left)))))
-
-(defun elpaa-batch-make-one-devel (&rest _)
-  "Build the new devel tarball (if needed) for packages listed on command line."
-  (while command-line-args-left
-    (let* ((pkgname (pop command-line-args-left))
-	   (pkg-spec (elpaa--get-package-spec pkgname))
-	   (elpaa--sandbox (not (eq system-type 'windows-nt))))
-      (elpaa--make-one-package pkg-spec nil t))))
-
-(defun elpaa-batch-make-one-info (&rest _)
-  "Build the info files for packages listed on command line."
-  (while command-line-args-left
-    (let* ((pkgname (pop command-line-args-left))
-	   (pkg-spec (elpaa--get-package-spec pkgname))
-	   (dir (expand-file-name pkgname "packages"))
-	   (elpaa--sandbox (not (eq system-type 'windows-nt))))
-      (elpaa--build-Info pkg-spec dir))))
 
 (defun elpaa-batch-make-one-tarball (&rest _)
   "Build a tarball for a particular package."
@@ -785,11 +784,10 @@ Return non-nil if a new tarball was created."
                                    contents))
         (write-region (point-min) (point-max) file)))))
 
-(defun elpaa--make-one-package (pkg-spec &optional tarball-only devel-only)
+(defun elpaa--make-one-package (pkg-spec &optional tarball-only)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If TARBALL-ONLY is non-nil, don't try and select some other revision and
-place the resulting tarball into the file named TARBALL-ONLY.
-If DEVEL-ONLY is non-nil, only build the devel tarball."
+place the resulting tarball into the file named TARBALL-ONLY."
   (elpaa--message "Checking package %s for updates..." (car pkg-spec))
   (let* ((pkgname (car pkg-spec))
          (dir (expand-file-name pkgname "packages"))
@@ -828,7 +826,7 @@ If DEVEL-ONLY is non-nil, only build the devel tarball."
                                          dir pkg-spec
                                          `(nil ,devel-vers
                                                . ,(nthcdr 2 metadata))
-                                         nil tarball-only devel-only))))
+                                         nil tarball-only))))
 
         ;; Try and build the latest release tarball.
         (cond
@@ -1742,15 +1740,22 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (pkgname (car pkg-spec))
              (name (capitalize pkgname))
              (maint (cdr (assq :maintainer (nth 4 metadata))))
-             (maintainer (if (and (stringp (cdr-safe maint))
-                                  (string-match "@" (cdr maint)))
-                             (format "%s <%s>" (car maint) (cdr maint)))))
+             ;; `:maintainer' can hold a list or a single maintainer.
+             (maints (if (consp (car maint)) (list maint) maint))
+             (maint-emails
+              (mapcar (lambda (x)
+                        (and (stringp (cdr-safe x))
+                             (string-match "@" (cdr x))
+                             (format "%s <%s>" (car x) (cdr x))))
+                      maints))
+             (maintainers
+              (mapconcat #'identity (delq nil maint-emails) ",")))
         (message-setup `((From    . ,elpaa--email-from)
                          (To      . ,elpaa--email-to)
                          (Subject . ,(format "[%s ELPA] %s version %s"
                                              elpaa--name name version))
-                         ,@(if (stringp maintainer)
-                               `((Cc . ,maintainer)))
+                         ,@(unless (equal maintainers "")
+                             `((Cc . ,maintainers)))
                          ,@(if elpaa--email-reply-to
                                `((Reply-To . ,elpaa--email-reply-to)))))
         (insert "Version " version
