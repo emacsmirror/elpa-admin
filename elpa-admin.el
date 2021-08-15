@@ -69,6 +69,10 @@ to be installed and has only been tested on some Debian systems.")
 
 (defvar elpaa--debug nil)
 
+(unless (fboundp 'ignore-error)
+  (defmacro ignore-error (condition &rest body)
+    `(condition-case nil (progn ,@body) (,condition nil))))
+
 (defun elpaa--form-from-file-contents (filename)
   (with-temp-buffer
     (insert-file-contents filename)
