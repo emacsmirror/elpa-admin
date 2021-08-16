@@ -1745,7 +1745,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (name (capitalize pkgname))
              (maint (cdr (assq :maintainer (nth 4 metadata))))
              ;; `:maintainer' can hold a list or a single maintainer.
-             (maints (if (consp (car maint)) (list maint) maint))
+             (maints (if (consp (car maint)) maint (list maint)))
              (maint-emails
               (mapcar (lambda (x)
                         (and (stringp (cdr-safe x))
