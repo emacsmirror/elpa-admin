@@ -1167,25 +1167,28 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (insert-file-contents mainsrcfile)
          (lm-header prop))))))
 
-(defun elpaa--get-section (hsection fsection srcdir pkg-spec)
-  (when (consp fsection)
-    (while (cdr-safe fsection)
-      (setq fsection
-            (if (file-readable-p (expand-file-name (car fsection) srcdir))
-                (car fsection)
-              (cdr fsection))))
-    (when (consp fsection) (setq fsection (car fsection))))
+(defun elpaa--get-section (header file srcdir pkg-spec)
+  "Return specified section as a string from SRCDIR for PKG-SPEC.
+If FILE is readable in SRCDIR, return its contents.  Otherwise
+return section under HEADER in package's main file."
+  (when (consp file)
+    (while (cdr-safe file)
+      (setq file
+            (if (file-readable-p (expand-file-name (car file) srcdir))
+                (car file)
+              (cdr file))))
+    (when (consp file) (setq file (car file))))
   (cond
-   ((file-readable-p (expand-file-name fsection srcdir))
+   ((file-readable-p (expand-file-name file srcdir))
     (with-temp-buffer
-      (insert-file-contents (expand-file-name fsection srcdir))
+      (insert-file-contents (expand-file-name file srcdir))
       (buffer-string)))
    ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
     (with-temp-buffer
       (insert-file-contents
        (expand-file-name (elpaa--main-file pkg-spec) srcdir))
-      (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
-      (let ((start (lm-section-start hsection)))
+      (emacs-lisp-mode) ;lm-section-start needs the outline-mode setting.
+      (let ((start (lm-section-start header)))
         (when start
           ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
           ;; our own ad-hoc replacement.
