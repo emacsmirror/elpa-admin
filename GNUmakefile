@@ -85,7 +85,7 @@ descs := $(foreach pkg, $(pkgs), $(pkg)/$(notdir $(pkg))-pkg.el)
 #     packages/names/names-autoloads.el
 
 # .PRECIOUS: packages/%-autoloads.el
-packages/%-autoloads.el: elpa-packages
+packages/%-autoloads.el: # elpa-packages
 	@#echo 'Generating autoloads for $@'
 	$(EMACS) -l admin/elpa-admin.el 		   	   	   \
 	         -f elpaa-batch-generate-autoloads $@
@@ -117,7 +117,8 @@ elcs := $(call SET-diff, $(naive_elcs), $(patsubst %.el, %.elc, $(nbc_els)))
 packages/%.elc: packages/%.el
 	@echo 'Byte compiling $<'
 	@$(EMACS) 		  		       	     	     \
-	    --eval "(setq package-directory-list nil   	     	     \
+	    --eval "(setq package-directory-list 		     \
+                          (list \"$(abspath other-packages)\")       \
 			  load-prefer-newer t			     \
 	                  package-user-dir \"$(abspath packages)\")" \
 	    -f package-initialize 		       	     	     \
@@ -167,6 +168,7 @@ $(call SET-diff, $(1), $(patsubst %.elc, %.el, $(2)))
 endef
 
 # Takes a set of .el files and returns those that can't be byte-compiled.
+# FIXME: Take `dir-locals.el` settings into account!
 define FILE-nobytecompile
 $(foreach el, $(1), \
           $(if $(shell grep '^;.*no-byte-compile: *t' "$(el)"), $(el)))
