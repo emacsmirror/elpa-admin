@@ -72,16 +72,16 @@ to do:
 * Using packages in-place
 
 The packages can be installed and used in-place.  First you need to make
-sure the package(s) you can about are placed in the =packages= subdirectory,
-e.g. with =make worktrees=, and then you can to add that =.../packages=
-to your =package-directory-list=.  And once that is done you can do:
+sure the package(s) you care about are placed in the =packages= subdirectory,
+e.g. with =make worktrees=, and then you can add that =.../packages= to your
+=package-directory-list=.  And once that is done, you can do:
 
 #+begin_src sh
     make packages/[PKG]
 #+end_src
 
 to create the =[PKG]-pkg.el= and =[PKG]-autoloads.el= file as well as compile
-all the ELisp files in that package.  You can also do that on all the
+all the ELisp files in that package.  You can also do that for all the
 packages with:
 
 #+begin_src sh
