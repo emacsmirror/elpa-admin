@@ -67,6 +67,12 @@ This is recommended when building packages from untrusted sources,
 but this requires Bubblewrap (https://github.com/containers/bubblewrap)
 to be installed and has only been tested on some Debian systems.")
 
+(defvar elpaa--doc-subdirectory "doc/"
+  "If non-nil, build html docs as well as info docs, and save the
+html docs in this dir, for the ELPA website. Directory is
+relative to the tarball directory. Can be set in elpa-config via
+'doc-dir.")
+
 (defvar elpaa--debug nil)
 
 (unless (fboundp 'ignore-error)
@@ -101,6 +107,7 @@ to be installed and has only been tested on some Debian systems.")
               ('email-reply-to		elpaa--email-reply-to)
               ('sandbox			elpaa--sandbox)
               ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
+	      ('doc-dir                 elpa--doc-subdirectory)
               ('debug			elpaa--debug))
             val))))
 
@@ -567,7 +574,7 @@ Return non-nil if a new tarball was created."
      ;; Run `make' before building the Info file, so that the `make' rule
      ;; can be used to build the Info/Texinfo file.
      (elpaa--make pkg-spec dir)
-     (elpaa--build-Info pkg-spec dir)
+     (elpaa--build-Info pkg-spec dir destdir)
      (elpaa--write-pkg-file dir pkgname metadata)
      ;; FIXME: Allow renaming files or selecting a subset of the files!
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
@@ -691,7 +698,7 @@ Return non-nil if a new tarball was created."
   "Determine string width in pixels of STR."
   (with-temp-buffer
     (elpaa--call (current-buffer)
-                 "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
+                 "magick" "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
                  "-pointsize" "110" "-annotate" "0" str "null:")
     (goto-char (point-min))
     (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
@@ -1318,6 +1325,21 @@ return section under HEADER in package's main file."
           (write-region rm nil (concat name "-readme.txt"))
           (insert "<h2>Full description</h2><pre>\n" (elpaa--html-quote rm)
                   "\n</pre>\n")))
+
+      (let ((docfiles (elpaa--spec-get pkg-spec :doc))
+	    (html-dir (concat elpaa--doc-subdirectory name "/"))) ;; relative to tarball directory
+	(when (file-readable-p html-dir) ;; html doc files were built
+          (insert "<h2>Documentation</h2><table>\n")
+	  (dolist (f (if (listp docfiles) docfiles (list docfiles)))
+	    (let ((html-file
+		   (concat html-dir
+			   (file-name-sans-extension f)
+			   ".html")))
+	      (insert "<tr><td><a href=\"" html-file "\">" (file-name-sans-extension f) "</a></td></tr>\n")
+	      ;; FIXME: get link text from info direntry?
+	      ))
+	  (insert "</table>\n")))
+
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
@@ -1783,16 +1805,29 @@ More at " (elpaa--default-url pkgname))
 
 ;;; Build Info files from Texinfo
 
-(defun elpaa--build-Info (pkg-spec dir)
-  (let ((docfile (elpaa--spec-get pkg-spec :doc)))
+(defun elpaa--build-Info (pkg-spec dir tarball-dir)
+  "Build info files for docs specified in :doc field of PKG-SPEC.
+If `elpa--doc-subdirectory' is non-nil, also build html files.
+DIR is the package directory."
+  (let ((docfile (elpaa--spec-get pkg-spec :doc))
+	(html-dir
+	 (when elpaa--doc-subdirectory
+	   (elpaa--dirname (car pkg-spec) (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
+    (when (not (file-readable-p html-dir))
+      (make-directory html-dir t))
     (dolist (f (if (listp docfile) docfile (list docfile)))
-      (elpaa--build-Info-1 f dir))))
+      (elpaa--build-Info-1 f dir html-dir))))
 
-(defun elpaa--build-Info-1 (docfile dir)
+(defun elpaa--build-Info-1 (docfile dir html-dir)
+  "Build an info file from DOCFILE (a texinfo source file).
+DIR must be the package source directory.  If HTML-DIR is
+non-nil, also build html files, store them there (relative to
+elpa root)."
   (let* ((elpaa--sandbox-ro-binds
           (cons default-directory elpaa--sandbox-ro-binds))
          (default-directory (elpaa--dirname dir))
          (tmpfiles '()))
+
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.org\\'" docfile))
       (with-temp-buffer
@@ -1809,7 +1844,10 @@ More at " (elpaa--default-url pkgname))
           (setq docfile (concat (file-name-directory docfile)
                                 (match-string 1)))
           (push docfile tmpfiles)
-          (elpaa--temp-file docfile))))
+          (elpaa--temp-file docfile)))
+
+      ;; FIXME: also build html from org source.
+      )
 
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.texi\\(nfo\\)?\\'" docfile))
@@ -1822,6 +1860,19 @@ More at " (elpaa--default-url pkgname))
           (elpaa--call-sandboxed
            t "makeinfo" "--no-split" docfile "-o" info-file)
           (message "%s" (buffer-string)))
+
+	(when html-dir
+	  (let ((html-file
+		 (expand-file-name
+		  (concat (file-name-sans-extension
+			   (file-name-nondirectory docfile))
+			  ".html")
+		  html-dir)))
+            (with-temp-buffer
+              (elpaa--call-sandboxed
+               t "makeinfo" "--no-split" "--html" docfile "-o" html-file)
+              (message "%s" (buffer-string)))))
+
         (setq docfile info-file)))
 
     (when (and docfile (not (string-match "\\.info\\'" docfile)))
