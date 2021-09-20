@@ -1172,51 +1172,29 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (insert-file-contents mainsrcfile)
          (lm-header prop))))))
 
-(defun elpaa--section-to-plain-text (section)
+(cl-defgeneric elpaa--section-to-plain-text (section)
   "Return SECTION as plain text.
 SECTION should be a cons as returned by `elpaa--get-section',
-which see.  If SECTION's type is \"text/plain\" or
-\"text/markdown\", its contents are returned as-is.  If
-\"application/x-org\", its contents are exported to UTF-8 plain
-text with `elpaa--export-org', which see."
-  (pcase-exhaustive section
-    (`(,(or 'text/plain 'text/markdown) . ,content)
-     content)
-    (`(text/x-org . ,content)
-     (let ((temp-file (make-temp-file "elpaa--section-to-plain-text--")))
-       (unwind-protect
-           (progn
-             (with-temp-file temp-file
-               (insert content))
-             (elpaa--export-org temp-file 'ascii
-               :ext-plist (append '(:ascii-charset utf-8)
-                                  elpaa--org-export-options)))
-         (delete-file temp-file))))))
+which see."
+  (cdr section))
 
-(defun elpaa--section-to-html (section)
+(cl-defmethod elpaa--section-to-plain-text ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'ascii
+                     :ext-plist (append '(:ascii-charset utf-8)
+                                        elpaa--org-export-options)))
+
+(cl-defgeneric elpaa--section-to-html (section)
   "Return SECTION as HTML.
 SECTION should be a cons as returned by `elpaa--get-section',
-which see.  If SECTION's type is \"text/plain\" or
-\"text/markdown\", its contents are escaped with
-`elpaa--html-quote' and wrapped in HTML PRE tags.  If
-\"application/x-org\", its contents are exported to HTML with
-`elpaa--export-org', which see."
-  (pcase-exhaustive section
-    (`(,(or 'text/plain 'text/markdown) . ,content)
-     (concat "<pre>\n"
-             (elpaa--html-quote content)
-             "\n</pre>\n"))
-    (`(text/x-org . ,content)
-     (let ((temp-file
-            (make-temp-file (expand-file-name "elpaa--section-to-html--"))))
-       (unwind-protect
-           (progn
-             (with-temp-file temp-file
-               (insert content))
-             (elpaa--export-org temp-file 'html
-               :body-only t
-               :ext-plist elpaa--org-export-options))
-         (delete-file temp-file))))))
+which see."
+  (concat "<pre>\n"
+          (elpaa--html-quote (cdr section))
+          "\n</pre>\n"))
+
+(cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'html
+                     :body-only t
+                     :ext-plist elpaa--org-export-options))
 
 (defun elpaa--extension-to-mime (ext)
   (pcase ext
@@ -1281,8 +1259,8 @@ HEADER in package's main file."
                          (buffer-string))))))
       (cons type content)))))
 
-(cl-defun elpaa--export-org (file backend &key body-only ext-plist)
-  "Return Org FILE as an exported string.
+(cl-defun elpaa--export-org (content backend &key body-only ext-plist)
+  "Return Org CONTENT as an exported string.
 BACKEND and EXT-PLIST are passed to `org-export-as', which see.
 Uses `elpaa--call-sandboxed', since exporting with Org may run
 arbitrary code."
@@ -1292,19 +1270,23 @@ arbitrary code."
              "BODY-ONLY may only be nil or t")
   ;; "emacs --batch" loads site-init files, which may pollute output,
   ;; so we write it to a temp file.
-  (let ((output-filename
-         (make-temp-file (expand-file-name "elpaa--export-org-"))))
+  (let ((input-filename
+         (make-temp-file (expand-file-name "elpaa--export-input")))
+        (output-filename
+         (make-temp-file (expand-file-name "elpaa--export-output"))))
     (unwind-protect
         (progn
+          (write-region content nil input-filename)
           (with-temp-buffer
             (elpaa--call-sandboxed
              t "emacs" "--batch" "-l" (format "ox-%S" backend)
-             file
+             input-filename
              "--eval" (format "(write-region (org-export-as '%s nil nil %S '%S) nil %S)"
                               backend body-only ext-plist output-filename)))
           (with-temp-buffer
             (insert-file-contents output-filename)
             (buffer-string)))
+      (delete-file input-filename)
       (delete-file output-filename))))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
