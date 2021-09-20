@@ -1180,9 +1180,9 @@ which see.  If SECTION's type is \"text/plain\" or
 \"application/x-org\", its contents are exported to UTF-8 plain
 text with `elpaa--export-org', which see."
   (pcase-exhaustive section
-    (`(,(or "text/plain" "text/markdown") . ,content)
+    (`(,(or 'text/plain 'text/markdown) . ,content)
      content)
-    (`("text/x-org" . ,content)
+    (`(text/x-org . ,content)
      (let ((temp-file (make-temp-file "elpaa--section-to-plain-text--")))
        (unwind-protect
            (progn
@@ -1202,12 +1202,13 @@ which see.  If SECTION's type is \"text/plain\" or
 \"application/x-org\", its contents are exported to HTML with
 `elpaa--export-org', which see."
   (pcase-exhaustive section
-    (`(,(or "text/plain" "text/markdown") . ,content)
+    (`(,(or 'text/plain 'text/markdown) . ,content)
      (concat "<pre>\n"
              (elpaa--html-quote content)
              "\n</pre>\n"))
-    (`("text/x-org" . ,content)
-     (let ((temp-file (make-temp-file "elpaa--section-to-html--")))
+    (`(text/x-org . ,content)
+     (let ((temp-file
+            (make-temp-file (expand-file-name "elpaa--section-to-html--"))))
        (unwind-protect
            (progn
              (with-temp-file temp-file
@@ -1216,6 +1217,19 @@ which see.  If SECTION's type is \"text/plain\" or
                :body-only t
                :ext-plist elpaa--org-export-options))
          (delete-file temp-file))))))
+
+(defun elpaa--extension-to-mime (ext)
+  (pcase ext
+    ;; FIXME: On my Debian machine, `mailcap-extension-to-mime' tells me
+    ;; "org" is `application/vnd.lotus-organizer'.
+    ("org" 'text/x-org)
+    ;; FIXME: Apparently on some systems, `mailcap-extension-to-mime'
+    ;; returns nil for this one.
+    ((or "md" "markdown") 'text/markdown)
+    (_
+     (require 'mailcap)
+     (let ((mt (if ext (mailcap-extension-to-mime ext))))
+         (if mt (intern mt) 'text/plain)))))
 
 (defun elpaa--get-section (header file srcdir pkg-spec)
   "Return specified section for PKG-SPEC.
@@ -1233,22 +1247,14 @@ HEADER in package's main file."
   (cond
    ((file-readable-p (expand-file-name file srcdir))
     ;; Return FILE's contents.
-    (let ((type
-           (pcase (mailcap-extension-to-mime (file-name-extension file))
-             ((and `nil
-                   (guard (member-ignore-case
-                           (file-name-extension file) '("md" "markdown"))))
-              ;; `mailcap-extension-to-mime' returns nil for Markdown
-              ;; files, at least on Emacs 26.3.
-              "text/markdown")
-             (else else)))
+    (let ((type (elpaa--extension-to-mime (file-name-extension file)))
           (content (with-temp-buffer
                      (insert-file-contents (expand-file-name file srcdir))
                      (buffer-string))))
       (cons type content)))
    ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
     ;; Return specified section from package's main source file.
-    (let ((type "text/plain")
+    (let ((type 'text/plain)
           (content (with-temp-buffer
                      (insert-file-contents
                       (expand-file-name (elpaa--main-file pkg-spec) srcdir))
@@ -1286,7 +1292,8 @@ arbitrary code."
              "BODY-ONLY may only be nil or t")
   ;; "emacs --batch" loads site-init files, which may pollute output,
   ;; so we write it to a temp file.
-  (let ((output-filename (make-temp-file "elpaa--export-org-")))
+  (let ((output-filename
+         (make-temp-file (expand-file-name "elpaa--export-org-"))))
     (unwind-protect
         (progn
           (with-temp-buffer
@@ -1301,11 +1308,12 @@ arbitrary code."
       (delete-file output-filename))))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
-  (let ((text
-         (elpaa--get-section
-          "News" (elpaa--spec-get pkg-spec :news
-                                  '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
-          dir pkg-spec)))
+  (let* ((news
+          (elpaa--get-section
+           "News" (elpaa--spec-get pkg-spec :news
+                                   '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
+           dir pkg-spec))
+         (text (elpaa--section-to-plain-text news)))
     (if (< (length text) 4000)
         text
       (concat (substring text 0 4000) "...\n...\n"))))
@@ -1401,13 +1409,14 @@ arbitrary code."
                                  ;; worse than the Commentary: section :-(
                                  ;; "README.md"
                                  "README.org")))
-             (readme-section (elpaa--get-section "Commentary" package-readme-file-name
-                                                 srcdir pkg-spec))
-             (readme-content (elpaa--section-to-plain-text readme-section))
-             (page-content (elpaa--section-to-html readme-section))
+             (readme-content
+              (elpaa--get-section "Commentary" package-readme-file-name
+                                  srcdir pkg-spec))
+             (readme-text (elpaa--section-to-plain-text readme-content))
+             (readme-html (elpaa--section-to-html readme-content))
              (readme-output-filename (concat name "-readme.txt")))
-        (write-region readme-content nil readme-output-filename)
-        (insert "<h2>Full description</h2>\n" page-content))
+        (write-region readme-text nil readme-output-filename)
+        (insert "<h2>Full description</h2>\n" readme-html))
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
