@@ -697,8 +697,11 @@ Return non-nil if a new tarball was created."
 (defun elpaa--string-width (str)
   "Determine string width in pixels of STR."
   (with-temp-buffer
+    ;; Current (2021) ImageMagick recommends using the "magick"
+    ;; driver, rather than "convert" directly, but Debian doesn't
+    ;; provide it yet.
     (elpaa--call (current-buffer)
-                 "magick" "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
+                 "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
                  "-pointsize" "110" "-annotate" "0" str "null:")
     (goto-char (point-min))
     (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
@@ -1327,7 +1330,12 @@ return section under HEADER in package's main file."
                   "\n</pre>\n")))
 
       (let ((docfiles (elpaa--spec-get pkg-spec :doc))
-	    (html-dir (concat elpaa--doc-subdirectory name "/"))) ;; relative to tarball directory
+	    (html-dir (concat elpaa--doc-subdirectory "/"))
+	    ;; html-dir is relative to the tarball directory, so html
+	    ;; references on mirrors work. It does not include the
+	    ;; package name, so cross references among package docs
+	    ;; work.
+	    )
 	(when (file-readable-p html-dir) ;; html doc files were built
           (insert "<h2>Documentation</h2><table>\n")
 	  (dolist (f (if (listp docfiles) docfiles (list docfiles)))
@@ -1808,21 +1816,27 @@ More at " (elpaa--default-url pkgname))
 (defun elpaa--build-Info (pkg-spec dir tarball-dir)
   "Build info files for docs specified in :doc field of PKG-SPEC.
 If `elpa--doc-subdirectory' is non-nil, also build html files.
-DIR is the package directory."
+DIR is the package directory. TARBALL-DIR is an absolute
+directory; one of archive, archive-devel."
+  ;; default-directory is the GNUMakefile directory.
   (let ((docfile (elpaa--spec-get pkg-spec :doc))
 	(html-dir
 	 (when elpaa--doc-subdirectory
-	   (elpaa--dirname (car pkg-spec) (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
-    (when (not (file-readable-p html-dir))
-      (make-directory html-dir t))
+	   (elpaa--dirname
+	    (car pkg-spec)
+	    (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
+    (when html-dir
+      (when (not (file-readable-p html-dir))
+	(make-directory html-dir t)))
+
     (dolist (f (if (listp docfile) docfile (list docfile)))
       (elpaa--build-Info-1 f dir html-dir))))
 
 (defun elpaa--build-Info-1 (docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
 DIR must be the package source directory.  If HTML-DIR is
-non-nil, also build html files, store them there (relative to
-elpa root)."
+non-nil, also build html files, store them there. HTML-DIR is
+relative to elpa root."
   (let* ((elpaa--sandbox-ro-binds
           (cons default-directory elpaa--sandbox-ro-binds))
          (default-directory (elpaa--dirname dir))
@@ -1864,14 +1878,22 @@ elpa root)."
 	(when html-dir
 	  (let ((html-file
 		 (expand-file-name
-		  (concat (file-name-sans-extension
-			   (file-name-nondirectory docfile))
-			  ".html")
-		  html-dir)))
+		  (concat (file-name-base docfile) ".html")
+		  html-dir))
+		(html-xref-file
+		 (expand-file-name
+		  (concat (file-name-base docfile) ".html")
+		  (file-name-directory (directory-file-name html-dir)))))
             (with-temp-buffer
               (elpaa--call-sandboxed
                t "makeinfo" "--no-split" "--html" docfile "-o" html-file)
-              (message "%s" (buffer-string)))))
+              (message "%s" (buffer-string)))
+
+	    ;; Create a symlink from elpa/archive[-devel]/doc/* to
+	    ;; the actual file, so html references work.
+	    (with-demoted-errors ;; 'make-symbolic-link' doesn't work on Windows
+		(make-symbolic-link html-file html-xref-file t))
+	    ))
 
         (setq docfile info-file)))
 
