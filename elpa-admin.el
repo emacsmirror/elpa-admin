@@ -624,11 +624,42 @@ Return non-nil if a new tarball was created."
                                  dir))))
      'new)))
 
+(defun elpaa--git-date-to-timestamp (gitdate)
+  "Convert date from git (ISO 6401) to a timestamp."
+  (unless (string-match (rx bos
+                            (group-n 1 (+ digit)) "-"
+                            (group-n 2 (+ digit)) "-"
+                            (group-n 3 (+ digit)) "T"
+                            (group-n 4 (+ digit)) ":"
+                            (group-n 5 (+ digit)) ":"
+                            (group-n 6 (+ digit))
+                            (? "+"
+                               (group-n 7 (+ digit)) ":"
+                               (group-n 8 (+ digit))))
+                        gitdate)
+    (error "unknown date format: %S" gitdate))
+  (let* ((field
+          (lambda (group)
+            (and (match-beginning group)
+                 (string-to-number (match-string group gitdate)))))
+         (y (funcall field 1))
+         (mo (funcall field 2))
+         (d (funcall field 3))
+         (h (funcall field 4))
+         (mi (funcall field 5))
+         (s (funcall field 6))
+         (zh (funcall field 7))
+         (zm (funcall field 8))
+         (zs (if zh
+                 (* 60 (+ (* zh 60) zm))
+               0)))
+    (encode-time (list s mi h d mo y nil nil zs))))
+
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
   (let* ((ftn (file-truename      ;; Follow symlinks!
               (expand-file-name (elpaa--main-file pkg-spec) dir)))
-        (default-directory (file-name-directory ftn))
+         (default-directory (file-name-directory ftn))
          (gitdate
           (with-temp-buffer
            (if (plist-get (cdr pkg-spec) :core)
@@ -643,10 +674,9 @@ Return non-nil if a new tarball was created."
           ;; Convert Git's date into something that looks like a version number.
           ;; While we're at it, convert Git's date into its UTC equivalent,
           ;; to try and make sure time-versions are monotone.
-          (let ((process-environment (cons "TZ=UTC" process-environment)))
-            (with-temp-buffer
-              (elpaa--call t "date" "-d" gitdate "+%Y%m%d.%H%M%S")
-              (buffer-string)))))
+          (format-time-string "%Y%m%d.%H%M%S"
+                              (elpaa--git-date-to-timestamp gitdate)
+                              0)))
     ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
     (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+\\([0-9]\\)" "\\1\\2"
                               ;; Remove trailing newline or anything untoward.
