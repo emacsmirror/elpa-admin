@@ -1382,7 +1382,7 @@ arbitrary code."
 
 (defun elpaa--insert-repolinks (pkg-spec url)
   (when url
-    (insert (format "<dt>Home page</dt> <dd><a href=%S>%s</a></dd>\n"
+    (insert (format "<dt>Website</dt> <dd><a href=%S>%s</a></dd>\n"
                     url (elpaa--html-quote url)))
     (when (string-match (elpaa--default-url-re) url)
       (setq url nil)))
