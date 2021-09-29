@@ -1536,10 +1536,11 @@ arbitrary code."
                       (car pkg) (car pkg)
                       (package-version-join (aref (cdr pkg) 0))
                       (aref (cdr pkg) 2))))
-    (insert "                </table>
+    (insert (format "                </table>
             </div>
+              <p>Last update: %s</p>
             <div class=\"push\"></div>
-        </div>")
+        </div>" (format-time-string "%Y-%m-%d %H:%M")))
     (insert (elpaa--html-footer))
     (write-region (point-min) (point-max) "index.html")))
 
