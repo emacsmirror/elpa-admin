@@ -642,7 +642,7 @@ Return non-nil if a new tarball was created."
                                (group-n 7 (+ digit)) ":"
                                (group-n 8 (+ digit))))
                         gitdate)
-    (error "unknown date format: %S" gitdate))
+    (error "Unknown date format: %S" gitdate))
   (let* ((field
           (lambda (group)
             (and (match-beginning group)
@@ -1224,7 +1224,8 @@ which see."
 (cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
   (elpaa--export-org (cdr section) 'html
                      :body-only t
-                     :ext-plist elpaa--org-export-options))
+                     :ext-plist (append '(:html-toplevel-hlevel 3)
+                                        elpaa--org-export-options)))
 
 (defun elpaa--extension-to-mime (ext)
   (pcase ext
@@ -1854,6 +1855,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (when elpaa--email-to
     (with-temp-buffer
       (message-mode)
+      (declare-function message-setup "message"
+                        (headers &optional yank-action actions continue
+                                 switch-function return-action))
+      (declare-function message-send "message" (&optional arg))
       (let* ((version (nth 1 metadata))
              (pkgname (car pkg-spec))
              (name (capitalize pkgname))
