@@ -69,6 +69,11 @@ to be installed and has only been tested on some Debian systems.")
 
 (defvar elpaa--debug nil)
 
+(defvar elpaa--org-export-options
+  '(:with-author nil :with-creator nil :with-broken-links t)
+  "Options used common to all Org export backends.
+See variable `org-export-options-alist'.")
+
 (unless (fboundp 'ignore-error)
   (defmacro ignore-error (condition &rest body)
     `(condition-case nil (progn ,@body) (,condition nil))))
@@ -1197,10 +1202,49 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (insert-file-contents mainsrcfile)
          (lm-header prop))))))
 
+(cl-defgeneric elpaa--section-to-plain-text (section)
+  "Return SECTION as plain text.
+SECTION should be a cons as returned by `elpaa--get-section',
+which see."
+  (cdr section))
+
+(cl-defmethod elpaa--section-to-plain-text ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'ascii
+                     :ext-plist (append '(:ascii-charset utf-8)
+                                        elpaa--org-export-options)))
+
+(cl-defgeneric elpaa--section-to-html (section)
+  "Return SECTION as HTML.
+SECTION should be a cons as returned by `elpaa--get-section',
+which see."
+  (concat "<pre>\n"
+          (elpaa--html-quote (cdr section))
+          "\n</pre>\n"))
+
+(cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'html
+                     :body-only t
+                     :ext-plist elpaa--org-export-options))
+
+(defun elpaa--extension-to-mime (ext)
+  (pcase ext
+    ;; FIXME: On my Debian machine, `mailcap-extension-to-mime' tells me
+    ;; "org" is `application/vnd.lotus-organizer'.
+    ("org" 'text/x-org)
+    ;; FIXME: Apparently on some systems, `mailcap-extension-to-mime'
+    ;; returns nil for this one.
+    ((or "md" "markdown") 'text/markdown)
+    (_
+     (require 'mailcap)
+     (let ((mt (if ext (mailcap-extension-to-mime ext))))
+         (if mt (intern mt) 'text/plain)))))
+
 (defun elpaa--get-section (header file srcdir pkg-spec)
-  "Return specified section as a string from SRCDIR for PKG-SPEC.
-If FILE is readable in SRCDIR, return its contents.  Otherwise
-return section under HEADER in package's main file."
+  "Return specified section for PKG-SPEC.
+Returns (TYPE . CONTENT) cons, where TYPE is a MIME-type string,
+and CONTENT is the content string.  If FILE is readable in
+SRCDIR, return its contents.  Otherwise return section under
+HEADER in package's main file."
   (when (consp file)
     (while (cdr-safe file)
       (setq file
@@ -1210,51 +1254,78 @@ return section under HEADER in package's main file."
     (when (consp file) (setq file (car file))))
   (cond
    ((file-readable-p (expand-file-name file srcdir))
-    (with-temp-buffer
-      (insert-file-contents (expand-file-name file srcdir))
-      (buffer-string)))
+    ;; Return FILE's contents.
+    (let ((type (elpaa--extension-to-mime (file-name-extension file)))
+          (content (with-temp-buffer
+                     (insert-file-contents (expand-file-name file srcdir))
+                     (buffer-string))))
+      (cons type content)))
    ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
-    (with-temp-buffer
-      (insert-file-contents
-       (expand-file-name (elpaa--main-file pkg-spec) srcdir))
-      (emacs-lisp-mode) ;lm-section-start needs the outline-mode setting.
-      (let ((start (lm-section-start header)))
-        (when start
-          ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
-          ;; our own ad-hoc replacement.
-          (goto-char start) (forward-line 1)
-          (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
-          (insert
-           (prog1
-               (buffer-substring start (match-beginning 0))
-             (erase-buffer)))
-          (emacs-lisp-mode)
-          (goto-char (point-min))
-          (delete-region (point) (line-beginning-position 2))
-          (uncomment-region (point-min) (point-max))
-          (when (looking-at "^\\([ \t]*\n\\)+")
-            (replace-match ""))
-          (goto-char (point-max))
-          (skip-chars-backward " \t\n")
-          (delete-region (point) (point-max))
-          (buffer-string)))))))
+    ;; Return specified section from package's main source file.
+    (let ((type 'text/plain)
+          (content (with-temp-buffer
+                     (insert-file-contents
+                      (expand-file-name (elpaa--main-file pkg-spec) srcdir))
+                     (emacs-lisp-mode) ;lm-section-start needs the outline-mode setting.
+                     (let ((start (lm-section-start header)))
+                       (when start
+                         ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
+                         ;; our own ad-hoc replacement.
+                         (goto-char start) (forward-line 1)
+                         (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
+                         (insert
+                          (prog1
+                              (buffer-substring start (match-beginning 0))
+                            (erase-buffer)))
+                         (emacs-lisp-mode)
+                         (goto-char (point-min))
+                         (delete-region (point) (line-beginning-position 2))
+                         (uncomment-region (point-min) (point-max))
+                         (when (looking-at "^\\([ \t]*\n\\)+")
+                           (replace-match ""))
+                         (goto-char (point-max))
+                         (skip-chars-backward " \t\n")
+                         (delete-region (point) (point-max))
+                         (buffer-string))))))
+      (cons type content)))))
 
-(defun elpaa--get-README (pkg-spec dir)
-  (elpaa--get-section
-   "Commentary" (elpaa--spec-get pkg-spec :readme
-                                 '("README" "README.rst"
-                                   ;; Most README.md files seem to be currently
-                                   ;; worse than the Commentary: section :-(
-                                   ;; "README.md"
-                                   "README.org"))
-   dir pkg-spec))
+(cl-defun elpaa--export-org (content backend &key body-only ext-plist)
+  "Return Org CONTENT as an exported string.
+BACKEND and EXT-PLIST are passed to `org-export-as', which see.
+Uses `elpaa--call-sandboxed', since exporting with Org may run
+arbitrary code."
+  (declare (indent defun))
+  (cl-check-type backend symbol)
+  (cl-assert (memq body-only '(nil t)) t
+             "BODY-ONLY may only be nil or t")
+  ;; "emacs --batch" loads site-init files, which may pollute output,
+  ;; so we write it to a temp file.
+  (let ((input-filename
+         (make-temp-file (expand-file-name "elpaa--export-input")))
+        (output-filename
+         (make-temp-file (expand-file-name "elpaa--export-output"))))
+    (unwind-protect
+        (progn
+          (write-region content nil input-filename)
+          (with-temp-buffer
+            (elpaa--call-sandboxed
+             t "emacs" "--batch" "-l" (format "ox-%S" backend)
+             input-filename
+             "--eval" (format "(write-region (org-export-as '%s nil nil %S '%S) nil %S)"
+                              backend body-only ext-plist output-filename)))
+          (with-temp-buffer
+            (insert-file-contents output-filename)
+            (buffer-string)))
+      (delete-file input-filename)
+      (delete-file output-filename))))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
-  (let ((text
-         (elpaa--get-section
-          "News" (elpaa--spec-get pkg-spec :news
-                                  '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
-          dir pkg-spec)))
+  (let* ((news
+          (elpaa--get-section
+           "News" (elpaa--spec-get pkg-spec :news
+                                   '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
+           dir pkg-spec))
+         (text (elpaa--section-to-plain-text news)))
     (if (< (length text) 4000)
         text
       (concat (substring text 0 4000) "...\n...\n"))))
@@ -1343,11 +1414,21 @@ return section under HEADER in package's main file."
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
-      (let ((rm (elpaa--get-README pkg-spec srcdir)))
-        (when rm
-          (write-region rm nil (concat name "-readme.txt"))
-          (insert "<h2>Full description</h2><pre>\n" (elpaa--html-quote rm)
-                  "\n</pre>\n")))
+      (let* ((package-readme-file-name
+              (elpaa--spec-get pkg-spec :readme
+                               '("README" "README.rst"
+                                 ;; Most README.md files seem to be currently
+                                 ;; worse than the Commentary: section :-(
+                                 ;; "README.md"
+                                 "README.org")))
+             (readme-content
+              (elpaa--get-section "Commentary" package-readme-file-name
+                                  srcdir pkg-spec))
+             (readme-text (elpaa--section-to-plain-text readme-content))
+             (readme-html (elpaa--section-to-html readme-content))
+             (readme-output-filename (concat name "-readme.txt")))
+        (write-region readme-text nil readme-output-filename)
+        (insert "<h2>Full description</h2>\n" readme-html))
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
