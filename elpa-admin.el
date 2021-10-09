@@ -531,7 +531,7 @@ Return non-nil if a new tarball was created."
     (message "======== Building tarball %s..." tarball)
     (let ((res nil))
       (unwind-protect
-          (condition-case err
+          (condition-case-unless-debug err
               (setq res (elpaa--make-one-tarball-1
                          tarball dir pkg-spec metadata
                          revision-function tarball-only))
@@ -1399,13 +1399,18 @@ arbitrary code."
                           file (elpaa--html-quote file)
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (elpaa--html-bytes-format (nth 7 attrs))))))
-      (let ((maint (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
-        (when maint
-          (when (consp maint)
-            (elpaa--message "maint=%S" maint)
-            (setq maint (concat (if (car maint) (concat (car maint) " "))
-                                "<" (cdr maint) ">")))
-          (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (elpaa--html-quote maint)))))
+      (let ((maints (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
+        (elpaa--message "maints=%S" maints)
+        (insert
+         "<dt>Maintainer</dt> <dd>"
+         (mapconcat (lambda (maint)
+                      (when (consp maint)
+                        (setq maint (concat (if (car maint) (concat (car maint) " "))
+                                            "<" (cdr maint) ">")))
+                      (elpaa--html-quote maint))
+                    (if (consp (car-safe maints)) maints (list maints))
+                    ", ")
+         "</dd>\n"))
       (elpaa--insert-repolinks
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
