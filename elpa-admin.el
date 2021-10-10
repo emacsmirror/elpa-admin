@@ -1263,32 +1263,31 @@ HEADER in package's main file."
       (cons type content)))
    ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
     ;; Return specified section from package's main source file.
-    (let ((type 'text/plain)
-          (content (with-temp-buffer
-                     (insert-file-contents
-                      (expand-file-name (elpaa--main-file pkg-spec) srcdir))
-                     (emacs-lisp-mode) ;lm-section-start needs the outline-mode setting.
-                     (let ((start (lm-section-start header)))
-                       (when start
-                         ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
-                         ;; our own ad-hoc replacement.
-                         (goto-char start) (forward-line 1)
-                         (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
-                         (insert
-                          (prog1
-                              (buffer-substring start (match-beginning 0))
-                            (erase-buffer)))
-                         (emacs-lisp-mode)
-                         (goto-char (point-min))
-                         (delete-region (point) (line-beginning-position 2))
-                         (uncomment-region (point-min) (point-max))
-                         (when (looking-at "^\\([ \t]*\n\\)+")
-                           (replace-match ""))
-                         (goto-char (point-max))
-                         (skip-chars-backward " \t\n")
-                         (delete-region (point) (point-max))
-                         (buffer-string))))))
-      (cons type content)))))
+    (with-temp-buffer
+      (let ((type 'text/plain))
+        (insert-file-contents
+         (expand-file-name (elpaa--main-file pkg-spec) srcdir))
+        (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
+        (let ((start (lm-section-start header)))
+          (when start
+            ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
+            ;; our own ad-hoc replacement.
+            (goto-char start) (forward-line 1)
+            (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
+            (insert
+             (prog1
+                 (buffer-substring start (match-beginning 0))
+               (erase-buffer)))
+            (emacs-lisp-mode)
+            (goto-char (point-min))
+            (delete-region (point) (line-beginning-position 2))
+            (uncomment-region (point-min) (point-max))
+            (when (looking-at "^\\([ \t]*\n\\)+")
+              (replace-match ""))
+            (goto-char (point-max))
+            (skip-chars-backward " \t\n")
+            (delete-region (point) (point-max))
+            (cons type (buffer-string)))))))))
 
 (cl-defun elpaa--export-org (content backend &key body-only ext-plist)
   "Return Org CONTENT as an exported string.
@@ -1428,8 +1427,9 @@ arbitrary code."
                                  ;; "README.md"
                                  "README.org")))
              (readme-content
-              (elpaa--get-section "Commentary" package-readme-file-name
-                                  srcdir pkg-spec))
+              (or (elpaa--get-section "Commentary" package-readme-file-name
+                                      srcdir pkg-spec)
+                  '(text/plain . "!No description!")))
              (readme-text (elpaa--section-to-plain-text readme-content))
              (readme-html (elpaa--section-to-html readme-content))
              (readme-output-filename (concat name "-readme.txt")))
