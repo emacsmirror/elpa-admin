@@ -1407,7 +1407,9 @@ arbitrary code."
                         (setq maint (concat (if (car maint) (concat (car maint) " "))
                                             "<" (cdr maint) ">")))
                       (elpaa--html-quote maint))
-                    (if (consp (car-safe maints)) maints (list maints))
+                    (if (or (null maints) (consp (car-safe maints)))
+                        maints
+                      (list maints))
                     ", ")
          "</dd>\n"))
       (elpaa--insert-repolinks
