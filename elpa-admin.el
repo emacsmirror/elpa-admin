@@ -1319,6 +1319,17 @@ arbitrary code."
       (delete-file input-filename)
       (delete-file output-filename))))
 
+(defun elpaa--get-README (pkg-spec dir)
+  (or (elpaa--get-section
+       "Commentary" (elpaa--spec-get pkg-spec :readme
+                                     '("README" "README.rst"
+                                       ;; Most README.md files seem to be
+                                       ;; currently worse than the Commentary:
+                                       ;; section :-( "README.md"
+                                       "README.org"))
+       dir pkg-spec)
+      '(text/plain . "!No description!")))
+
 (defun elpaa--get-NEWS (pkg-spec dir)
   (let* ((news
           (elpaa--get-section
@@ -1421,17 +1432,7 @@ arbitrary code."
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
-      (let* ((package-readme-file-name
-              (elpaa--spec-get pkg-spec :readme
-                               '("README" "README.rst"
-                                 ;; Most README.md files seem to be currently
-                                 ;; worse than the Commentary: section :-(
-                                 ;; "README.md"
-                                 "README.org")))
-             (readme-content
-              (or (elpaa--get-section "Commentary" package-readme-file-name
-                                      srcdir pkg-spec)
-                  '(text/plain . "!No description!")))
+      (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
              (readme-text (elpaa--section-to-plain-text readme-content))
              (readme-html (elpaa--section-to-html readme-content))
              (readme-output-filename (concat name "-readme.txt")))
