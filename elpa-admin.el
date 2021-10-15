@@ -67,6 +67,12 @@ This is recommended when building packages from untrusted sources,
 but this requires Bubblewrap (https://github.com/containers/bubblewrap)
 to be installed and has only been tested on some Debian systems.")
 
+(defvar elpaa--doc-subdirectory "doc/"
+  "Directory in which to place HTML docs for the ELPA website.
+If nil, don't build the docs in the first place.
+Directory is relative to the tarball directory.
+Can be set in elpa-config via `doc-dir'.")
+
 (defvar elpaa--debug nil)
 
 (defvar elpaa--org-export-options
@@ -106,6 +112,7 @@ See variable `org-export-options-alist'.")
               ('email-reply-to		elpaa--email-reply-to)
               ('sandbox			elpaa--sandbox)
               ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
+              ('doc-dir                 elpaa--doc-subdirectory)
               ('debug			elpaa--debug))
             val))))
 
@@ -572,7 +579,7 @@ Return non-nil if a new tarball was created."
      ;; Run `make' before building the Info file, so that the `make' rule
      ;; can be used to build the Info/Texinfo file.
      (elpaa--make pkg-spec dir)
-     (elpaa--build-Info pkg-spec dir)
+     (elpaa--build-Info pkg-spec dir destdir)
      (elpaa--write-pkg-file dir pkgname metadata)
      ;; FIXME: Allow renaming files or selecting a subset of the files!
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
@@ -725,6 +732,9 @@ Return non-nil if a new tarball was created."
 (defun elpaa--string-width (str)
   "Determine string width in pixels of STR."
   (with-temp-buffer
+    ;; Current (2021) ImageMagick recommends using the "magick"
+    ;; driver, rather than "convert" directly, but Debian doesn't
+    ;; provide it yet.
     (elpaa--call (current-buffer)
                  "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
                  "-pointsize" "110" "-annotate" "0" str "null:")
@@ -1381,6 +1391,34 @@ arbitrary code."
              (concat git-sv (nth 1 urls))
              'Gitweb))))
 
+(defun elpaa--get-docfiles (pkg-spec)
+  (let ((files (elpaa--spec-get pkg-spec :doc)))
+    (if (listp files) files (list files))))
+
+(defun elpaa--doc-html-file (docfile)
+  (concat (file-name-base docfile) ".html"))
+
+(defun elpaa--html-insert-docs (pkg-spec)
+  (let ((docfiles (elpaa--get-docfiles pkg-spec))
+	;; `html-dir' is relative to the tarball directory, so html
+	;; references on mirrors work.  It does not include the
+	;; package name, so cross references among package docs work.
+	(html-dir (when elpaa--doc-subdirectory
+	            (file-name-as-directory elpaa--doc-subdirectory))))
+    (when (and docfiles html-dir
+	       ;; FIXME: This dir is shared, so it will always exist.
+	       ;; Should we use (expand-file-name pkg html-dir) instead?
+               (file-readable-p html-dir)) ;; html doc files were built
+      (insert "<h2>Documentation</h2><table>\n")
+      (dolist (f docfiles)
+	(let ((html-file (concat html-dir (elpaa--doc-html-file f))))
+	  (insert "<tr><td><a href=\"" html-file "\">"
+	          (file-name-sans-extension f)
+	          "</a></td></tr>\n")
+	  ;; FIXME: get link text from info direntry?
+	  ))
+      (insert "</table>\n"))))
+
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
@@ -1438,6 +1476,9 @@ arbitrary code."
              (readme-output-filename (concat name "-readme.txt")))
         (write-region readme-text nil readme-output-filename)
         (insert "<h2>Full description</h2>\n" readme-html))
+
+      (elpaa--html-insert-docs pkg-spec)
+
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
         (insert (format "<h2>Old versions</h2><table>\n"))
@@ -1907,16 +1948,59 @@ More at " (elpaa--default-url pkgname))
 
 ;;; Build Info files from Texinfo
 
-(defun elpaa--build-Info (pkg-spec dir)
-  (let ((docfile (elpaa--spec-get pkg-spec :doc)))
-    (dolist (f (if (listp docfile) docfile (list docfile)))
-      (elpaa--build-Info-1 f dir))))
+(defun elpaa--build-Info (pkg-spec dir tarball-dir)
+  "Build info files for docs specified in :doc field of PKG-SPEC.
+If `elpa--doc-subdirectory' is non-nil, also build html files.
+DIR is the package directory.  TARBALL-DIR is an absolute
+directory; one of archive, archive-devel."
+  ;; default-directory is the GNUMakefile directory.
+  (let ((docfiles (elpaa--get-docfiles pkg-spec))
+	(html-dir
+	 (when elpaa--doc-subdirectory
+	   (elpaa--dirname
+	    (car pkg-spec)
+	    (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
+    (when html-dir
+      (when (not (file-readable-p html-dir)) ;FIXME: Why bother testing?
+	(make-directory html-dir t)))
 
-(defun elpaa--build-Info-1 (docfile dir)
+    (dolist (f docfiles)
+      (elpaa--build-Info-1 f dir html-dir))))
+
+(defun elpaa--html-build-doc (docfile html-dir)
+  (setq html-dir (directory-file-name html-dir))
+  (let* ((destname (elpaa--doc-html-file docfile))
+	 (html-file (expand-file-name destname html-dir))
+	 (html-xref-file
+	  (expand-file-name destname (file-name-directory html-dir)))
+	 ;; The sandbox doesn't allow write access to the `html-dir',
+         ;; so we first create the file inside the sandbox and then
+         ;; we move it to its intended destination.
+	 (tmpfile
+	  (concat (make-temp-name (expand-file-name "doc")) ".html")))
+    (with-temp-buffer
+      (elpaa--call-sandboxed
+       t "makeinfo" "--no-split" "--html" docfile "-o" tmpfile)
+      (message "%s" (buffer-string)))
+    (rename-file tmpfile html-file)
+
+    ;; Create a symlink from elpa/archive[-devel]/doc/* to
+    ;; the actual file, so html references work.
+    (with-demoted-errors "%S" ;; 'make-symbolic-link' doesn't work on Windows
+      (make-symbolic-link
+       (concat (file-name-nondirectory html-dir) "/" destname)
+       html-xref-file t))))
+
+(defun elpaa--build-Info-1 (docfile dir html-dir)
+  "Build an info file from DOCFILE (a texinfo source file).
+DIR must be the package source directory.  If HTML-DIR is
+non-nil, also build html files, store them there.  HTML-DIR is
+relative to elpa root."
   (let* ((elpaa--sandbox-ro-binds
           (cons default-directory elpaa--sandbox-ro-binds))
          (default-directory (elpaa--dirname dir))
          (tmpfiles '()))
+
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.org\\'" docfile))
       (with-temp-buffer
@@ -1933,7 +2017,10 @@ More at " (elpaa--default-url pkgname))
           (setq docfile (concat (file-name-directory docfile)
                                 (match-string 1)))
           (push docfile tmpfiles)
-          (elpaa--temp-file docfile))))
+          (elpaa--temp-file docfile)))
+
+      ;; FIXME: also build html from org source.
+      )
 
     (when (and docfile (file-readable-p docfile)
                (string-match "\\.texi\\(nfo\\)?\\'" docfile))
@@ -1946,6 +2033,9 @@ More at " (elpaa--default-url pkgname))
           (elpaa--call-sandboxed
            t "makeinfo" "--no-split" docfile "-o" info-file)
           (message "%s" (buffer-string)))
+
+	(when html-dir (elpaa--html-build-doc docfile html-dir))
+
         (setq docfile info-file)))
 
     (when (and docfile (not (string-match "\\.info\\'" docfile)))
