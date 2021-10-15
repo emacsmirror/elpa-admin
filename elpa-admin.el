@@ -75,6 +75,11 @@ relative to the tarball directory. Can be set in elpa-config via
 
 (defvar elpaa--debug nil)
 
+(defvar elpaa--org-export-options
+  '(:with-author nil :with-creator nil :with-broken-links t)
+  "Options used common to all Org export backends.
+See variable `org-export-options-alist'.")
+
 (unless (fboundp 'ignore-error)
   (defmacro ignore-error (condition &rest body)
     `(condition-case nil (progn ,@body) (,condition nil))))
@@ -533,7 +538,7 @@ Return non-nil if a new tarball was created."
     (message "======== Building tarball %s..." tarball)
     (let ((res nil))
       (unwind-protect
-          (condition-case err
+          (condition-case-unless-debug err
               (setq res (elpaa--make-one-tarball-1
                          tarball dir pkg-spec metadata
                          revision-function tarball-only))
@@ -631,11 +636,42 @@ Return non-nil if a new tarball was created."
                                  dir))))
      'new)))
 
+(defun elpaa--git-date-to-timestamp (gitdate)
+  "Convert date from git (ISO 6401) to a timestamp."
+  (unless (string-match (rx bos
+                            (group-n 1 (+ digit)) "-"
+                            (group-n 2 (+ digit)) "-"
+                            (group-n 3 (+ digit)) "T"
+                            (group-n 4 (+ digit)) ":"
+                            (group-n 5 (+ digit)) ":"
+                            (group-n 6 (+ digit))
+                            (? "+"
+                               (group-n 7 (+ digit)) ":"
+                               (group-n 8 (+ digit))))
+                        gitdate)
+    (error "Unknown date format: %S" gitdate))
+  (let* ((field
+          (lambda (group)
+            (and (match-beginning group)
+                 (string-to-number (match-string group gitdate)))))
+         (y (funcall field 1))
+         (mo (funcall field 2))
+         (d (funcall field 3))
+         (h (funcall field 4))
+         (mi (funcall field 5))
+         (s (funcall field 6))
+         (zh (funcall field 7))
+         (zm (funcall field 8))
+         (zs (if zh
+                 (* 60 (+ (* zh 60) zm))
+               0)))
+    (encode-time (list s mi h d mo y nil nil zs))))
+
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
   (let* ((ftn (file-truename      ;; Follow symlinks!
               (expand-file-name (elpaa--main-file pkg-spec) dir)))
-        (default-directory (file-name-directory ftn))
+         (default-directory (file-name-directory ftn))
          (gitdate
           (with-temp-buffer
            (if (plist-get (cdr pkg-spec) :core)
@@ -650,10 +686,9 @@ Return non-nil if a new tarball was created."
           ;; Convert Git's date into something that looks like a version number.
           ;; While we're at it, convert Git's date into its UTC equivalent,
           ;; to try and make sure time-versions are monotone.
-          (let ((process-environment (cons "TZ=UTC" process-environment)))
-            (with-temp-buffer
-              (elpaa--call t "date" "-d" gitdate "+%Y%m%d.%H%M%S")
-              (buffer-string)))))
+          (format-time-string "%Y%m%d.%H%M%S"
+                              (elpaa--git-date-to-timestamp gitdate)
+                              0)))
     ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
     (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+\\([0-9]\\)" "\\1\\2"
                               ;; Remove trailing newline or anything untoward.
@@ -1177,10 +1212,50 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
          (insert-file-contents mainsrcfile)
          (lm-header prop))))))
 
+(cl-defgeneric elpaa--section-to-plain-text (section)
+  "Return SECTION as plain text.
+SECTION should be a cons as returned by `elpaa--get-section',
+which see."
+  (cdr section))
+
+(cl-defmethod elpaa--section-to-plain-text ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'ascii
+                     :ext-plist (append '(:ascii-charset utf-8)
+                                        elpaa--org-export-options)))
+
+(cl-defgeneric elpaa--section-to-html (section)
+  "Return SECTION as HTML.
+SECTION should be a cons as returned by `elpaa--get-section',
+which see."
+  (concat "<pre>\n"
+          (elpaa--html-quote (cdr section))
+          "\n</pre>\n"))
+
+(cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
+  (elpaa--export-org (cdr section) 'html
+                     :body-only t
+                     :ext-plist (append '(:html-toplevel-hlevel 3)
+                                        elpaa--org-export-options)))
+
+(defun elpaa--extension-to-mime (ext)
+  (pcase ext
+    ;; FIXME: On my Debian machine, `mailcap-extension-to-mime' tells me
+    ;; "org" is `application/vnd.lotus-organizer'.
+    ("org" 'text/x-org)
+    ;; FIXME: Apparently on some systems, `mailcap-extension-to-mime'
+    ;; returns nil for this one.
+    ((or "md" "markdown") 'text/markdown)
+    (_
+     (require 'mailcap)
+     (let ((mt (if ext (mailcap-extension-to-mime ext))))
+         (if mt (intern mt) 'text/plain)))))
+
 (defun elpaa--get-section (header file srcdir pkg-spec)
-  "Return specified section as a string from SRCDIR for PKG-SPEC.
-If FILE is readable in SRCDIR, return its contents.  Otherwise
-return section under HEADER in package's main file."
+  "Return specified section for PKG-SPEC.
+Returns (TYPE . CONTENT) cons, where TYPE is a MIME-type string,
+and CONTENT is the content string.  If FILE is readable in
+SRCDIR, return its contents.  Otherwise return section under
+HEADER in package's main file."
   (when (consp file)
     (while (cdr-safe file)
       (setq file
@@ -1190,51 +1265,88 @@ return section under HEADER in package's main file."
     (when (consp file) (setq file (car file))))
   (cond
    ((file-readable-p (expand-file-name file srcdir))
-    (with-temp-buffer
-      (insert-file-contents (expand-file-name file srcdir))
-      (buffer-string)))
+    ;; Return FILE's contents.
+    (let ((type (elpaa--extension-to-mime (file-name-extension file)))
+          (content (with-temp-buffer
+                     (insert-file-contents (expand-file-name file srcdir))
+                     (buffer-string))))
+      (cons type content)))
    ((file-readable-p (expand-file-name (elpaa--main-file pkg-spec) srcdir))
+    ;; Return specified section from package's main source file.
     (with-temp-buffer
-      (insert-file-contents
-       (expand-file-name (elpaa--main-file pkg-spec) srcdir))
-      (emacs-lisp-mode) ;lm-section-start needs the outline-mode setting.
-      (let ((start (lm-section-start header)))
-        (when start
-          ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
-          ;; our own ad-hoc replacement.
-          (goto-char start) (forward-line 1)
-          (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
-          (insert
-           (prog1
-               (buffer-substring start (match-beginning 0))
-             (erase-buffer)))
-          (emacs-lisp-mode)
-          (goto-char (point-min))
-          (delete-region (point) (line-beginning-position 2))
-          (uncomment-region (point-min) (point-max))
-          (when (looking-at "^\\([ \t]*\n\\)+")
-            (replace-match ""))
-          (goto-char (point-max))
-          (skip-chars-backward " \t\n")
-          (delete-region (point) (point-max))
-          (buffer-string)))))))
+      (let ((type 'text/plain))
+        (insert-file-contents
+         (expand-file-name (elpaa--main-file pkg-spec) srcdir))
+        (emacs-lisp-mode)       ;lm-section-start needs the outline-mode setting.
+        (let ((start (lm-section-start header)))
+          (when start
+            ;; FIXME: Emacs<28 had a bug in `lm-section-end', so cook up
+            ;; our own ad-hoc replacement.
+            (goto-char start) (forward-line 1)
+            (re-search-forward "^\\(;;;[^;\n]\\|[^; \n]\\)" nil t)
+            (insert
+             (prog1
+                 (buffer-substring start (match-beginning 0))
+               (erase-buffer)))
+            (emacs-lisp-mode)
+            (goto-char (point-min))
+            (delete-region (point) (line-beginning-position 2))
+            (uncomment-region (point-min) (point-max))
+            (when (looking-at "^\\([ \t]*\n\\)+")
+              (replace-match ""))
+            (goto-char (point-max))
+            (skip-chars-backward " \t\n")
+            (delete-region (point) (point-max))
+            (cons type (buffer-string)))))))))
+
+(cl-defun elpaa--export-org (content backend &key body-only ext-plist)
+  "Return Org CONTENT as an exported string.
+BACKEND and EXT-PLIST are passed to `org-export-as', which see.
+Uses `elpaa--call-sandboxed', since exporting with Org may run
+arbitrary code."
+  (declare (indent defun))
+  (cl-check-type backend symbol)
+  (cl-assert (memq body-only '(nil t)) t
+             "BODY-ONLY may only be nil or t")
+  ;; "emacs --batch" loads site-init files, which may pollute output,
+  ;; so we write it to a temp file.
+  (let ((input-filename
+         (make-temp-file (expand-file-name "elpaa--export-input")))
+        (output-filename
+         (make-temp-file (expand-file-name "elpaa--export-output"))))
+    (unwind-protect
+        (progn
+          (write-region content nil input-filename)
+          (with-temp-buffer
+            (elpaa--call-sandboxed
+             t "emacs" "--batch" "-l" (format "ox-%S" backend)
+             input-filename
+             "--eval" (format "(write-region (org-export-as '%s nil nil %S '%S) nil %S)"
+                              backend body-only ext-plist output-filename)))
+          (with-temp-buffer
+            (insert-file-contents output-filename)
+            (buffer-string)))
+      (delete-file input-filename)
+      (delete-file output-filename))))
 
 (defun elpaa--get-README (pkg-spec dir)
-  (elpaa--get-section
-   "Commentary" (elpaa--spec-get pkg-spec :readme
-                                 '("README" "README.rst"
-                                   ;; Most README.md files seem to be currently
-                                   ;; worse than the Commentary: section :-(
-                                   ;; "README.md"
-                                   "README.org"))
-   dir pkg-spec))
+  (or (elpaa--get-section
+       "Commentary" (elpaa--spec-get pkg-spec :readme
+                                     '("README" "README.rst"
+                                       ;; Most README.md files seem to be
+                                       ;; currently worse than the Commentary:
+                                       ;; section :-( "README.md"
+                                       "README.org"))
+       dir pkg-spec)
+      '(text/plain . "!No description!")))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
-  (let ((text
-         (elpaa--get-section
-          "News" (elpaa--spec-get pkg-spec :news
-                                  '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
-          dir pkg-spec)))
+  (let* ((news
+          (elpaa--get-section
+           "News" (elpaa--spec-get pkg-spec :news
+                                   '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
+           dir pkg-spec))
+         (text (elpaa--section-to-plain-text news)))
     (if (< (length text) 4000)
         text
       (concat (substring text 0 4000) "...\n...\n"))))
@@ -1307,13 +1419,20 @@ return section under HEADER in package's main file."
                           file (elpaa--html-quote file)
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (elpaa--html-bytes-format (nth 7 attrs))))))
-      (let ((maint (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
-        (when maint
-          (when (consp maint)
-            (elpaa--message "maint=%S" maint)
-            (setq maint (concat (if (car maint) (concat (car maint) " "))
-                                "<" (cdr maint) ">")))
-          (insert (format "<dt>Maintainer</dt> <dd>%s</dd>\n" (elpaa--html-quote maint)))))
+      (let ((maints (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
+        (elpaa--message "maints=%S" maints)
+        (insert
+         "<dt>Maintainer</dt> <dd>"
+         (mapconcat (lambda (maint)
+                      (when (consp maint)
+                        (setq maint (concat (if (car maint) (concat (car maint) " "))
+                                            "<" (cdr maint) ">")))
+                      (elpaa--html-quote maint))
+                    (if (or (null maints) (consp (car-safe maints)))
+                        maints
+                      (list maints))
+                    ", ")
+         "</dd>\n"))
       (elpaa--insert-repolinks
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
@@ -1323,11 +1442,12 @@ return section under HEADER in package's main file."
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
-      (let ((rm (elpaa--get-README pkg-spec srcdir)))
-        (when rm
-          (write-region rm nil (concat name "-readme.txt"))
-          (insert "<h2>Full description</h2><pre>\n" (elpaa--html-quote rm)
-                  "\n</pre>\n")))
+      (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
+             (readme-text (elpaa--section-to-plain-text readme-content))
+             (readme-html (elpaa--section-to-html readme-content))
+             (readme-output-filename (concat name "-readme.txt")))
+        (write-region readme-text nil readme-output-filename)
+        (insert "<h2>Full description</h2>\n" readme-html))
 
       (let ((docfiles (elpaa--spec-get pkg-spec :doc))
 	    (html-dir (concat elpaa--doc-subdirectory "/"))
@@ -1773,6 +1893,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (when elpaa--email-to
     (with-temp-buffer
       (message-mode)
+      (declare-function message-setup "message"
+                        (headers &optional yank-action actions continue
+                                 switch-function return-action))
+      (declare-function message-send "message" (&optional arg))
       (let* ((version (nth 1 metadata))
              (pkgname (car pkg-spec))
              (name (capitalize pkgname))
