@@ -68,10 +68,10 @@ but this requires Bubblewrap (https://github.com/containers/bubblewrap)
 to be installed and has only been tested on some Debian systems.")
 
 (defvar elpaa--doc-subdirectory "doc/"
-  "If non-nil, build html docs as well as info docs, and save the
-html docs in this dir, for the ELPA website. Directory is
-relative to the tarball directory. Can be set in elpa-config via
-'doc-dir.")
+  "Directory in which to place HTML docs for the ELPA website.
+If nil, don't build the docs in the first place.
+Directory is relative to the tarball directory.
+Can be set in elpa-config via `doc-dir'.")
 
 (defvar elpaa--debug nil)
 
@@ -112,7 +112,7 @@ See variable `org-export-options-alist'.")
               ('email-reply-to		elpaa--email-reply-to)
               ('sandbox			elpaa--sandbox)
               ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
-	      ('doc-dir                 elpa--doc-subdirectory)
+              ('doc-dir                 elpaa--doc-subdirectory)
               ('debug			elpaa--debug))
             val))))
 
@@ -1391,22 +1391,30 @@ arbitrary code."
              (concat git-sv (nth 1 urls))
              'Gitweb))))
 
+(defun elpaa--get-docfiles (pkg-spec)
+  (let ((files (elpaa--spec-get pkg-spec :doc)))
+    (if (listp files) files (list files))))
+
+(defun elpaa--doc-html-file (docfile)
+  (concat (file-name-base docfile) ".html"))
+
 (defun elpaa--html-insert-docs (pkg-spec)
-  (let ((docfiles (elpaa--spec-get pkg-spec :doc))
-	(html-dir (concat elpaa--doc-subdirectory "/"))
-	;; html-dir is relative to the tarball directory, so html
-	;; references on mirrors work. It does not include the
-	;; package name, so cross references among package docs
-	;; work.
-	)
-    (when (file-readable-p html-dir) ;; html doc files were built
+  (let ((docfiles (elpaa--get-docfiles pkg-spec))
+	;; `html-dir' is relative to the tarball directory, so html
+	;; references on mirrors work.  It does not include the
+	;; package name, so cross references among package docs work.
+	(html-dir (when elpaa--doc-subdirectory
+	            (file-name-as-directory elpaa--doc-subdirectory))))
+    (when (and docfiles html-dir
+	       ;; FIXME: This dir is shared, so it will always exist.
+	       ;; Should we use (expand-file-name pkg html-dir) instead?
+               (file-readable-p html-dir)) ;; html doc files were built
       (insert "<h2>Documentation</h2><table>\n")
-      (dolist (f (if (listp docfiles) docfiles (list docfiles)))
-	(let ((html-file
-	       (concat html-dir
-		       (file-name-sans-extension f)
-		       ".html")))
-	  (insert "<tr><td><a href=\"" html-file "\">" (file-name-sans-extension f) "</a></td></tr>\n")
+      (dolist (f docfiles)
+	(let ((html-file (concat html-dir (elpaa--doc-html-file f))))
+	  (insert "<tr><td><a href=\"" html-file "\">"
+	          (file-name-sans-extension f)
+	          "</a></td></tr>\n")
 	  ;; FIXME: get link text from info direntry?
 	  ))
       (insert "</table>\n"))))
@@ -1943,47 +1951,50 @@ More at " (elpaa--default-url pkgname))
 (defun elpaa--build-Info (pkg-spec dir tarball-dir)
   "Build info files for docs specified in :doc field of PKG-SPEC.
 If `elpa--doc-subdirectory' is non-nil, also build html files.
-DIR is the package directory. TARBALL-DIR is an absolute
+DIR is the package directory.  TARBALL-DIR is an absolute
 directory; one of archive, archive-devel."
   ;; default-directory is the GNUMakefile directory.
-  (let ((docfile (elpaa--spec-get pkg-spec :doc))
+  (let ((docfiles (elpaa--get-docfiles pkg-spec))
 	(html-dir
 	 (when elpaa--doc-subdirectory
 	   (elpaa--dirname
 	    (car pkg-spec)
 	    (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
     (when html-dir
-      (when (not (file-readable-p html-dir))
+      (when (not (file-readable-p html-dir)) ;FIXME: Why bother testing?
 	(make-directory html-dir t)))
 
-    (dolist (f (if (listp docfile) docfile (list docfile)))
+    (dolist (f docfiles)
       (elpaa--build-Info-1 f dir html-dir))))
 
-
 (defun elpaa--html-build-doc (docfile html-dir)
-  (let ((html-file
-	 (expand-file-name
-	  (concat (file-name-base docfile) ".html")
-	  html-dir))
-	(html-xref-file
-	 (expand-file-name
-	  (concat (file-name-base docfile) ".html")
-	  (file-name-directory (directory-file-name html-dir)))))
+  (setq html-dir (directory-file-name html-dir))
+  (let* ((destname (elpaa--doc-html-file docfile))
+	 (html-file (expand-file-name destname html-dir))
+	 (html-xref-file
+	  (expand-file-name destname (file-name-directory html-dir)))
+	 ;; The sandbox doesn't allow write access to the `html-dir',
+         ;; so we first create the file inside the sandbox and then
+         ;; we move it to its intended destination.
+	 (tmpfile
+	  (concat (make-temp-name (expand-file-name "doc")) ".html")))
     (with-temp-buffer
       (elpaa--call-sandboxed
-       t "makeinfo" "--no-split" "--html" docfile "-o" html-file)
+       t "makeinfo" "--no-split" "--html" docfile "-o" tmpfile)
       (message "%s" (buffer-string)))
+    (rename-file tmpfile html-file)
 
     ;; Create a symlink from elpa/archive[-devel]/doc/* to
     ;; the actual file, so html references work.
-    (with-demoted-errors ;; 'make-symbolic-link' doesn't work on Windows
-	(make-symbolic-link html-file html-xref-file t))
-    ))
+    (with-demoted-errors "%S" ;; 'make-symbolic-link' doesn't work on Windows
+      (make-symbolic-link
+       (concat (file-name-nondirectory html-dir) "/" destname)
+       html-xref-file t))))
 
 (defun elpaa--build-Info-1 (docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
 DIR must be the package source directory.  If HTML-DIR is
-non-nil, also build html files, store them there. HTML-DIR is
+non-nil, also build html files, store them there.  HTML-DIR is
 relative to elpa root."
   (let* ((elpaa--sandbox-ro-binds
           (cons default-directory elpaa--sandbox-ro-binds))
