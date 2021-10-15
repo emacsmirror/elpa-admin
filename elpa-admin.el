@@ -1391,6 +1391,26 @@ arbitrary code."
              (concat git-sv (nth 1 urls))
              'Gitweb))))
 
+(defun elpaa--html-insert-docs (pkg-spec)
+  (let ((docfiles (elpaa--spec-get pkg-spec :doc))
+	(html-dir (concat elpaa--doc-subdirectory "/"))
+	;; html-dir is relative to the tarball directory, so html
+	;; references on mirrors work. It does not include the
+	;; package name, so cross references among package docs
+	;; work.
+	)
+    (when (file-readable-p html-dir) ;; html doc files were built
+      (insert "<h2>Documentation</h2><table>\n")
+      (dolist (f (if (listp docfiles) docfiles (list docfiles)))
+	(let ((html-file
+	       (concat html-dir
+		       (file-name-sans-extension f)
+		       ".html")))
+	  (insert "<tr><td><a href=\"" html-file "\">" (file-name-sans-extension f) "</a></td></tr>\n")
+	  ;; FIXME: get link text from info direntry?
+	  ))
+      (insert "</table>\n"))))
+
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
@@ -1449,24 +1469,7 @@ arbitrary code."
         (write-region readme-text nil readme-output-filename)
         (insert "<h2>Full description</h2>\n" readme-html))
 
-      (let ((docfiles (elpaa--spec-get pkg-spec :doc))
-	    (html-dir (concat elpaa--doc-subdirectory "/"))
-	    ;; html-dir is relative to the tarball directory, so html
-	    ;; references on mirrors work. It does not include the
-	    ;; package name, so cross references among package docs
-	    ;; work.
-	    )
-	(when (file-readable-p html-dir) ;; html doc files were built
-          (insert "<h2>Documentation</h2><table>\n")
-	  (dolist (f (if (listp docfiles) docfiles (list docfiles)))
-	    (let ((html-file
-		   (concat html-dir
-			   (file-name-sans-extension f)
-			   ".html")))
-	      (insert "<tr><td><a href=\"" html-file "\">" (file-name-sans-extension f) "</a></td></tr>\n")
-	      ;; FIXME: get link text from info direntry?
-	      ))
-	  (insert "</table>\n")))
+      (elpaa--html-insert-docs pkg-spec)
 
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
@@ -1956,6 +1959,27 @@ directory; one of archive, archive-devel."
     (dolist (f (if (listp docfile) docfile (list docfile)))
       (elpaa--build-Info-1 f dir html-dir))))
 
+
+(defun elpaa--html-build-doc (docfile html-dir)
+  (let ((html-file
+	 (expand-file-name
+	  (concat (file-name-base docfile) ".html")
+	  html-dir))
+	(html-xref-file
+	 (expand-file-name
+	  (concat (file-name-base docfile) ".html")
+	  (file-name-directory (directory-file-name html-dir)))))
+    (with-temp-buffer
+      (elpaa--call-sandboxed
+       t "makeinfo" "--no-split" "--html" docfile "-o" html-file)
+      (message "%s" (buffer-string)))
+
+    ;; Create a symlink from elpa/archive[-devel]/doc/* to
+    ;; the actual file, so html references work.
+    (with-demoted-errors ;; 'make-symbolic-link' doesn't work on Windows
+	(make-symbolic-link html-file html-xref-file t))
+    ))
+
 (defun elpaa--build-Info-1 (docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
 DIR must be the package source directory.  If HTML-DIR is
@@ -1999,25 +2023,7 @@ relative to elpa root."
            t "makeinfo" "--no-split" docfile "-o" info-file)
           (message "%s" (buffer-string)))
 
-	(when html-dir
-	  (let ((html-file
-		 (expand-file-name
-		  (concat (file-name-base docfile) ".html")
-		  html-dir))
-		(html-xref-file
-		 (expand-file-name
-		  (concat (file-name-base docfile) ".html")
-		  (file-name-directory (directory-file-name html-dir)))))
-            (with-temp-buffer
-              (elpaa--call-sandboxed
-               t "makeinfo" "--no-split" "--html" docfile "-o" html-file)
-              (message "%s" (buffer-string)))
-
-	    ;; Create a symlink from elpa/archive[-devel]/doc/* to
-	    ;; the actual file, so html references work.
-	    (with-demoted-errors ;; 'make-symbolic-link' doesn't work on Windows
-		(make-symbolic-link html-file html-xref-file t))
-	    ))
+	(when html-dir (elpaa--html-build-doc docfile html-dir))
 
         (setq docfile info-file)))
 
