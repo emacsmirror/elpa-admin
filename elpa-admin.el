@@ -1983,8 +1983,12 @@ directory; one of archive, archive-devel."
        t "makeinfo" "--no-split" "--html" docfile "-o" tmpfile)
       (message "%s" (buffer-string)))
     (rename-file tmpfile html-file t)
-    (push (cons (file-name-base html-file) (file-name-nondirectory html-file))
-          (plist-get (cdr pkg-spec) :internal--html-docs))
+    ;; FIXME: Use `push' in Emacs≥28
+    (plist-put (cdr pkg-spec)
+               :internal--html-docs
+               (cons (cons (file-name-base html-file)
+                           (file-name-nondirectory html-file))
+                     (plist-get (cdr pkg-spec) :internal--html-docs)))
 
     ;; Create a symlink from elpa/archive[-devel]/doc/* to
     ;; the actual file, so html references work.
