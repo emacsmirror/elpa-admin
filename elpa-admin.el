@@ -1399,7 +1399,7 @@ arbitrary code."
   (concat (file-name-base docfile) ".html"))
 
 (defun elpaa--html-insert-docs (pkg-spec)
-  (let ((docfiles (elpaa--get-docfiles pkg-spec))
+  (let ((docfiles (plist-get (cdr pkg-spec) :internal--html-docs))
 	;; `html-dir' is relative to the tarball directory, so html
 	;; references on mirrors work.  It does not include the
 	;; package name, so cross references among package docs work.
@@ -1410,10 +1410,10 @@ arbitrary code."
 	       ;; Should we use (expand-file-name pkg html-dir) instead?
                (file-readable-p html-dir)) ;; html doc files were built
       (insert "<h2>Documentation</h2><table>\n")
-      (dolist (f docfiles)
-	(let ((html-file (concat html-dir (elpaa--doc-html-file f))))
+      (dolist (doc docfiles)
+	(let ((html-file (concat html-dir (cdr doc))))
 	  (insert "<tr><td><a href=\"" html-file "\">"
-	          (file-name-sans-extension f)
+	          (car doc)
 	          "</a></td></tr>\n")
 	  ;; FIXME: get link text from info direntry?
 	  ))
@@ -1965,9 +1965,9 @@ directory; one of archive, archive-devel."
 	(make-directory html-dir t)))
 
     (dolist (f docfiles)
-      (elpaa--build-Info-1 f dir html-dir))))
+      (elpaa--build-Info-1 pkg-spec f dir html-dir))))
 
-(defun elpaa--html-build-doc (docfile html-dir)
+(defun elpaa--html-build-doc (pkg-spec docfile html-dir)
   (setq html-dir (directory-file-name html-dir))
   (let* ((destname (elpaa--doc-html-file docfile))
 	 (html-file (expand-file-name destname html-dir))
@@ -1982,7 +1982,9 @@ directory; one of archive, archive-devel."
       (elpaa--call-sandboxed
        t "makeinfo" "--no-split" "--html" docfile "-o" tmpfile)
       (message "%s" (buffer-string)))
-    (rename-file tmpfile html-file)
+    (rename-file tmpfile html-file t)
+    (push (cons (file-name-base html-file) (file-name-nondirectory html-file))
+          (plist-get (cdr pkg-spec) :internal--html-docs))
 
     ;; Create a symlink from elpa/archive[-devel]/doc/* to
     ;; the actual file, so html references work.
@@ -1991,7 +1993,7 @@ directory; one of archive, archive-devel."
        (concat (file-name-nondirectory html-dir) "/" destname)
        html-xref-file t))))
 
-(defun elpaa--build-Info-1 (docfile dir html-dir)
+(defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
 DIR must be the package source directory.  If HTML-DIR is
 non-nil, also build html files, store them there.  HTML-DIR is
@@ -2034,7 +2036,7 @@ relative to elpa root."
            t "makeinfo" "--no-split" docfile "-o" info-file)
           (message "%s" (buffer-string)))
 
-	(when html-dir (elpaa--html-build-doc docfile html-dir))
+	(when html-dir (elpaa--html-build-doc pkg-spec docfile html-dir))
 
         (setq docfile info-file)))
 
