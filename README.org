@@ -68,7 +68,6 @@ to do:
     rm archive/[PKG]-[VERSION].tar; make build/[PKG]
 #+end_src
 
-
 * Using packages in-place
 
 The packages can be installed and used in-place.  First you need to make
@@ -87,7 +86,6 @@ packages with:
 #+begin_src sh
     make
 #+end_src
-
 
 * Guidance for accepting packages
 
@@ -201,7 +199,6 @@ packages with:
    exceptions, you can point people to commercial support offerings for
    the package, and you can mention fan items that you sell directly to
    the users.
-
 
 * Adding a package
 
