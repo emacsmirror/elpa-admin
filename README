@@ -4,6 +4,15 @@
 Copyright (C) 2010-2021 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
+#+BEGIN_COMMENT
+This file exists in two branches ~elpa-admin~ and ~elpa~.  The two version
+differ slightly.  The introductory text before the first heading
+differs and their are minor differences concerning the ~externals/*~ to
+~elpa/*~ transition.  Please make sure you always update this file in
+both locations to avoid introducing additional differences.  This
+duplication will be removed eventually.
+#+END_COMMENT
+
 This branch contains the source code used to build and manage
 the [[https://elpa.gnu.org/][GNU ELPA]] and NonGNU ELPA archives.
 
