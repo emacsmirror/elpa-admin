@@ -2133,15 +2133,13 @@ relative to elpa root."
                                (if release-refspec
                                    (list release-refspec)))))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
-         ((and
-           (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                               urtb ortb))
-           (elpaa--git-branch-p ortb))
+	 ((not (elpaa--git-branch-p ortb))
+	  (message "New package %s hasn't been pushed to origin yet" pkg))
+         ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                              urtb ortb))
           (message "Nothing new upstream for %s" pkg))
-         ((and
-           (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                    ortb urtb)))
-           (elpaa--git-branch-p ortb))
+         ((not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                                   ortb urtb)))
           (message "Upstream of %s has DIVERGED!\n" pkg)
           (when show-diverged
             (elpaa--call t "git" "log"
@@ -2153,12 +2151,9 @@ relative to elpa root."
                          "--format=%h  %<(16,trunc)%ae  %s"
                          (format "%s..%s" ortb urtb))
             (message "  Upstream changes:\n%s" (buffer-string))))
-         ((let* ((exists (elpaa--git-branch-p ortb)))
-            (not (equal 0 (elpaa--call t "git" "log"
-                                       "--format=%h  %<(16,trunc)%ae  %s"
-                                       (if exists
-                                           (format "%s..%s" ortb urtb)
-                                         urtb)))))
+         ((not (zerop (elpaa--call t "git" "log"
+                                   "--format=%h  %<(16,trunc)%ae  %s"
+                                   (format "%s..%s" ortb urtb))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
           (message "No pending upstream changes for %s" pkg))
