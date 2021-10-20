@@ -1,8 +1,15 @@
 #+TITLE: NonGNU ELPA README
-#+DATE: 2020-12-21
+#+DATE: 2021-10-19
 
-Copyright (C) 2020 Free Software Foundation, Inc. \\
+Copyright (C) 2020-2021 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
+
+#+BEGIN_COMMENT
+This file exists in two repositories, in the ~elpa-admin~ branch of
+the ~emacs/elpa.git~ repository and in the ~main~ branch of the
+~emacs/nongnu.git~ repository.  Please make sure you always update
+it in both locations.  This duplication will be removed eventually.
+#+END_COMMENT
 
 This repository contains the sources, deployment scripts, and auxiliary files
 for [[https://nongnu.elpa.org][NonGNU ELPA]] (=elpa.nongnu.org=).  NonGNU ELPA is a [[https://www.gnu.org/philosophy/free-sw.html][free software]] Emacs Lisp
@@ -12,6 +19,26 @@ This file explains the repository layout, how to add and edit packages, and how
 to deploy the archive (either on =elpa.nongnu.org=, or a local copy for testing
 purposes).
 
+* Initial setup
+
+To do anything with, you first have to have a local clone, which you can get
+with:
+
+#+begin_src sh
+    git clone .../nongnu.git $FOO
+#+end_src
+
+and which you may have done already if you're reading this file.
+The main branch on =nongnu.git= only holds the list of specifications
+of the packages included, but not the scripts to build them.
+So after doing this, you need to do:
+
+#+begin_src sh
+    make
+#+end_src
+
+This will fetch a branch from =elpa.git= containing all the build scripts
+and makefiles and place them where needed.
 
 * Building the archive
 
@@ -25,13 +52,6 @@ directory.  This format is described in the Emacs Lisp Reference Manual chapter
 #+end_src
 
 To build the archive(s), all it takes is:
-
-#+begin_src sh
-    git clone .../nongnu.git $FOO
-#+end_src
-
-which you presumably have done already if you're reading this file.
-And then
 
 #+begin_src sh
     cd .../nongnu
@@ -55,26 +75,24 @@ to do:
     rm archive/[PKG]-[VERSION].tar; make build/[PKG]
 #+end_src
 
-
 * Using packages in-place
 
 The packages can be installed and used in-place.  First you need to make
-sure the package(s) you can about are placed in the =packages= subdirectory,
-e.g. with =make worktrees=, and then you can to add that =.../packages=
-to your =package-directory-list=.  And once that is done you can do:
+sure the package(s) you care about are placed in the =packages= subdirectory,
+e.g. with =make worktrees=, and then you can add that =.../packages= to your
+=package-directory-list=.  And once that is done, you can do:
 
 #+begin_src sh
     make packages/[PKG]
 #+end_src
 
 to create the =[PKG]-pkg.el= and =[PKG]-autoloads.el= file as well as compile
-all the ELisp files in that package.  You can also do that on all the
+all the ELisp files in that package.  You can also do that for all the
 packages with:
 
 #+begin_src sh
     make
 #+end_src
-
 
 * Guidance for accepting packages
 
@@ -188,7 +206,6 @@ packages with:
    exceptions, you can point people to commercial support offerings for
    the package, and you can mention fan items that you sell directly to
    the users.
-
 
 * Adding a package
 
