@@ -1641,6 +1641,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (unless (file-directory-p default-directory)
       (make-directory default-directory))
     (cond ((not (file-exists-p name))
+	   (message "Cloning branch %s:" name)
            (let* ((branch (concat elpaa--branch-prefix name))
                   (add-branches
                    (lambda ()
@@ -1648,7 +1649,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                        (elpaa--call t "git" "config"
                                     "--get-all" "remote.origin.fetch")
                        (unless (or (= (point) pos)
-                                   (re-search-backward "\\*$" pos t))
+                                   (save-excursion
+				     (re-search-backward "\\*$" pos t)))
                          (elpaa--call t "git" "remote" "set-branches"
                                       "--add" "origin" branch)
                          (when (elpaa--spec-get pkg-spec :release-branch)
@@ -1678,7 +1680,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                        (error "No branch %s for the worktree of %s:\n%s"
                               branch name (buffer-string))))
                      (buffer-string))))
-             (message "Cloning branch %s:\n%s" name output)))
+	     (message "%s" output)))
           ((not (file-exists-p (concat name "/.git")))
            (message "%s is in the way of our worktree, please remove!" name))
           (t (elpaa--pull name)))))
