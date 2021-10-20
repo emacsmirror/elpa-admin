@@ -526,12 +526,25 @@ Do it without leaving the current branch."
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
                                  &optional revision-function tarball-only)
-  "Create file TARBALL for PKGNAME if not done yet.
-Return non-nil if a new tarball was created."
+  "Create file TARBALL for PKG-SPEC if not done yet.
+Return non-nil if a new tarball was created.  Also create some
+auxillary files unless TARBALL-ONLY is non-nil ."
   (elpaa--message "Building tarball %s..." tarball)
-  (if (or (file-readable-p tarball)
-          (file-readable-p (replace-regexp-in-string
-                            "\\.tar\\'" ".el" tarball)))
+  (if (and (or (file-readable-p tarball)
+               (file-readable-p (replace-regexp-in-string
+				 "\\.tar\\'" ".el" tarball)))
+	   (or tarball-only
+	       ;; Even if the above exists, then we might still have
+	       ;; to call `elpaa--make-one-tarball-1' because that
+	       ;; is the only place where `elpaa--html-make-pkg' is
+	       ;; called and that in turn is where these files are
+	       ;; created:
+               (let ((pkgname (car pkg-spec))
+		     (default-directory
+		       (expand-file-name (file-name-directory tarball))))
+		 (and (file-readable-p (concat pkgname "-readme.txt"))
+		      (file-readable-p (concat pkgname ".html"))
+		      (file-readable-p (concat pkgname ".svg"))))))
       (progn
         (elpaa--message "Tarball %s already built!" tarball)
         nil)
@@ -628,8 +641,8 @@ Return non-nil if a new tarball was created."
                                           ;; least 2 years.
                                           (if revision-function
                                               (* 60 60 24 365 2))))
-         (let* ((default-directory (expand-file-name destdir)))
-           ;; Apparently this also creates the <pkg>-readme.txt file.
+         (let ((default-directory (expand-file-name destdir)))
+           ;; This also creates <pkg>-readme.txt and <pkg>.svg.
            (elpaa--html-make-pkg pkgdesc pkg-spec
                                  `((,vers . ,(file-name-nondirectory tarball))
                                    . ,oldtarballs)
@@ -819,20 +832,6 @@ Return non-nil if a new tarball was created."
 </svg>"))))
       (write-region (point-min) (point-max) file))))
 
-(defun elpaa--add-badge-link (file name)
-  "Add badge link to FILE for package NAME."
-  (with-temp-buffer
-    (insert-file-contents file)
-    (let ((contents (buffer-string)))
-      (unless (string-match-p "<dt>Badge</dt>" contents)
-        (erase-buffer)
-        (insert
-         (replace-regexp-in-string "</dl>"
-                                   (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n</dl>"
-                                           (elpaa--html-quote name))
-                                   contents))
-        (write-region (point-min) (point-max) file)))))
-
 (defun elpaa--make-one-package (pkg-spec &optional tarball-only)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If TARBALL-ONLY is non-nil, don't try and select some other revision and
@@ -911,25 +910,7 @@ place the resulting tarball into the file named TARBALL-ONLY."
                      (elpaa--get-release-revision
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map))))
-              (elpaa--release-email pkg-spec metadata dir)))))
-
-        ;; Generate missing badges (temporary code)
-        (let ((release-badge (format "%s/%s.svg" elpaa--release-subdir pkgname))
-              (devel-badge (format "%s/%s.svg" elpaa--devel-subdir pkgname))
-              (release-html (format "%s/%s.html" elpaa--release-subdir pkgname))
-              (devel-html (format "%s/%s.html" elpaa--devel-subdir pkgname)))
-          (unless (or (file-exists-p devel-badge)
-                      (not (file-exists-p devel-html)))
-            (elpaa--make-badge devel-badge
-                               (format "%s-devel ELPA" elpaa--name)
-                               (format "%s %s" pkgname devel-vers))
-            (elpaa--add-badge-link devel-html pkgname))
-          (unless (or (file-exists-p release-badge)
-                      (not (file-exists-p release-html)))
-            (elpaa--make-badge release-badge
-                               (format "%s ELPA" elpaa--name)
-                               (format "%s %s" pkgname vers))
-            (elpaa--add-badge-link release-html pkgname)))))))
+              (elpaa--release-email pkg-spec metadata dir)))))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
