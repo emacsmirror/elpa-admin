@@ -1509,13 +1509,11 @@ arbitrary code."
         (message "Running git pull in %S" default-directory)
         (elpaa--call t "git" "pull"))
        ((file-exists-p ".git")          ;A worktree, presumably.
-        (let* ((status
-		(with-temp-buffer
-                  (let ((elpaa--debug nil))
-                    (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
-                  (buffer-string)))
-	       (br (match-string 1 status))
-               (ortb (concat "refs/remotes/origin/" br)))
+        (let ((status
+               (with-temp-buffer
+                 (let ((elpaa--debug nil))
+                   (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
+                 (buffer-string))))
           (if (string-match (regexp-quote "\n# branch.ab +0 -0") status)
               (elpaa--message "%s up-to-date" dirname)
             ;; Set upstream if applicable.
@@ -1528,14 +1526,13 @@ arbitrary code."
                             (regexp-quote elpaa--branch-prefix)
                             ".*\\)")
                     status))
-              ;; There is an upstream to set it to!
-              (when (elpaa--git-branch-p ortb)
-                (elpaa--call t "git" "branch" "--set-upstream-to" ortb)))
-	    (if (elpaa--git-branch-p ortb)
-		(progn
-		  (message "Updating worktree in %S" default-directory)
-		  (elpaa--call t "git" "merge"))
-	      (message "Not pushed to origin yet.  Not updating worktree")))))
+              (let* ((br (match-string 1 status))
+                     (ortb (concat "refs/remotes/origin/" br)))
+                ;; There is an upstream to set it to!
+                (when (elpaa--git-branch-p ortb)
+                  (elpaa--call t "git" "branch" "--set-upstream-to" ortb))))
+            (message "Updating worktree in %S" default-directory)
+            (elpaa--call t "git" "merge"))))
        (t (error "No .git in %S" default-directory)))
       (unless (and (eobp) (bobp))
         (message "Updated %s:%s%s" dirname
