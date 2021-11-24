@@ -752,9 +752,15 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                  "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
                  "-pointsize" "110" "-annotate" "0" str "null:")
     (goto-char (point-min))
-    (if (re-search-forward "Metrics:.*?width: \\([0-9]+\\)")
-        (string-to-number (match-string 1))
-      (error "Could not determine string width"))))
+    (if (not (re-search-forward "Metrics:.*?width: \\([0-9]+\\)"))
+        (error "Could not determine string width")
+      (let ((width (string-to-number (match-string 1))))
+        ;; This test aims to catch the case where the font is missing,
+        ;; but it seems it only works in some cases :-(
+        (if (and (> (string-width str) 0) (not (> width 0)))
+            (progn (message "convert:\n%s" (buffer-string))
+                   (error "Could not determine string width"))
+          width)))))
 
 (defun elpaa--make-badge (file left right)
   "Make badge svg FILE with LEFT and RIGHT string."
@@ -776,14 +782,16 @@ auxillary files unless TARBALL-ONLY is non-nil ."
     (with-temp-buffer
       (insert
        (replace-regexp-in-string
-        "[ \t\n]+" " "
-        (replace-regexp-in-string
-         "{\\([^}]+\\)}"
-         (lambda (str)
-           (format "%s" (eval (read (match-string 1 str)) ctx)))
-         (replace-regexp-in-string
-          "'" "\""
-          "<?xml version='1.0'?>
+        "{\\([^}]+\\)}"
+        (lambda (str)
+          (elpaa--html-quote
+           (format "%s" (eval (read (match-string 1 str)) ctx))))
+        (eval-when-compile
+          (replace-regexp-in-string
+           "[ \t\n]+" " "
+           (replace-regexp-in-string
+            "'" "\""
+            "<?xml version='1.0'?>
 <svg xmlns='http://www.w3.org/2000/svg'
      xmlns:xlink='http://www.w3.org/1999/xlink'
      width='{width}'
@@ -829,7 +837,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
           transform='scale(.1)'
           fill='#fff' textLength='{rw}'>{right}</text>
   </g>
-</svg>"))))
+</svg>")))))
       (write-region (point-min) (point-max) file))))
 
 (defun elpaa--make-one-package (pkg-spec &optional tarball-only)
