@@ -636,11 +636,16 @@ auxillary files unless TARBALL-ONLY is non-nil ."
 	   (ignore-error file-error     ;E.g. under w32!
 	     (make-symbolic-link (file-name-nondirectory tarball) link)))
          (setq oldtarballs
+               (let ((elpaa--keep-max
+                      ;; In the devel directory, don't bother keeping so
+                      ;; many tarballs.
+                      (if revision-function elpaa--keep-max
+                        (/ elpaa--keep-max 2))))
                (elpaa--prune-old-tarballs tarball oldtarballs destdir
                                           ;; Keep release versions at
                                           ;; least 2 years.
                                           (if revision-function
-                                              (* 60 60 24 365 2))))
+                                                (* 60 60 24 365 2)))))
          (let ((default-directory (expand-file-name destdir)))
            ;; This also creates <pkg>-readme.txt and <pkg>.svg.
            (elpaa--html-make-pkg pkgdesc pkg-spec
@@ -983,8 +988,8 @@ Signal an error if the command did not finish with exit code 0."
 (add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
 
 (defun elpaa--metadata (dir pkg-spec)
-  "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS),
-where SIMPLE is non-nil if the package is simple;
+  "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS).
+SIMPLE is non-nil if the package is simple;
 VERSION is the version string of the simple package;
 DESCRIPTION is the brief description of the package;
 REQ is a list of requirements;
@@ -1221,10 +1226,34 @@ which see."
           "\n</pre>\n"))
 
 (cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
+  ;; FIXME: When the HTML refers to files (typically pictures), we should
+  ;; make those links works.
   (elpaa--export-org (cdr section) 'html
                      :body-only t
                      :ext-plist (append '(:html-toplevel-hlevel 3)
                                         elpaa--org-export-options)))
+
+(cl-defmethod elpaa--section-to-html ((section (head text/markdown)))
+  (with-temp-buffer
+    (let ((input-filename
+           (make-temp-file (expand-file-name "elpaa--export-input"))))
+      (unwind-protect
+          (progn
+            (write-region (cdr section) nil input-filename)
+            (elpaa--call-sandboxed t "markdown" input-filename))
+        (delete-file input-filename)))
+    ;; Adjust headings since this HTML fragment will be inserted
+    ;; inside an <h2> section.
+    ;; FIXME: It would be much better to tell the conversion tool
+    ;; to do that, or maybe to use CSS to get the same result.
+    ;; Especially since this naive regexp search may match
+    ;; false positives!
+    (goto-char (point-min))
+    (while (re-search-forward "</?h\\([1-9][0-9]*\\)>" nil t)
+      (replace-match (number-to-string
+                      (+ 2 (string-to-number (match-string 1))))
+                     t t nil 1))
+    (buffer-string)))
 
 (defun elpaa--extension-to-mime (ext)
   (pcase ext
@@ -1334,11 +1363,17 @@ arbitrary code."
           (elpaa--get-section
            "News" (elpaa--spec-get pkg-spec :news
                                    '("NEWS" "NEWS.rst" "NEWS.md" "NEWS.org"))
-           dir pkg-spec))
-         (text (elpaa--section-to-plain-text news)))
-    (if (< (length text) 4000)
-        text
-      (concat (substring text 0 4000) "...\n...\n"))))
+           dir pkg-spec)))
+    (if (< (length (cdr news)) 4000)
+        news
+      (with-temp-buffer
+        (insert (cdr news))
+        (goto-char (point-min))
+        (forward-char 4000)
+        (forward-line 1)
+        (cons (car news)
+              (concat (buffer-substring (point-min) (point))
+                      "...\n...\n"))))))
 
 
 (defun elpaa--html-quote (txt)
@@ -1388,7 +1423,7 @@ arbitrary code."
   (concat (file-name-base docfile) ".html"))
 
 (defun elpaa--html-insert-docs (pkg-spec)
-  (let ((docfiles (plist-get (cdr pkg-spec) :internal--html-docs))
+  (let ((docfiles (reverse (plist-get (cdr pkg-spec) :internal--html-docs)))
 	;; `html-dir' is relative to the tarball directory, so html
 	;; references on mirrors work.  It does not include the
 	;; package name, so cross references among package docs work.
@@ -1398,15 +1433,15 @@ arbitrary code."
 	       ;; FIXME: This dir is shared, so it will always exist.
 	       ;; Should we use (expand-file-name pkg html-dir) instead?
                (file-readable-p html-dir)) ;; html doc files were built
-      (insert "<h2>Documentation</h2><table>\n")
+      (insert "<dt>Manual</dt> <dd>\n")
       (dolist (doc docfiles)
 	(let ((html-file (concat html-dir (cdr doc))))
-	  (insert "<tr><td><a href=\"" html-file "\">"
+	  (insert "<a href=\"" html-file "\">"
 	          (car doc)
-	          "</a></td></tr>\n")
+	          "</a>\n")
 	  ;; FIXME: get link text from info direntry?
 	  ))
-      (insert "</table>\n"))))
+      (insert "</dd>\n"))))
 
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
   (let* ((name (symbol-name (car pkg)))
@@ -1455,6 +1490,7 @@ arbitrary code."
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
            (elpaa--get-prop "URL" name srcdir mainsrcfile)))
       (insert (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n" (elpaa--html-quote name)))
+      (elpaa--html-insert-docs pkg-spec)
       (insert "</dl>")
       (insert (format "<p>To install this package, run in Emacs:</p>
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
@@ -1464,9 +1500,10 @@ arbitrary code."
              (readme-html (elpaa--section-to-html readme-content))
              (readme-output-filename (concat name "-readme.txt")))
         (write-region readme-text nil readme-output-filename)
-        (insert "<h2>Full description</h2>\n" readme-html))
-
-      (elpaa--html-insert-docs pkg-spec)
+        (insert "<h2>Full description</h2>\n"
+                "<div class=\"splice fulldescription\">\n"
+                readme-html
+                "\n</div>\n"))
 
       ;; (message "latest=%S; files=%S" latest files)
       (unless (< (length files) (if (zerop (length latest)) 1 2))
@@ -1482,7 +1519,10 @@ arbitrary code."
         (insert "</table>\n"))
       (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
-          (insert "<h2>News</h2><pre>\n" (elpaa--html-quote news) "\n</pre>\n")))
+          (insert "<h2>News</h2>\n"
+                  "<div class=\"splice news\">\n"
+                  (elpaa--section-to-html news)
+                  "\n</div>\n")))
       (insert (elpaa--html-footer))
       (write-region (point-min) (point-max) (concat name ".html")))))
 
@@ -1932,7 +1972,8 @@ You can now find it in M-x package-list RET.
 More at " (elpaa--default-url pkgname))
         (let ((news (elpaa--get-NEWS pkg-spec dir)))
           (when news
-            (insert "\n\nRecent NEWS:\n\n" news)))
+            (insert "\n\nRecent NEWS:\n\n"
+                    (elpaa--section-to-plain-text news))))
         ;; (pop-to-buffer (current-buffer)) (debug t)
         (message-send)
         ))))
@@ -1955,6 +1996,7 @@ directory; one of archive, archive-devel."
       (when (not (file-readable-p html-dir)) ;FIXME: Why bother testing?
 	(make-directory html-dir t)))
 
+    (plist-put (cdr pkg-spec) :internal--html-docs nil)
     (dolist (f docfiles)
       (elpaa--build-Info-1 pkg-spec f dir html-dir))))
 
@@ -2019,8 +2061,7 @@ relative to elpa root."
       ;; FIXME: also build html from org source.
       )
 
-    (when (and docfile (file-readable-p docfile)
-               (string-match "\\.texi\\(nfo\\)?\\'" docfile))
+    (when (and docfile (string-match "\\.texi\\(nfo\\)?\\'" docfile))
       (let ((info-file (concat
                         (file-name-sans-extension
                          (file-name-nondirectory docfile))
