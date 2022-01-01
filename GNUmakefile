@@ -2,7 +2,8 @@
 #
 
 EMACSBIN=emacs
-EMACS=$(EMACSBIN) --batch
+EMACSFLAGS=--no-site-lisp
+EMACS=$(EMACSBIN) $(EMACSFLAGS) --batch
 RM=rm -f
 
 PKG_DESCS_MK=.pkg-descs.mk
