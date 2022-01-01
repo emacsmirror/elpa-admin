@@ -73,7 +73,8 @@ If nil, don't build the docs in the first place.
 Directory is relative to the tarball directory.
 Can be set in elpa-config via `doc-dir'.")
 
-(defvar elpaa--debug nil)
+(defvar elpaa--debug (getenv "ELPA_DEBUG")
+  "Non-nil means to print debug messages.")
 
 (defvar elpaa--org-export-options
   '(:with-author nil :with-creator nil :with-broken-links t)
