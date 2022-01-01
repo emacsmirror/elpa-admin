@@ -1847,7 +1847,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   (let* ((pkgname (car pkg-spec))
          (default-directory (elpaa--dirname pkgname "packages"))
          (ignores (elpaa--spec-get pkg-spec :ignored-files))
-         (all-ignores '("." ".." ".git" "test" "tests" ".dir-locals.el"))
+         (all-ignores '("." ".." ".git" ".dir-locals.el" ".mailmap"
+                        ".github" ".travis.yml"
+                        "test" "tests"))
          (dir-files (lambda (d)
                       (cl-set-difference (directory-files d)
                                          all-ignores :test #'equal)))
