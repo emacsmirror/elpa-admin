@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2021  Free Software Foundation, Inc
+;; Copyright (C) 2011-2022  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
