@@ -1,0 +1,17 @@
+;;; Directory Local Variables
+;;; For more information see (info "(emacs) Directory Variables")
+
+((nil . ((tab-width . 8)
+         (sentence-end-double-space . t)
+         (fill-column . 70)
+         (bug-reference-url-format . "https://debbugs.gnu.org/%s")))
+ (log-edit-mode . ((log-edit-font-lock-gnu-style . t)
+                   (log-edit-setup-add-author . t)))
+ (change-log-mode . ((add-log-time-zone-rule . t)
+                     (fill-column . 74)
+                     (mode . bug-reference)))
+ (diff-mode . ((mode . whitespace)))
+ (emacs-lisp-mode . ((indent-tabs-mode . nil)
+                     (electric-quote-comment . nil)
+                     (electric-quote-string . nil)
+                     (mode . bug-reference-prog))))
