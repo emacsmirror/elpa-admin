@@ -1283,7 +1283,8 @@ HEADER in package's main file."
               (cdr file))))
     (when (consp file) (setq file (car file))))
   (cond
-   ((file-readable-p (expand-file-name file srcdir))
+   ((let ((fil (expand-file-name file srcdir)))
+      (and (file-readable-p fil) (file-regular-p fil)))
     ;; Return FILE's contents.
     (let ((type (elpaa--extension-to-mime (file-name-extension file)))
           (content (with-temp-buffer
@@ -1349,15 +1350,16 @@ arbitrary code."
       (delete-file output-filename))))
 
 (defun elpaa--get-README (pkg-spec dir)
-  (or (elpaa--get-section
-       "Commentary" (elpaa--spec-get pkg-spec :readme
-                                     '("README" "README.rst"
-                                       ;; Most README.md files seem to be
-                                       ;; currently worse than the Commentary:
-                                       ;; section :-( "README.md"
-                                       "README.org"))
-       dir pkg-spec)
-      '(text/plain . "!No description!")))
+  (let ((readme (elpaa--spec-get pkg-spec :readme
+                                 '("README" "README.rst"
+                                   ;; Most README.md files seem to be
+                                   ;; currently worse than the Commentary:
+                                   ;; section :-( "README.md"
+                                   "README.org"))))
+    (or (elpaa--get-section
+         "Commentary" (unless (eq readme 'ignore) readme)
+         dir pkg-spec)
+        '(text/plain . "!No description!"))))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
   (let* ((news
