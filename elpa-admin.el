@@ -612,6 +612,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
               ,(format "s|^packages/%s|%s-%s|" pkgname pkgname vers)
               "-chf" ,tarball
               ,(concat "packages/" pkgname)))
+     (cl-assert (file-readable-p tarball))
      (unless tarball-only
        (let* ((pkgdesc
                ;; FIXME: `elpaa--write-pkg-file' wrote the metadata to
