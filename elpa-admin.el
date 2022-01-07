@@ -1359,7 +1359,7 @@ arbitrary code."
     (or (elpaa--get-section
          "Commentary" (unless (eq readme 'ignore) readme)
          dir pkg-spec)
-        '(text/plain . "!No description!"))))
+        '(text/plain . "No description available."))))
 
 (defun elpaa--get-NEWS (pkg-spec dir)
   (let* ((news
