@@ -277,13 +277,18 @@ Assumes that the current worktree holds a snapshot version."
 
 (defun elpaa--select-revision (dir pkg-spec rev)
   "Checkout revision REV in DIR of PKG-SPEC.
-Do it without leaving the current branch."
+Do it without leaving the current branch.  If REV is nil, then
+use the revision that is already checked out.  If REV is a
+function, then call it with no arguments and use the value it
+returns.  Return the selected revision."
   (let* ((ftn (file-truename
                (expand-file-name (elpaa--main-file pkg-spec) dir)))
          ;; FIXME: Emacs-26's `vc-git-working-revision' ignores its arg and
          ;; uses uses the `default-directory' to get the revision.
          (default-directory (file-name-directory ftn))
          (cur-rev (vc-working-revision ftn)))
+    (when (functionp rev)
+      (setq rev (funcall rev)))
     ;; Don't fail in case `rev' is not known.
     (if (or (not rev) (equal rev cur-rev))
         (elpaa--message "Current revision is already desired revision!")
@@ -292,7 +297,8 @@ Do it without leaving the current branch."
         ;; so that for :core packages we properly affect the Emacs tree.
         (elpaa--call t "git" "reset" "--merge" rev)
         (elpaa--message "Reverted to release revision %s\n%s"
-                        rev (buffer-string))))))
+                        rev (buffer-string))))
+    (or rev cur-rev)))
 
 (defun elpaa--make-tar-transform (pkgname r)
   (let ((from (nth 0 r)) (to (nth 1 r)))
@@ -571,6 +577,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
           (_ (when (and destdir (not (file-directory-p destdir)))
                (make-directory destdir)))
           (vers (nth 1 metadata))
+          (revision (elpaa--select-revision dir pkg-spec revision-function))
           (elpaignore (expand-file-name ".elpaignore" dir))
           (ignores (elpaa--spec-get pkg-spec :ignored-files))
           (renames (elpaa--spec-get pkg-spec :renames))
@@ -587,14 +594,13 @@ auxillary files unless TARBALL-ONLY is non-nil ."
      (when ldir
        (cl-pushnew (list (file-name-as-directory ldir) "") renames
                    :test #'equal))
-     (when revision-function
-       (elpaa--select-revision dir pkg-spec (funcall revision-function)))
      (elpaa--copyright-check pkg-spec)
-     ;; Run `make' before building the Info file, so that the `make' rule
-     ;; can be used to build the Info/Texinfo file.
-     (elpaa--make pkg-spec dir)
-     (elpaa--build-Info pkg-spec dir destdir)
-     (elpaa--write-pkg-file dir pkgname metadata)
+     (let ((process-environment (elpaa--makeenv vers revision)))
+       ;; Run `make' before building the Info file, so that the `make'
+       ;; rule can be used to build the Info/Texinfo file.
+       (elpaa--make pkg-spec dir)
+       (elpaa--build-Info pkg-spec dir destdir))
+     (elpaa--write-pkg-file dir pkgname metadata revision)
      ;; FIXME: Allow renaming files or selecting a subset of the files!
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
      (cl-assert (not (string-match "[][*\\|?]" vers)))
@@ -655,6 +661,15 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                                    . ,oldtarballs)
                                  dir))))
      'new)))
+
+(defun elpaa--makeenv (version revision)
+  "Set the PACKAGE_VERSION and PACKAGE_REVISION environment variables.
+Set them to the values specified by VERSION and REVISION in a copy
+of the current `process-environment'.  Return the modified copy."
+  (let ((process-environment (copy-sequence process-environment)))
+    (setenv "PACKAGE_VERSION" version)
+    (setenv "PACKAGE_REVISION" revision)
+    process-environment))
 
 (defun elpaa--git-date-to-timestamp (gitdate)
   "Convert date from git (ISO 6401) to a timestamp."
@@ -1092,7 +1107,14 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
       (error "File not found: %s" pkg-file))
     (elpaa--form-from-file-contents pkg-file)))
 
-(defun elpaa--write-pkg-file (pkg-dir name metadata)
+(defun elpaa--write-pkg-file (pkg-dir name metadata &optional revision)
+  (setf (alist-get :commit (nth 4 metadata))
+        (or revision
+            ;; FIXME: Emacs-26's `vc-git-working-revision' ignores its
+            ;; arg and uses the `default-directory' to get the revision.
+            ;; Similar to the kludge in `elpaa--select-revision'.
+            (let ((default-directory pkg-dir))
+              (vc-working-revision pkg-dir))))
   ;; FIXME: Use package-generate-description-file!
   (let ((pkg-file (expand-file-name (concat name "-pkg.el") pkg-dir))
 	(print-level nil)
