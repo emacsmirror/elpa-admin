@@ -1578,7 +1578,7 @@ arbitrary code."
       (let ((elpaa--debug nil))
         (elpaa--call t "git" "checkout" "--"
                      (concat (file-name-nondirectory dirname) "-pkg.el")))
-      (erase-buffer)              ;Throw away the error message we usually get.
+      (erase-buffer)     ;Throw away the error message we usually get.
       (cond
        ((file-directory-p ".git")
         (message "Running git pull in %S" default-directory)
@@ -1607,12 +1607,12 @@ arbitrary code."
                      ;; There is an upstream to set it to!
                      (elpaa--git-branch-p ortb))
                 (elpaa--call t "git" "branch" "--set-upstream-to" ortb))
-              (if (or (not ortb)    ;Not a worktree, presumably.
-                      (elpaa--git-branch-p ortb)
+              (if (or (not ortb)        ;Not a worktree, presumably.
+                      (elpaa--git-branch-p ortb))
 		  (progn
 		    (message "Updating worktree in %S" default-directory)
 		    (elpaa--call t "git" "merge"))
-	        (message "Not pushed to origin yet.  Not updating worktree")))))))
+	        (message "Not pushed to origin yet.  Not updating worktree"))))))
        (t (error "No .git in %S" default-directory)))
       (unless (and (eobp) (bobp))
         (message "Updated %s:%s%s" dirname
