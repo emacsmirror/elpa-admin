@@ -1983,7 +1983,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
               (mapcar (lambda (x)
                         (and (stringp (cdr-safe x))
                              (string-match "@" (cdr x))
-                             (format "%s <%s>" (car x) (cdr x))))
+                             (format "%s <%s>"
+                                     (replace-regexp-in-string "[<@>,]" " "
+                                                               (car x))
+                                     (cdr x))))
                       maints))
              (maintainers
               (mapconcat #'identity (delq nil maint-emails) ",")))
