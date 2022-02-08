@@ -178,6 +178,9 @@ Delete backup files also."
 (defun elpaa--spec-get (pkg-spec prop &optional default)
   (or (plist-get (cdr pkg-spec) prop) default))
 
+(defun elpaa--spec-member (pkg-spec prop)
+  (plist-member (cdr pkg-spec) prop))
+
 (defun elpaa--main-file (pkg-spec)
   (or (elpaa--spec-get pkg-spec :main-file)
       (let ((ldir (elpaa--spec-get pkg-spec :lisp-dir)))
@@ -1860,8 +1863,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
       (let* ((pkg-spec (assoc pkg specs))
              (kind (nth 1 pkg-spec)))
         (pcase kind
-          ((or ':url `:external) (elpaa--worktree-sync pkg-spec))
-          (`:core
+          (':url (elpaa--worktree-sync pkg-spec))
+          (':core
            (if (not with-core)
                (unless msg-done
                  (setq msg-done t)
@@ -2183,8 +2186,7 @@ relative to elpa root."
 
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
-         (url (or (elpaa--spec-get pkg-spec :external)
-                  (elpaa--spec-get pkg-spec :url)))
+         (url (elpaa--spec-get pkg-spec :url))
          (branch (elpaa--branch pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
@@ -2196,7 +2198,8 @@ relative to elpa root."
                                       release-branch
                                       (elpaa--urtb pkg-spec "release")))))
     (if (not url)
-        (message "No upstream URL in %s for %s" elpaa--specs-file pkg)
+        (unless (elpaa--spec-member pkg-spec :url)
+          (message "No upstream URL in %s for %s" elpaa--specs-file pkg))
       (message "Fetching updates for %s..." pkg)
       (with-temp-buffer
         (cond
