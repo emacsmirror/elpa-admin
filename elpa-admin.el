@@ -1981,12 +1981,16 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (maints (if (consp (car maint)) maint (list maint)))
              (maint-emails
               (mapcar (lambda (x)
-                        (and (stringp (cdr-safe x))
-                             (string-match "@" (cdr x))
-                             (format "%s <%s>"
-                                     (replace-regexp-in-string "[<@>,]" " "
-                                                               (car x))
-                                     (cdr x))))
+                        (let ((name  (car-safe x))
+                              (email (cdr-safe x)))
+                          (if (not (and (stringp email)
+                                        (string-match "@" email)))
+                              (message "Error, no email address: %S" x)
+                            (while (string-match "[<@>,]" name)
+                              (message "Error, weird char \"%s\" in name: %S"
+                                       (match-string 0 name) name)
+                              (setq name (replace-match " " t t name)))
+                            (format "%s <%s>" name email))))
                       maints))
              (maintainers
               (mapconcat #'identity (delq nil maint-emails) ",")))
