@@ -300,7 +300,24 @@ returns.  Return the selected revision."
         ;; so that for :core packages we properly affect the Emacs tree.
         (elpaa--call t "git" "reset" "--merge" rev)
         (elpaa--message "Reverted to release revision %s\n%s"
-                        rev (buffer-string))))
+                        rev (buffer-string)))
+      ;; We should make sure we go back to the head of the branch afterwards,
+      ;; tho it's convenient to do it more lazily, e.g. in case of error it
+      ;; can make it easier to diagnose the problem.
+      ;; But for `:core' packages it's important because the same tree
+      ;; may be used for another package in the same run, so we'd otherwise
+      ;; end up (re)building old versions.
+      ;; FIXME: We should probably fix this better in
+      ;; `elpaa--get-release-revision' and/or `elpaa--get-last-release'
+      ;; not to depend on the current in-tree revision.
+      (when (eq :core (cadr pkg-spec))
+        (elpaa--temp-file
+         (lambda ()
+           (let ((default-directory (file-name-directory ftn)))
+             (with-temp-buffer
+               (elpaa--call t "git" "merge")
+               (elpaa--message "Restored the head revision\n%s"
+                               (buffer-string))))))))
     (or rev cur-rev)))
 
 (defun elpaa--make-tar-transform (pkgname r)
