@@ -2258,16 +2258,19 @@ relative to elpa root."
   (let* ((pkg (car pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
+         (ortb-p (elpaa--git-branch-p ortb))
          (urtb (elpaa--urtb pkg-spec)))
     ;; FIXME: Arrange to merge if it's not a fast-forward.
     (with-temp-buffer
       (cond
-       ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor" urtb ortb))
+       ((and ortb-p
+             (zerop (elpaa--call t "git" "merge-base"
+                                 "--is-ancestor" urtb ortb)))
         (message "Nothing to push for %s" pkg))
-       ((and
-         (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                  ortb urtb)))
-         (elpaa--git-branch-p ortb))
+       ((and ortb-p
+             (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                                      ortb urtb)))
+             (elpaa--git-branch-p ortb))
         (message "Can't push %s: not a fast-forward" pkg))
        ((equal 0 (apply #'elpaa--call
                         t "git" "push" "--set-upstream"
