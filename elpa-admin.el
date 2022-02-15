@@ -2227,7 +2227,8 @@ relative to elpa root."
                                    (list release-refspec)))))
           (message "Fetch error for %s:\n%s" pkg (buffer-string)))
 	 ((not (elpaa--git-branch-p ortb))
-	  (message "New package %s hasn't been pushed to origin yet" pkg))
+	  (message "New package %s hasn't been pushed to origin yet" pkg)
+	  (when k (funcall k pkg-spec)))
          ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
                               urtb ortb))
           (message "Nothing new upstream for %s" pkg))
