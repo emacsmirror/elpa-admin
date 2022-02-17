@@ -2005,7 +2005,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                               (email (cdr-safe x)))
                           (if (not (and (stringp email)
                                         (string-match "@" email)))
-                              (message "Error, no email address: %S" x)
+                              (progn
+                                (message "Error, no email address: %S" x)
+                                nil)
                             (while (string-match "[<@>,]" name)
                               (message "Error, weird char \"%s\" in name: %S"
                                        (match-string 0 name) name)
