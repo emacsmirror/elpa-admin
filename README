@@ -209,8 +209,11 @@ Else, it generates the auxiliary files like =[PKGNAME]-pkg.el= and
 Build that tarball from the commit currently in =packages/[PKGNAME]=
 
 ** =build/[PKGNAME]=
-Build the ELPA tarball(s) for PKGNAME.  The result is placed in
-the =archive= and =archive-devel= subdirectories.
+Build the ELPA tarball(s) and other files like PKGNAME.html and
+PKGNAME.svg for PKGNAME.  The result is placed in the =archive= and
+=archive-devel= subdirectories.
+
+This can be used to test commentary and changelog extraction.
 
 ** =build-all=
 Same as before but does it for all the packages listed in the
