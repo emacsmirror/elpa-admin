@@ -627,11 +627,9 @@ auxillary files unless TARBALL-ONLY is non-nil ."
      (apply #'elpaa--call
             nil "tar"
             `("--exclude-vcs"
-              ,@(cond
-                 (ignores
-                  (mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
-                          ignores))
-                 ((file-readable-p elpaignore) `("-X" ,elpaignore)))
+              ,@(mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkgname i))
+                        ignores)
+              ,@(when (file-readable-p elpaignore) `("-X" ,elpaignore))
               ,@(mapcar (lambda (r) (elpaa--make-tar-transform pkgname r))
                         renames)
               "--transform"
