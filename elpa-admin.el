@@ -1382,6 +1382,7 @@ arbitrary code."
             (elpaa--call-sandboxed
              t "emacs" "--batch" "-l" (format "ox-%S" backend)
              input-filename
+             "--eval" "(setq org-babel-confirm-evaluate-answer-no t)"
              "--eval" (format "(write-region (org-export-as '%s nil nil %S '%S) nil %S)"
                               backend body-only ext-plist output-filename)))
           (with-temp-buffer
@@ -2111,6 +2112,7 @@ relative to elpa root."
          ;; otherwise Org will want to export into the Emacs tree!
          "--eval" "(setq vc-follow-symlinks nil)"
          docfile
+         "--eval" "(setq org-babel-confirm-evaluate-answer-no t)"
          "--eval" "(message \"ELPATEXI=%s\" (org-texinfo-export-to-texinfo))")
         (message "%s" (buffer-string))
         (goto-char (point-max))
