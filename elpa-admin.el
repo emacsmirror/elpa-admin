@@ -973,7 +973,7 @@ The INFILE and DISPLAY arguments are fixed as nil."
     "--tmpfs" "/tmp"))
 
 (defvar elpaa--sandbox-ro-binds
-  '("/lib" "/lib64" "/bin" "/usr" "/etc/alternatives" "/etc/emacs"))
+  '("/lib" "/lib64" "/bin" "/usr" "/etc/alternatives" "/etc/emacs" "/gnu"))
 
 (defun elpaa--call-sandboxed (destination &rest args)
   "Like ‘elpaa--call’ but sandboxed.
