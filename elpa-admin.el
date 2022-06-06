@@ -610,7 +610,8 @@ auxillary files unless TARBALL-ONLY is non-nil ."
               (lambda (file)
                 (string-match re file)
                 (cons (match-string 1 file) file))
-              (directory-files destdir nil re)))))
+              (directory-files destdir nil re))))
+          rendered)
      (when ldir
        (cl-pushnew (list (file-name-as-directory ldir) "") renames
                    :test #'equal))
@@ -621,6 +622,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
        (elpaa--make pkg-spec dir)
        (elpaa--build-Info pkg-spec dir destdir))
      (elpaa--write-pkg-file dir pkgname metadata revision)
+     (setq rendered (elpaa--write-plain-readme dir pkg-spec))
      ;; FIXME: Allow renaming files or selecting a subset of the files!
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
      (cl-assert (not (string-match "[][*\\|?]" vers)))
@@ -677,7 +679,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
            (elpaa--html-make-pkg pkgdesc pkg-spec
                                  `((,vers . ,(file-name-nondirectory tarball))
                                    . ,oldtarballs)
-                                 dir))))
+                                 dir rendered))))
      'new)))
 
 (defun elpaa--makeenv (version revision)
@@ -1162,6 +1164,29 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      nil
      pkg-file)))
 
+(defun elpaa--write-plain-readme (pkg-dir pkg-spec)
+  "Render a plain text readme from PKG-SPEC in PKG-DIR.
+This is only done if necessary, that is if the readme contents
+are not already taken to be formatted in plain text or when the
+readme file has an unconventional name"
+  (let ((readme-content (elpaa--get-README pkg-spec pkg-dir)))
+    (cond
+     ((eq (car readme-content) 'text/x-org)
+      (let ((rendered (elpaa--section-to-plain-text readme-content)))
+        (write-region rendered nil (expand-file-name "README-elpa" pkg-dir))
+        rendered))
+     ((let* ((readme-file (elpaa--spec-get pkg-spec :readme))
+             (known-readme-names            ;see `package--get-description'
+              '("README-elpa"
+                "README-elpa.md"
+                "README"
+                "README.rst"
+                "README.org")))
+        (when (and readme-file (not (member readme-file known-readme-names)))
+          (make-symbolic-link "README-elpa" readme-file)
+          (cdr readme-content))))
+     ((cdr readme-content)))))
+
 (defun elpaa-batch-generate-description-file (&rest _)
   "(Re)build the <PKG>-pkg.el file for particular packages."
   (while command-line-args-left
@@ -1489,7 +1514,7 @@ arbitrary code."
 	  ))
       (insert "</dd>\n"))))
 
-(defun elpaa--html-make-pkg (pkg pkg-spec files srcdir)
+(defun elpaa--html-make-pkg (pkg pkg-spec files srcdir plain-readme)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
          (mainsrcfile (expand-file-name (elpaa--main-file pkg-spec) srcdir))
@@ -1542,7 +1567,7 @@ arbitrary code."
                        <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
                       name))
       (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
-             (readme-text (elpaa--section-to-plain-text readme-content))
+             (readme-text plain-readme)
              (readme-html (elpaa--section-to-html readme-content))
              (readme-output-filename (concat name "-readme.txt")))
         (write-region readme-text nil readme-output-filename)
