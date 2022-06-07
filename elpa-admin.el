@@ -1324,8 +1324,9 @@ HEADER in package's main file."
               (cdr file))))
     (when (consp file) (setq file (car file))))
   (cond
-   ((let ((fil (expand-file-name file srcdir)))
-      (and (file-readable-p fil) (file-regular-p fil)))
+   ((when file
+      (let ((file (expand-file-name file srcdir)))
+        (and (file-readable-p file) (file-regular-p file))))
     ;; Return FILE's contents.
     (let ((type (elpaa--extension-to-mime (file-name-extension file)))
           (content (with-temp-buffer
