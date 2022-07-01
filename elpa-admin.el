@@ -1182,7 +1182,9 @@ readme file has an unconventional name"
                 "README"
                 "README.rst"
                 "README.org")))
-        (when (and readme-file (not (member readme-file known-readme-names)))
+        (when (and readme-file
+                   (not (eq readme-file 'ignore))
+                   (not (member readme-file known-readme-names)))
           (make-symbolic-link "README-elpa" readme-file)
           (cdr readme-content))))
      ((cdr readme-content)))))
