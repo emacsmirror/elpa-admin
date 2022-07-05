@@ -1185,7 +1185,8 @@ readme file has an unconventional name"
         (when (and readme-file
                    (not (eq readme-file 'ignore))
                    (not (member readme-file known-readme-names)))
-          (make-symbolic-link "README-elpa" readme-file)
+          (with-demoted-errors "%S"
+            (make-symbolic-link readme-file "README-elpa"))
           (cdr readme-content))))
      ((cdr readme-content)))))
 
