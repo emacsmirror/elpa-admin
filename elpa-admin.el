@@ -1186,7 +1186,8 @@ readme file has an unconventional name"
                    (not (eq readme-file 'ignore))
                    (not (member readme-file known-readme-names)))
           (with-demoted-errors "%S"
-            (make-symbolic-link readme-file "README-elpa"))
+            (let ((default-directory pkg-dir))
+              (make-symbolic-link readme-file "README-elpa")))
           (cdr readme-content))))
      ((cdr readme-content)))))
 
