@@ -1185,9 +1185,12 @@ readme file has an unconventional name"
         (when (and readme-file
                    (not (eq readme-file 'ignore))
                    (not (member readme-file known-readme-names)))
-          (with-demoted-errors "%S"
-            (let ((default-directory pkg-dir))
-              (make-symbolic-link readme-file "README-elpa")))
+          (let ((default-directory pkg-dir))
+            ;; It's tempting to use a symlink, but our tarballs should not
+            ;; contain symlinks (so they work under w32, for instance,
+            ;; and also because I'm not sure how well tar-untar-buffer
+            ;; handles symlinks).
+            (copy-file readme-file "README-elpa"))
           (cdr readme-content))))
      ((cdr readme-content)))))
 
