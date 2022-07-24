@@ -2451,5 +2451,31 @@ relative to elpa root."
       (write-region (point-min) (point-max)
                     dstfile nil 'silent))))
 
+;;; Edit support for `elpa-packages'
+
+(defun elpaa--sort-packages ()
+  "Sort packages by alphabetical order."
+  (interactive)
+  (goto-char (point-min))
+  (down-list 1)
+  (sort-subr nil
+             (lambda ()
+               (unless (save-excursion
+                         (forward-comment (point-max))
+                         (looking-at "("))
+                 (goto-char (point-max))))
+             (lambda ()
+               (forward-sexp 1)
+               (skip-chars-forward " \t")
+               (when (or (eolp) (looking-at ";"))
+                 ;; A comment was found between the two entries.
+                 ;; Since it's right after the end (on the same line),
+                 ;; it belongs to this record, otherwise it belongs
+                 ;; to the next.
+                 (forward-line 1))
+               (skip-chars-forward " \t\n")
+               (skip-chars-backward " \t"))
+             (lambda () (forward-comment (point-max)))))
+
 (provide 'elpa-admin)
 ;;; elpa-admin.el ends here
