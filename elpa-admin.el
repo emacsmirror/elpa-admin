@@ -2096,22 +2096,39 @@ directory; one of archive, archive-devel."
     (dolist (f docfiles)
       (elpaa--build-Info-1 pkg-spec f dir html-dir))))
 
+(defun elpaa--makeinfo (input output &optional extraargs)
+  (let* ((input-dir (file-name-directory input))
+         (input-name (file-name-nondirectory input))
+         (output-ext (file-name-extension output))
+	 ;; The sandbox may not allow write access to the output,
+         ;; so we first create the file inside the sandbox and then
+         ;; move it to its intended destination.
+	 (tmpfile
+	  (concat (make-temp-name (expand-file-name "doc" input-dir))
+	          (if output-ext (concat "." output-ext)))))
+    (elpaa--temp-file tmpfile)
+    (with-temp-buffer
+      ;; We change directory to that of the input file, because
+      ;; `@include' searches for the files relative to PWD rather than
+      ;; relative to the includer-file's location (this apparently
+      ;; only applies to files whose name starts with `.' or `..'), so
+      ;; we make the two dirs the same, to reduce the risk of problems.
+      (let ((default-directory
+             (if input-dir (expand-file-name input-dir)
+               default-directory)))
+        (apply #'elpaa--call-sandboxed
+               t "makeinfo" "--no-split" input-name "-o" tmpfile extraargs))
+      (message "%s" (buffer-string)))
+    (elpaa--message "Renaming %S => %S" tmpfile output)
+    (rename-file tmpfile output t)))
+
 (defun elpaa--html-build-doc (pkg-spec docfile html-dir)
   (setq html-dir (directory-file-name html-dir))
   (let* ((destname (elpaa--doc-html-file docfile))
 	 (html-file (expand-file-name destname html-dir))
 	 (html-xref-file
-	  (expand-file-name destname (file-name-directory html-dir)))
-	 ;; The sandbox doesn't allow write access to the `html-dir',
-         ;; so we first create the file inside the sandbox and then
-         ;; we move it to its intended destination.
-	 (tmpfile
-	  (concat (make-temp-name (expand-file-name "doc")) ".html")))
-    (with-temp-buffer
-      (elpaa--call-sandboxed
-       t "makeinfo" "--no-split" "--html" docfile "-o" tmpfile)
-      (message "%s" (buffer-string)))
-    (rename-file tmpfile html-file t)
+	  (expand-file-name destname (file-name-directory html-dir))))
+    (elpaa--makeinfo docfile html-file '("--html"))
     ;; FIXME: Use `push' in Emacs≥28
     (plist-put (cdr pkg-spec)
                :internal--html-docs
@@ -2164,10 +2181,7 @@ relative to elpa root."
                          (file-name-nondirectory docfile))
                         ".info")))
         (elpaa--temp-file info-file)
-        (with-temp-buffer
-          (elpaa--call-sandboxed
-           t "makeinfo" "--no-split" docfile "-o" info-file)
-          (message "%s" (buffer-string)))
+        (elpaa--makeinfo docfile info-file)
 
 	(when html-dir (elpaa--html-build-doc pkg-spec docfile html-dir))
 
