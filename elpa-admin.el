@@ -1202,11 +1202,11 @@ readme file has an unconventional name"
            (pkg (file-name-nondirectory (directory-file-name dir)))
            (pkg-spec (elpaa--get-package-spec pkg 'noerror)))
       (elpaa--write-pkg-file dir pkg
-                               (elpaa--metadata dir pkg-spec)))))
+                             (elpaa--metadata dir pkg-spec)))))
 
 ;;; Make the HTML pages for online browsing.
 
-(defun elpaa--html-header (title &optional header)
+(defun elpaa--html-header (title &optional header head-extra)
   (format "<!DOCTYPE HTML PUBLIC>
 <html lang=\"en\" xml:lang=\"en\">
     <head>
@@ -1214,10 +1214,7 @@ readme file has an unconventional name"
         <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">
         <link rel=\"shortcut icon\" type=\"image/png\" href=\"../favicon.png\">
         <link rel=\"stylesheet\" href=\"//code.cdn.mozilla.net/fonts/fira.css\">
-        <link rel=\"stylesheet\" type=\"text/css\" href=\"../layout.css\">
-        <script src=\"../javascript/jquery.min.js\" type=\"text/javascript\"></script>
-        <script src=\"../javascript/jquery.filtertable.min.js\" type=\"text/javascript\"></script>
-        <script src=\"../javascript/package-search.js\" type=\"text/javascript\"></script>
+        <link rel=\"stylesheet\" type=\"text/css\" href=\"../layout.css\">%s
         <meta name=\"viewport\" content=\"initial-scale=1.0,maximum-scale=1.0,width=device-width\" />
     </head>
     <body>
@@ -1231,7 +1228,12 @@ readme file has an unconventional name"
             </div>
 
             <div class=\"container\">\n"
-          title (or header title)))
+          title (or head-extra "") (or header title)))
+
+(defvar elpaa--index-javascript-headers "
+        <script src=\"../javascript/jquery.min.js\" type=\"text/javascript\"></script>
+        <script src=\"../javascript/jquery.filtertable.min.js\" type=\"text/javascript\"></script>
+        <script src=\"../javascript/package-search.js\" type=\"text/javascript\"></script>")
 
 (defun elpaa--html-footer ()
   (format "\n
@@ -1606,7 +1608,9 @@ arbitrary code."
 
 (defun elpaa--html-make-index (pkgs)
   (with-temp-buffer
-    (insert (elpaa--html-header (concat elpaa--name " ELPA Packages")))
+    (insert (elpaa--html-header
+             (concat elpaa--name " ELPA Packages")
+             nil elpaa--index-javascript-headers))
     (insert "<table>\n")
     (insert "<tr><th>Package</th><th>Version</th><th>Description</th></tr>\n")
     (dolist (pkg pkgs)
