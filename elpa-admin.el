@@ -2492,4 +2492,9 @@ relative to elpa root."
              (lambda () (forward-comment (point-max)))))
 
 (provide 'elpa-admin)
+
+;; Local Variables:
+;; nameless-current-name: "elpaa"
+;; End:
+
 ;;; elpa-admin.el ends here
