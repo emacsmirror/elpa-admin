@@ -2157,8 +2157,8 @@ relative to elpa root."
          (default-directory (elpaa--dirname dir))
          (tmpfiles '()))
 
-    (when (and docfile (file-readable-p docfile)
-               (string-match "\\.org\\'" docfile))
+    (when (and docfile (string-match "\\.org\\'" docfile))
+      (unless (file-readable-p docfile) (error "Can't read file: %s" docfile))
       (with-temp-buffer
         (elpaa--call-sandboxed
          t "emacs" "--batch" "-l" "ox-texinfo"
