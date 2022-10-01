@@ -2064,7 +2064,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (insert "Version " version
                 " of package " name
                 " has just been released in " elpaa--name " ELPA.
-You can now find it in M-x package-list RET.
+You can now find it in M-x list-packages RET.
 
 " name " describes itself as:
   " (nth 2 metadata) "
