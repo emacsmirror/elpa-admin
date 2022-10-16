@@ -186,6 +186,14 @@ This option has many shortcomings, so its use is discouraged: it is
 better avoided as much as possible.  Among other problems,  merges
 don't interact well with the algorithm used to determine which
 revision is a "release".
+** =:rolling-release FLAG=
+If FLAG is non-nil, a new package will be released for every new
+commit, instead of just on incrementing the "Version" header.  FLAG
+can optionally be a string, in which case the package is only released
+if the version is equal to FLAG.
+
+Note that the usage of this option is discouraged.  Only use it if the
+package maintainer explicitly wishes to use a "rolling release" model.
 
 * Configuration (elpa-config)
 

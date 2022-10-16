@@ -228,6 +228,7 @@ commit which modified the \"Version:\" pseudo header."
               (not (member vers (car version-map))))
     (pop version-map))
   (or (nth 2 (car version-map))
+      (and (elpaa--spec-get pkg-spec :rolling-release) "HEAD")
       ;; When the mainfile is a symlink (e.g. for :core packages), run Git
       ;; in the directory that holds the actual file, otherwise Git won't
       ;; know what file we're talking about.
@@ -971,7 +972,8 @@ place the resulting tarball into the file named TARBALL-ONLY."
                                          dir pkg-spec
                                          `(nil ,devel-vers
                                                . ,(nthcdr 2 metadata))
-                                         nil tarball-only))))
+                                         nil tarball-only)))
+             (rolling-release (elpaa--spec-get pkg-spec :rolling-release)))
 
         ;; Try and build the latest release tarball.
         (cond
@@ -1005,7 +1007,13 @@ place the resulting tarball into the file named TARBALL-ONLY."
                   ;; beneficial in case the `Maintainer:' was updated after
                   ;; the release commit, but it can probably bite us :-(
                   (elpaa--release-email pkg-spec metadata dir)))))))
+         ((and (stringp rolling-release)
+               (not (version= rolling-release vers)))
+          (elpaa--message "Expected version %s, but got %s for package %s!"
+                          rolling-release vers  pkgname))
          (t
+          (when rolling-release
+            (setq vers devel-vers))
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
             (when (elpaa--make-one-tarball
