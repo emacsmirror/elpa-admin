@@ -761,13 +761,34 @@ of the current `process-environment'.  Return the modified copy."
 	  (list pkgname))
       spec)))
 
+(defun elpaa--publish-package-specs (specs)
+  "Process and publish SPECS in elpa-packages.eld files."
+  (with-temp-buffer
+    ;; Remove :core packages, handle :url nil and and compress the
+    ;; contents of the "elpa-packages"
+    (prin1
+     (mapcan
+      (lambda (spec)
+        (pcase spec
+          (`(,name :url nil . ,rest)
+           `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
+                    :branch ,(concat elpaa--branch-prefix (car spec))
+                    ,@rest)))
+          (`(,_ :core ,_ . ,_) nil)       ;not supported
+          (_ (list spec))))
+      specs)
+     (current-buffer))
+    (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--release-subdir))
+    (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--devel-subdir))))
+
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
-  (let* ((specs (elpaa--get-specs)))
+  (let ((specs (elpaa--get-specs)))
     (dolist (spec specs)
       (condition-case err
           (elpaa--make-one-package spec)
-        (error (message "Build error for %s: %S" (car spec) err))))))
+        (error (message "Build error for %s: %S" (car spec) err))))
+    (elpaa--publish-package-specs specs)))
 
 (defun elpaa-batch-make-one-package (&rest _)
   "Build the new tarballs (if needed) for one particular package."
