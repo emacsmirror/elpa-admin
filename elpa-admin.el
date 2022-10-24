@@ -394,7 +394,7 @@ returns.  Return the selected revision."
                (elpaa--call t "git" "checkout" "--" "."))
              (elpaa--message "%s" (buffer-string)))))))))
 
-(defconst elpaa--keep-max 20)
+(defvar elpaa--keep-max 20)
 
 (defun elpaa--keep-old (oldtarballs n)
   "Select N tarballs to keep among those in OLDTARBALLS."
@@ -551,7 +551,7 @@ returns.  Return the selected revision."
           (setf (cdr oldtarball) (concat file ".lz"))))))
   oldtarballs)
 
-(defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
+(defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
   "Create file TARBALL for PKG-SPEC if not done yet.
 Return non-nil if a new tarball was created.  Also create some
@@ -580,7 +580,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
       (unwind-protect
           (condition-case-unless-debug err
               (setq res (elpaa--make-one-tarball-1
-                         tarball dir pkg-spec metadata
+                         tarball dir pkg-spec metadata-or-version
                          revision-function tarball-only))
             (error (message "Build error for %s: %S" tarball err)
                    nil))
@@ -588,7 +588,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                    "######## Build of package %s FAILED!!")
                  tarball)))))
 
-(defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata
+(defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
   (elpaa--with-temp-files
    dir
@@ -596,8 +596,20 @@ auxillary files unless TARBALL-ONLY is non-nil ."
           (pkgname (car pkg-spec))
           (_ (when (and destdir (not (file-directory-p destdir)))
                (make-directory destdir)))
-          (vers (nth 1 metadata))
           (revision (elpaa--select-revision dir pkg-spec revision-function))
+          (metadata
+           (if (stringp metadata-or-version)
+               ;; Re-read the metadata after `elpaa--select-revision'.
+               (let ((metadata (elpaa--metadata dir pkg-spec)))
+                 (unless (equal metadata-or-version (nth 1 metadata))
+                   ;; It's probably an error if it happens, but let's
+                   ;; see first when it happens.
+                   (elpaa--message "Error: version disagreement at %S: %S"
+                                   metadata-or-version metadata))
+                 ;; Use the arg-provided version in case of disagreement.
+                 `(nil ,metadata-or-version . ,(nthcdr 2 metadata)))
+             metadata-or-version))
+          (vers (nth 1 metadata))
           (elpaignore (expand-file-name ".elpaignore" dir))
           (ignores (elpaa--spec-get pkg-spec :ignored-files))
           (renames (elpaa--spec-get pkg-spec :renames))
@@ -669,10 +681,10 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                       ;; many tarballs.
                       (if revision-function elpaa--keep-max
                         (/ elpaa--keep-max 2))))
-               (elpaa--prune-old-tarballs tarball oldtarballs destdir
-                                          ;; Keep release versions at
-                                          ;; least 2 years.
-                                          (if revision-function
+                 (elpaa--prune-old-tarballs tarball oldtarballs destdir
+                                            ;; Keep release versions at
+                                            ;; least 2 years.
+                                            (if revision-function
                                                 (* 60 60 24 365 2)))))
          (let ((default-directory (expand-file-name destdir)))
            ;; This also creates <pkg>-readme.txt and <pkg>.svg.
@@ -969,14 +981,18 @@ place the resulting tarball into the file named TARBALL-ONLY."
               (if (not last-rel)
                   (elpaa--message "Package %s not released yet!" pkgname)
                 (when (elpaa--make-one-tarball
-                       tarball dir pkg-spec metadata
+                       tarball dir pkg-spec (car last-rel)
                        (lambda () (cdr last-rel)))
+                  ;; FIXME: This `metadata' reflects that of the HEAD rather
+                  ;; than that of the release commit.  It might actually be
+                  ;; beneficial in case the `Maintainer:' was updated after
+                  ;; the release commit, but it can probably bite us :-(
                   (elpaa--release-email pkg-spec metadata dir)))))))
          (t
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
             (when (elpaa--make-one-tarball
-                   tarball dir pkg-spec metadata
+                   tarball dir pkg-spec vers
                    (lambda ()
                      (elpaa--get-release-revision
                       dir pkg-spec vers
@@ -1042,6 +1058,7 @@ Signal an error if the command did not finish with exit code 0."
 ;; Some packages use version numbers which `version-to-list' doesn't
 ;; recognize out of the box.  So here we help.
 
+;; (defvar version-regexp-alist version-regexp-alist) ;; Make it writable!
 (add-to-list 'version-regexp-alist '("^[-.+ ]*beta-?$" . -2)) ;"1.0.0-beta-3"
 (add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
 
