@@ -968,7 +968,10 @@ place the resulting tarball into the file named TARBALL-ONLY."
          ;; (i.e. snapshots, alpha, beta, and rc).
          ((< (apply #'min (version-to-list vers)) 0)
           (cond
-           ((not new)
+           ((not (or new
+                     ;; Even if there's nothing new on the devel branch,
+                     ;; there can be something new on the release branch.
+                     (elpaa--spec-get pkg-spec :release-branch)))
             (elpaa--message "Nothing new for package %s!" pkgname))
            (t
             ;; If this revision is a snapshot, check to see if there's
