@@ -208,6 +208,17 @@ commit which modified the \"Version:\" pseudo header."
                       (current-buffer)
                       "git" "log" "-n1" "--oneline" "--no-patch"
                       "--pretty=format:%H"
+                      (when (elpaa--spec-get pkg-spec :merge)
+                        ;; Finding "the" revision when there's a merge
+                        ;; involved is fundamentally unreliable.
+                        ;; Ideally we should probably stop the search
+                        ;; at the first merge commit to avoid making
+                        ;; an arbitrary choice.
+                        ;; For `:merge'd packages, this is not an option, and
+                        ;; not using `--first-parent' will *usually* pick the
+                        ;; wrong revision (i.e. a revision from upstream
+                        ;; without our own changes).
+                        "--first-parent")
                       "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
                                    (file-name-nondirectory mainfile))))
                     ;; The --no-patch (aka -s) option does not work
@@ -1006,7 +1017,7 @@ place the resulting tarball into the file named TARBALL-ONLY."
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
 The INFILE and DISPLAY arguments are fixed as nil."
   (elpaa--message "call-process %s %S" program args)
-  (apply #'call-process program nil destination nil args))
+  (apply #'call-process program nil destination nil (delq nil args)))
 
 (defconst elpaa--bwrap-args
   '("--unshare-all"
@@ -2402,16 +2413,15 @@ relative to elpa root."
           (not (setq urtb (elpaa--merge pkg-spec urtb ortb))))
         (message "Merge failure for %S:\n%S" pkg
                  (buffer-string)))
-       ((zerop (apply #'elpaa--call
-                      t "git" "push" "--set-upstream"
-                      "origin"
-                      (format "%s:refs/heads/%s%s"
-                              urtb elpaa--branch-prefix pkg)
-                      (when release-branch
-                        (list
-                         (format "%s:refs/heads/%s%s"
-                                 (elpaa--urtb pkg-spec "release")
-                                 elpaa--release-branch-prefix pkg)))))
+       ((equal 0 (elpaa--call
+                  t "git" "push" "--set-upstream"
+                  "origin"
+                  (format "%s:refs/heads/%s%s"
+                          urtb elpaa--branch-prefix pkg)
+                  (when release-branch
+                    (format "%s:refs/heads/%s%s"
+                            (elpaa--urtb pkg-spec "release")
+                            elpaa--release-branch-prefix pkg))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
         (when (file-directory-p (expand-file-name pkg "packages"))
           (elpaa--worktree-sync pkg-spec)))
