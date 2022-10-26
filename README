@@ -168,6 +168,12 @@ this ORIG-VERSION (or REMAPPED-VERSION if non-nil) to override
 the default heuristic which uses the last revision that modified the
 "Version:" header.
 
+** =:merge BOOL=
+If non-nil, this setting indicates that syncs from upstream should use automatic
+merges instead of fast-forwards.
+This only works for the main branch, not for the release branch.
+An unnecessary =:merge= setting is considered as an error.
+
 * Configuration (elpa-config)
 
 The configuration file is a `lisp-data-mode` file containing

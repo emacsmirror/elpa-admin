@@ -1061,7 +1061,7 @@ Signal an error if the command did not finish with exit code 0."
 ;; Some packages use version numbers which `version-to-list' doesn't
 ;; recognize out of the box.  So here we help.
 
-;; (defvar version-regexp-alist version-regexp-alist) ;; Make it writable!
+(defvar version-regexp-alist version-regexp-alist) ;; Make it writable!
 (add-to-list 'version-regexp-alist '("^[-.+ ]*beta-?$" . -2)) ;"1.0.0-beta-3"
 (add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
 
@@ -2327,8 +2327,9 @@ relative to elpa root."
          ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
                               urtb ortb))
           (message "Nothing new upstream for %s" pkg))
-         ((not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                   ortb urtb)))
+         ((not (or (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                                       ortb urtb))
+                   (elpaa--spec-get pkg-spec :merge)))
           (message "Upstream of %s has DIVERGED!\n" pkg)
           (when show-diverged
             (elpaa--call t "git" "log"
@@ -2345,16 +2346,42 @@ relative to elpa root."
                                    (format "%s..%s" ortb urtb))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
-          (message "No pending upstream changes for %s" pkg))
+          (message "No pending upstream changes for %s" pkg)
+          (error "Empty log but there is something upstream!?\n%S\n%S"
+                 pkg-spec (buffer-string)))
          (t (message "%s" (buffer-string))
             (when k (funcall k pkg-spec))))))))
+
+(defun elpaa--merge (pkg-spec urtb ortb)
+  "Return the merge branch, or nil upon failure."
+  (if (not (file-directory-p "packages"))
+      (progn
+        (message "Can't find the 'packages' directory in: %S"
+                 default-directory)
+        nil)
+    (let* ((pkg (car pkg-spec))
+           (wt (expand-file-name pkg "packages"))
+           (merge-branch (concat "elpa--merge/" pkg)))
+      (if (file-directory-p wt)
+          (progn (message "Worktree exists already for merge of %S" pkg)
+                 nil)
+        (when (elpaa--git-branch-p (concat "refs/heads/" merge-branch))
+          (elpaa--call t "git" "branch" "-D" merge-branch))
+        (unwind-protect
+            (progn
+              (elpaa--call t "git" "worktree" "add" "-b" merge-branch wt ortb)
+              (let ((default-directory (file-name-as-directory wt)))
+                (when (zerop (elpaa--call t "git" "merge" urtb))
+                  merge-branch)))
+          (elpaa--call t "git" "worktree" "remove" "--force" wt))))))
 
 (defun elpaa--push (pkg-spec)
   (let* ((pkg (car pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
          (ortb-p (elpaa--git-branch-p ortb))
-         (urtb (elpaa--urtb pkg-spec)))
+         (urtb (elpaa--urtb pkg-spec))
+         (merge (elpaa--spec-get pkg-spec :merge)))
     ;; FIXME: Arrange to merge if it's not a fast-forward.
     (with-temp-buffer
       (cond
@@ -2362,23 +2389,31 @@ relative to elpa root."
              (zerop (elpaa--call t "git" "merge-base"
                                  "--is-ancestor" urtb ortb)))
         (message "Nothing to push for %s" pkg))
-       ((and ortb-p
-             (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                      ortb urtb)))
-             (elpaa--git-branch-p ortb))
-        (message "Can't push %s: not a fast-forward" pkg))
-       ((equal 0 (apply #'elpaa--call
-                        t "git" "push" "--set-upstream"
-                        "origin"
-                        (format "%s:refs/heads/%s%s"
-                                urtb elpaa--branch-prefix pkg)
-                        (when release-branch
-                          (list
-                           (format "%s:refs/heads/%s%s"
-                                   (elpaa--urtb pkg-spec "release")
-                                   elpaa--release-branch-prefix pkg)))))
+       ((xor (and ortb-p
+                  (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                                           ortb urtb))))
+             merge)
+        (if merge
+            (message "Error: ':merge' used when not needed: %S\n%S"
+                     pkg (buffer-substring))
+          (message "Can't push %s: not a fast-forward" pkg)))
+       ((when merge
+          ;; FIXME: This only handles merges on the devel branch.
+          (not (setq urtb (elpaa--merge pkg-spec urtb ortb))))
+        (message "Merge failure for %S:\n%S" pkg
+                 (buffer-string)))
+       ((zerop (apply #'elpaa--call
+                      t "git" "push" "--set-upstream"
+                      "origin"
+                      (format "%s:refs/heads/%s%s"
+                              urtb elpaa--branch-prefix pkg)
+                      (when release-branch
+                        (list
+                         (format "%s:refs/heads/%s%s"
+                                 (elpaa--urtb pkg-spec "release")
+                                 elpaa--release-branch-prefix pkg)))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (when (file-directory-p (expand-file-name (car pkg-spec) "packages"))
+        (when (file-directory-p (expand-file-name pkg "packages"))
           (elpaa--worktree-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
