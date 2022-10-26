@@ -186,6 +186,40 @@ Delete backup files also."
       (let ((ldir (elpaa--spec-get pkg-spec :lisp-dir)))
         (concat (if ldir (file-name-as-directory ldir)) (car pkg-spec) ".el"))))
 
+(defun elpaa--get-last-release-commit (pkg-spec &optional from)
+  "Return the commit that last changed `Version:'.
+FROM is the start revision.  Return nil if not found."
+  (with-temp-buffer
+    (if (equal 0     ;Don't signal an error if call errors out.
+               (elpaa--call
+                (current-buffer)
+                "git" "log" "-n1" "--oneline" "--no-patch"
+                "--pretty=format:%H"
+                (when (elpaa--spec-get pkg-spec :merge)
+                  ;; Finding "the" revision when there's a merge involved is
+                  ;; fundamentally unreliable.
+                  ;; Ideally we should probably signal an error when the commit
+                  ;; we found is not on all paths from FROM to avoid making an
+                  ;; arbitrary choice.
+                  ;; For `:merge'd packages, the commit that flipped `Version:'
+                  ;; is usually not what we want, since that one was on the
+                  ;; upstream branch, without our own changes.
+                  ;; We use `--first-parent' for this reason, so it prefers
+                  ;; the corresponding merge commit (which is not ideal either
+                  ;; but is arguably the best we can do in that case).
+                  "--first-parent")
+                "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                             (file-name-nondirectory
+                              (elpaa--main-file pkg-spec)))
+                from))
+        ;; The --no-patch (aka -s) option does not work
+        ;; with "git log -L<from>,<to>:<path>" before git
+        ;; version 2.22; so capture only the first line.
+        (buffer-substring-no-properties
+         (goto-char (point-min)) (line-end-position))
+      (elpaa--message "Can't find release rev: %s" (buffer-string))
+      nil)))
+
 (defun elpaa--get-release-revision (dir pkg-spec &optional vers version-map)
   "Get the REVISION that corresponds to current release.
 This is either found from VERS in VERSION-MAP or by looking at the last
@@ -200,39 +234,8 @@ commit which modified the \"Version:\" pseudo header."
       (let* ((mainfile (file-truename
                         (expand-file-name (elpaa--main-file pkg-spec)
                                           (elpaa--dirname dir))))
-             (default-directory (file-name-directory mainfile))
-             (release-rev
-              (with-temp-buffer
-                (if (equal 0         ;Don't signal an error if call errors out.
-                     (elpaa--call
-                      (current-buffer)
-                      "git" "log" "-n1" "--oneline" "--no-patch"
-                      "--pretty=format:%H"
-                      (when (elpaa--spec-get pkg-spec :merge)
-                        ;; Finding "the" revision when there's a merge
-                        ;; involved is fundamentally unreliable.
-                        ;; Ideally we should probably stop the search
-                        ;; at the first merge commit to avoid making
-                        ;; an arbitrary choice.
-                        ;; For `:merge'd packages, this is not an option, and
-                        ;; not using `--first-parent' will *usually* pick the
-                        ;; wrong revision (i.e. a revision from upstream
-                        ;; without our own changes).
-                        "--first-parent")
-                      "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                   (file-name-nondirectory mainfile))))
-                    ;; The --no-patch (aka -s) option does not work
-                    ;; with "git log -L<from>,<to>:<path>" before git
-                    ;; version 2.22; so capture only the first line.
-                    (buffer-substring-no-properties
-                     (goto-char (point-min)) (line-end-position))
-                  (cons 'error (buffer-string))))))
-        (if (stringp release-rev)
-            (progn
-              (elpaa--message "Found release rev: %S" release-rev)
-              release-rev)
-          (elpaa--message "Can't find release rev: %s" (cdr release-rev))
-          nil))))
+             (default-directory (file-name-directory mainfile)))
+        (elpaa--get-last-release-commit pkg-spec))))
 
 (defun elpaa--get-last-release (pkg-spec)
   "Return (VERSION . REV) of the last release.
@@ -2307,6 +2310,11 @@ relative to elpa root."
   "Return non-nil iff BRANCH is an existing branch."
   (equal 0 (elpaa--call t "git" "show-ref" "--verify" "--quiet" branch)))
 
+(defun elpaa--is-ancestor (candidate rev)
+  "Return non-nil if CANDIDATE is ancestor of REV."
+  (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                      candidate rev)))
+
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
          (url (elpaa--spec-get pkg-spec :url))
@@ -2335,11 +2343,9 @@ relative to elpa root."
 	 ((not (elpaa--git-branch-p ortb))
 	  (message "New package %s hasn't been pushed to origin yet" pkg)
 	  (when k (funcall k pkg-spec)))
-         ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                              urtb ortb))
+         ((elpaa--is-ancestor urtb ortb)
           (message "Nothing new upstream for %s" pkg))
-         ((not (or (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                       ortb urtb))
+         ((not (or (elpaa--is-ancestor ortb urtb)
                    (elpaa--spec-get pkg-spec :merge)))
           (message "Upstream of %s has DIVERGED!\n" pkg)
           (when show-diverged
@@ -2372,7 +2378,19 @@ relative to elpa root."
         nil)
     (let* ((pkg (car pkg-spec))
            (wt (expand-file-name pkg "packages"))
-           (merge-branch (concat "elpa--merge/" pkg)))
+           (merge-branch (concat "elpa--merge/" pkg))
+           last-release)
+      ;; When the upstream changes includes changes to `Version:'), try to
+      ;; merge only up to the first (new) revision that made such a change,
+      ;; so that we hopefully get a merge commit from which to make the release.
+      ;; The rest will be merged (hopefully) next time around.
+      (while (and (setq last-release
+                        (elpaa--get-last-release-commit pkg-spec
+                                                        (concat urtb "~")))
+                  (not (elpaa--is-ancestor last-release ortb)))
+        (message "NOTE: merging from %s only up to release %s!!"
+                 urtb last-release)
+        (setq urtb last-release))
       (if (file-directory-p wt)
           (progn (message "Worktree exists already for merge of %S" pkg)
                  nil)
@@ -2396,17 +2414,13 @@ relative to elpa root."
     ;; FIXME: Arrange to merge if it's not a fast-forward.
     (with-temp-buffer
       (cond
-       ((and ortb-p
-             (zerop (elpaa--call t "git" "merge-base"
-                                 "--is-ancestor" urtb ortb)))
+       ((and ortb-p (elpaa--is-ancestor urtb ortb))
         (message "Nothing to push for %s" pkg))
-       ((xor (and ortb-p
-                  (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                           ortb urtb))))
+       ((xor (and ortb-p (not (elpaa--is-ancestor ortb urtb)))
              merge)
         (if merge
             (message "Error: ':merge' used when not needed: %S\n%S"
-                     pkg (buffer-substring))
+                     pkg (buffer-string))
           (message "Can't push %s: not a fast-forward" pkg)))
        ((when merge
           ;; FIXME: This only handles merges on the devel branch.
