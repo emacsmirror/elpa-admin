@@ -1,5 +1,5 @@
 #+TITLE: ELPA-Admin README
-#+DATE: 2022-01-06
+#+DATE: 2022-10-26
 
 Copyright (C) 2010-2022 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
@@ -7,7 +7,7 @@ See the end of the file for license conditions.
 #+BEGIN_COMMENT
 This file exists in two branches ~elpa-admin~ and ~elpa~.  The two version
 differ slightly.  The introductory text before the first heading
-differs and their are minor differences concerning the ~externals/*~ to
+differs and there are minor differences concerning the ~externals/*~ to
 ~elpa/*~ transition.  Please make sure you always update this file in
 both locations to avoid introducing additional differences.  This
 duplication will be removed eventually.
@@ -19,7 +19,7 @@ the [[https://elpa.gnu.org/][GNU ELPA]] and NonGNU ELPA archives.
 * Getting the source
 
 Start with source that is cloned directly from Savannah.  See [[https://savannah.gnu.org/git/?group=emacs][the Savannah page]]
-and look for "ELPA".  Using a clone of a clone does not work.
+and look for "GNU ELPA".  Using a clone of a clone does not work.
 
 You must then do some setup:
 #+begin_src shell
@@ -118,6 +118,14 @@ for those packages which have both a development branch and a release branch
 and only if the version number in the development branch indicates that it
 contains development code (i.e. a "snapshot" version, according to
 `version-to-list`).
+
+If there is no upstream (:url is nil), the presence of :release-branch
+just indicates that release and devel branches in elpa.git are desired
+(the name given in :release-branch is ignored). The release branch is
+named `externals-release/<pkg-name>' for GNU ELPA and
+`elpa-release/<pkg-name>` for NonGNU ELPA. The standard package branch
+externals/<pkg-name> is the devel branch in GNU ELPA; the standard
+branch elpa/<pkg-name> is the devel branch in non-GNU ELPA.
 
 ** =:ignored-files FILES=
 Names of files or directories that should not be included in the tarballs.
@@ -254,7 +262,8 @@ each package.
 
 Each directory in here corresponds to a package.
 
-A nightly cron job refreshes the GNU ELPA archive from this repository.
+A nightly cron job on the server hosting =elpa.gnu.org= refreshes the
+GNU ELPA archive from this repository.
 
 This cron job only creates a new package when the "version" (as specified in
 the =Version:= header) of a package is modified.  This means that you can
