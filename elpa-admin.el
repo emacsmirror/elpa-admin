@@ -186,6 +186,40 @@ Delete backup files also."
       (let ((ldir (elpaa--spec-get pkg-spec :lisp-dir)))
         (concat (if ldir (file-name-as-directory ldir)) (car pkg-spec) ".el"))))
 
+(defun elpaa--get-last-release-commit (pkg-spec &optional from)
+  "Return the commit that last changed `Version:'.
+FROM is the start revision.  Return nil if not found."
+  (with-temp-buffer
+    (if (equal 0     ;Don't signal an error if call errors out.
+               (elpaa--call
+                (current-buffer)
+                "git" "log" "-n1" "--oneline" "--no-patch"
+                "--pretty=format:%H"
+                (when (elpaa--spec-get pkg-spec :merge)
+                  ;; Finding "the" revision when there's a merge involved is
+                  ;; fundamentally unreliable.
+                  ;; Ideally we should probably signal an error when the commit
+                  ;; we found is not on all paths from FROM to avoid making an
+                  ;; arbitrary choice.
+                  ;; For `:merge'd packages, the commit that flipped `Version:'
+                  ;; is usually not what we want, since that one was on the
+                  ;; upstream branch, without our own changes.
+                  ;; We use `--first-parent' for this reason, so it prefers
+                  ;; the corresponding merge commit (which is not ideal either
+                  ;; but is arguably the best we can do in that case).
+                  "--first-parent")
+                "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
+                             (file-name-nondirectory
+                              (elpaa--main-file pkg-spec)))
+                from))
+        ;; The --no-patch (aka -s) option does not work
+        ;; with "git log -L<from>,<to>:<path>" before git
+        ;; version 2.22; so capture only the first line.
+        (buffer-substring-no-properties
+         (goto-char (point-min)) (line-end-position))
+      (elpaa--message "Can't find release rev: %s" (buffer-string))
+      nil)))
+
 (defun elpaa--get-release-revision (dir pkg-spec &optional vers version-map)
   "Get the REVISION that corresponds to current release.
 This is either found from VERS in VERSION-MAP or by looking at the last
@@ -200,28 +234,8 @@ commit which modified the \"Version:\" pseudo header."
       (let* ((mainfile (file-truename
                         (expand-file-name (elpaa--main-file pkg-spec)
                                           (elpaa--dirname dir))))
-             (default-directory (file-name-directory mainfile))
-             (release-rev
-              (with-temp-buffer
-                (if (equal 0         ;Don't signal an error if call errors out.
-                     (elpaa--call
-                      (current-buffer)
-                      "git" "log" "-n1" "--oneline" "--no-patch"
-                      "--pretty=format:%H"
-                      "-L" (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
-                                   (file-name-nondirectory mainfile))))
-                    ;; The --no-patch (aka -s) option does not work
-                    ;; with "git log -L<from>,<to>:<path>" before git
-                    ;; version 2.22; so capture only the first line.
-                    (buffer-substring-no-properties
-                     (goto-char (point-min)) (line-end-position))
-                  (cons 'error (buffer-string))))))
-        (if (stringp release-rev)
-            (progn
-              (elpaa--message "Found release rev: %S" release-rev)
-              release-rev)
-          (elpaa--message "Can't find release rev: %s" (cdr release-rev))
-          nil))))
+             (default-directory (file-name-directory mainfile)))
+        (elpaa--get-last-release-commit pkg-spec))))
 
 (defun elpaa--get-last-release (pkg-spec)
   "Return (VERSION . REV) of the last release.
@@ -394,7 +408,7 @@ returns.  Return the selected revision."
                (elpaa--call t "git" "checkout" "--" "."))
              (elpaa--message "%s" (buffer-string)))))))))
 
-(defconst elpaa--keep-max 20)
+(defvar elpaa--keep-max 20)
 
 (defun elpaa--keep-old (oldtarballs n)
   "Select N tarballs to keep among those in OLDTARBALLS."
@@ -551,7 +565,7 @@ returns.  Return the selected revision."
           (setf (cdr oldtarball) (concat file ".lz"))))))
   oldtarballs)
 
-(defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata
+(defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
   "Create file TARBALL for PKG-SPEC if not done yet.
 Return non-nil if a new tarball was created.  Also create some
@@ -580,7 +594,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
       (unwind-protect
           (condition-case-unless-debug err
               (setq res (elpaa--make-one-tarball-1
-                         tarball dir pkg-spec metadata
+                         tarball dir pkg-spec metadata-or-version
                          revision-function tarball-only))
             (error (message "Build error for %s: %S" tarball err)
                    nil))
@@ -588,7 +602,7 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                    "######## Build of package %s FAILED!!")
                  tarball)))))
 
-(defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata
+(defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
   (elpaa--with-temp-files
    dir
@@ -596,8 +610,20 @@ auxillary files unless TARBALL-ONLY is non-nil ."
           (pkgname (car pkg-spec))
           (_ (when (and destdir (not (file-directory-p destdir)))
                (make-directory destdir)))
-          (vers (nth 1 metadata))
           (revision (elpaa--select-revision dir pkg-spec revision-function))
+          (metadata
+           (if (stringp metadata-or-version)
+               ;; Re-read the metadata after `elpaa--select-revision'.
+               (let ((metadata (elpaa--metadata dir pkg-spec)))
+                 (unless (equal metadata-or-version (nth 1 metadata))
+                   ;; It's probably an error if it happens, but let's
+                   ;; see first when it happens.
+                   (elpaa--message "Error: version disagreement at %S: %S"
+                                   metadata-or-version metadata))
+                 ;; Use the arg-provided version in case of disagreement.
+                 `(nil ,metadata-or-version . ,(nthcdr 2 metadata)))
+             metadata-or-version))
+          (vers (nth 1 metadata))
           (elpaignore (expand-file-name ".elpaignore" dir))
           (ignores (elpaa--spec-get pkg-spec :ignored-files))
           (renames (elpaa--spec-get pkg-spec :renames))
@@ -669,10 +695,10 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                       ;; many tarballs.
                       (if revision-function elpaa--keep-max
                         (/ elpaa--keep-max 2))))
-               (elpaa--prune-old-tarballs tarball oldtarballs destdir
-                                          ;; Keep release versions at
-                                          ;; least 2 years.
-                                          (if revision-function
+                 (elpaa--prune-old-tarballs tarball oldtarballs destdir
+                                            ;; Keep release versions at
+                                            ;; least 2 years.
+                                            (if revision-function
                                                 (* 60 60 24 365 2)))))
          (let ((default-directory (expand-file-name destdir)))
            ;; This also creates <pkg>-readme.txt and <pkg>.svg.
@@ -956,7 +982,10 @@ place the resulting tarball into the file named TARBALL-ONLY."
          ;; (i.e. snapshots, alpha, beta, and rc).
          ((< (apply #'min (version-to-list vers)) 0)
           (cond
-           ((not new)
+           ((not (or new
+                     ;; Even if there's nothing new on the devel branch,
+                     ;; there can be something new on the release branch.
+                     (elpaa--spec-get pkg-spec :release-branch)))
             (elpaa--message "Nothing new for package %s!" pkgname))
            (t
             ;; If this revision is a snapshot, check to see if there's
@@ -969,14 +998,18 @@ place the resulting tarball into the file named TARBALL-ONLY."
               (if (not last-rel)
                   (elpaa--message "Package %s not released yet!" pkgname)
                 (when (elpaa--make-one-tarball
-                       tarball dir pkg-spec metadata
+                       tarball dir pkg-spec (car last-rel)
                        (lambda () (cdr last-rel)))
+                  ;; FIXME: This `metadata' reflects that of the HEAD rather
+                  ;; than that of the release commit.  It might actually be
+                  ;; beneficial in case the `Maintainer:' was updated after
+                  ;; the release commit, but it can probably bite us :-(
                   (elpaa--release-email pkg-spec metadata dir)))))))
          (t
           (let ((tarball (concat elpaa--release-subdir
                                  (format "%s-%s.tar" pkgname vers))))
             (when (elpaa--make-one-tarball
-                   tarball dir pkg-spec metadata
+                   tarball dir pkg-spec vers
                    (lambda ()
                      (elpaa--get-release-revision
                       dir pkg-spec vers
@@ -987,7 +1020,7 @@ place the resulting tarball into the file named TARBALL-ONLY."
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
 The INFILE and DISPLAY arguments are fixed as nil."
   (elpaa--message "call-process %s %S" program args)
-  (apply #'call-process program nil destination nil args))
+  (apply #'call-process program nil destination nil (delq nil args)))
 
 (defconst elpaa--bwrap-args
   '("--unshare-all"
@@ -1042,6 +1075,7 @@ Signal an error if the command did not finish with exit code 0."
 ;; Some packages use version numbers which `version-to-list' doesn't
 ;; recognize out of the box.  So here we help.
 
+(defvar version-regexp-alist version-regexp-alist) ;; Make it writable!
 (add-to-list 'version-regexp-alist '("^[-.+ ]*beta-?$" . -2)) ;"1.0.0-beta-3"
 (add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
 
@@ -2276,6 +2310,11 @@ relative to elpa root."
   "Return non-nil iff BRANCH is an existing branch."
   (equal 0 (elpaa--call t "git" "show-ref" "--verify" "--quiet" branch)))
 
+(defun elpaa--is-ancestor (candidate rev)
+  "Return non-nil if CANDIDATE is ancestor of REV."
+  (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
+                      candidate rev)))
+
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
          (url (elpaa--spec-get pkg-spec :url))
@@ -2304,11 +2343,10 @@ relative to elpa root."
 	 ((not (elpaa--git-branch-p ortb))
 	  (message "New package %s hasn't been pushed to origin yet" pkg)
 	  (when k (funcall k pkg-spec)))
-         ((zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                              urtb ortb))
+         ((elpaa--is-ancestor urtb ortb)
           (message "Nothing new upstream for %s" pkg))
-         ((not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                   ortb urtb)))
+         ((not (or (elpaa--is-ancestor ortb urtb)
+                   (elpaa--spec-get pkg-spec :merge)))
           (message "Upstream of %s has DIVERGED!\n" pkg)
           (when show-diverged
             (elpaa--call t "git" "log"
@@ -2325,40 +2363,81 @@ relative to elpa root."
                                    (format "%s..%s" ortb urtb))))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
-          (message "No pending upstream changes for %s" pkg))
+          (message "No pending upstream changes for %s" pkg)
+          (error "Empty log but there is something upstream!?\n%S\n%S"
+                 pkg-spec (buffer-string)))
          (t (message "%s" (buffer-string))
             (when k (funcall k pkg-spec))))))))
+
+(defun elpaa--merge (pkg-spec urtb ortb)
+  "Return the merge branch, or nil upon failure."
+  (if (not (file-directory-p "packages"))
+      (progn
+        (message "Can't find the 'packages' directory in: %S"
+                 default-directory)
+        nil)
+    (let* ((pkg (car pkg-spec))
+           (wt (expand-file-name pkg "packages"))
+           (merge-branch (concat "elpa--merge/" pkg))
+           last-release)
+      ;; When the upstream changes includes changes to `Version:'), try to
+      ;; merge only up to the first (new) revision that made such a change,
+      ;; so that we hopefully get a merge commit from which to make the release.
+      ;; The rest will be merged (hopefully) next time around.
+      (while (and (setq last-release
+                        (elpaa--get-last-release-commit pkg-spec
+                                                        (concat urtb "~")))
+                  (not (elpaa--is-ancestor last-release ortb)))
+        (message "NOTE: merging from %s only up to release %s!!"
+                 urtb last-release)
+        (setq urtb last-release))
+      (if (file-directory-p wt)
+          (progn (message "Worktree exists already for merge of %S" pkg)
+                 nil)
+        (when (elpaa--git-branch-p (concat "refs/heads/" merge-branch))
+          (elpaa--call t "git" "branch" "-D" merge-branch))
+        (unwind-protect
+            (progn
+              (elpaa--call t "git" "worktree" "add" "-b" merge-branch wt ortb)
+              (let ((default-directory (file-name-as-directory wt)))
+                (when (zerop (elpaa--call t "git" "merge" urtb))
+                  merge-branch)))
+          (elpaa--call t "git" "worktree" "remove" "--force" wt))))))
 
 (defun elpaa--push (pkg-spec)
   (let* ((pkg (car pkg-spec))
          (release-branch (elpaa--spec-get pkg-spec :release-branch))
          (ortb (elpaa--ortb pkg-spec))
          (ortb-p (elpaa--git-branch-p ortb))
-         (urtb (elpaa--urtb pkg-spec)))
+         (urtb (elpaa--urtb pkg-spec))
+         (merge (elpaa--spec-get pkg-spec :merge)))
     ;; FIXME: Arrange to merge if it's not a fast-forward.
     (with-temp-buffer
       (cond
-       ((and ortb-p
-             (zerop (elpaa--call t "git" "merge-base"
-                                 "--is-ancestor" urtb ortb)))
+       ((and ortb-p (elpaa--is-ancestor urtb ortb))
         (message "Nothing to push for %s" pkg))
-       ((and ortb-p
-             (not (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
-                                      ortb urtb)))
-             (elpaa--git-branch-p ortb))
-        (message "Can't push %s: not a fast-forward" pkg))
-       ((equal 0 (apply #'elpaa--call
-                        t "git" "push" "--set-upstream"
-                        "origin"
-                        (format "%s:refs/heads/%s%s"
-                                urtb elpaa--branch-prefix pkg)
-                        (when release-branch
-                          (list
-                           (format "%s:refs/heads/%s%s"
-                                   (elpaa--urtb pkg-spec "release")
-                                   elpaa--release-branch-prefix pkg)))))
+       ((xor (and ortb-p (not (elpaa--is-ancestor ortb urtb)))
+             merge)
+        (if merge
+            (message "Error: ':merge' used when not needed: %S\n%S"
+                     pkg (buffer-string))
+          (message "Can't push %s: not a fast-forward" pkg)))
+       ((when merge
+          ;; FIXME: This only handles merges on the devel branch.
+          (not (setq urtb (elpaa--merge pkg-spec urtb ortb))))
+        (message "Merge failure for %S:\n%S" pkg
+                 (buffer-string)))
+       ((equal 0 (elpaa--call
+                  t "git" "push" "--set-upstream"
+                  "origin"
+                  (format "%s:refs/heads/%s%s"
+                          urtb elpaa--branch-prefix pkg)
+                  (when release-branch
+                    (format "%s:refs/heads/%s%s"
+                            (elpaa--urtb pkg-spec "release")
+                            elpaa--release-branch-prefix pkg))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (when (file-directory-p (expand-file-name (car pkg-spec) "packages"))
+        (when (file-directory-p (expand-file-name pkg "packages"))
           (elpaa--worktree-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
