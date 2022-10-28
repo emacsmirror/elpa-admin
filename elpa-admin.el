@@ -1302,6 +1302,7 @@ readme file has an unconventional name"
   (format "\n
         <div class=\"footer\">
             <div class=\"container\">
+                <p>Last refreshed on %s</p>
                 <p>Copyright 2016-%s <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
                 <p>Design provided by <a href=\"https://nicolas.petton.fr\">Nicolas Petton</a></p>
                 <p>
@@ -1314,7 +1315,8 @@ readme file has an unconventional name"
         </div>
 
 </body>\n"
-          (format-time-string "%Y")))
+          (format-time-string "%Y-%b-%d %R" nil t)
+          (format-time-string "%Y" nil t)))
 
 (defun elpaa--html-bytes-format (bytes) ;Aka memory-usage-format.
   (if (null bytes)
