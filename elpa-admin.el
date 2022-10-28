@@ -1372,6 +1372,13 @@ which see."
                      :ext-plist (append '(:html-toplevel-hlevel 3)
                                         elpaa--org-export-options)))
 
+(defvar elpaa-markdown-command
+  (if (executable-find "markdown2")
+      ;; Presumably https://github.com/trentm/python-markdown2.
+      ;; Stay conservative in the set of extensions we support.
+      '("markdown2" "-x" "code-friendly,tables")
+    '("markdown")))
+
 (cl-defmethod elpaa--section-to-html ((section (head text/markdown)))
   (with-temp-buffer
     (let ((input-filename
@@ -1379,7 +1386,8 @@ which see."
       (unwind-protect
           (progn
             (write-region (cdr section) nil input-filename)
-            (elpaa--call-sandboxed t "markdown" input-filename))
+            (apply #'elpaa--call-sandboxed t
+                   `(,@elpaa-markdown-command ,input-filename)))
         (delete-file input-filename)))
     ;; Adjust headings since this HTML fragment will be inserted
     ;; inside an <h2> section.
