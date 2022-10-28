@@ -792,18 +792,25 @@ of the current `process-environment'.  Return the modified copy."
   "Process and publish SPECS in elpa-packages.eld files."
   (with-temp-buffer
     ;; Remove :core packages, handle :url nil and and compress the
-    ;; contents of the "elpa-packages"
+    ;; contents of the "elpa-packages".  Note that elpa-packages.eld
+    ;; does not use the same format as "elpa-packages" in
+    ;; {nongnu,elpa}.git.  The file is intended to be used by
+    ;; package-vc.el.
     (prin1
-     (mapcan
-      (lambda (spec)
-        (pcase spec
-          (`(,name :url nil . ,rest)
-           `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
-                    :branch ,(concat elpaa--branch-prefix (car spec))
-                    ,@rest)))
-          (`(,_ :core ,_ . ,_) nil)       ;not supported
-          (_ (list spec))))
-      specs)
+     (list (mapcan
+            (lambda (spec)
+              (let ((rel (ignore-errors (elpaa--get-last-release spec))))
+                (when rel
+                  (nconc spec (list :release-rev (cdr rel)))))
+              (pcase spec
+                (`(,name :url nil . ,rest)
+                 `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
+                          :branch ,(concat elpaa--branch-prefix (car spec))
+                          ,@rest)))
+                (`(,_ :core ,_ . ,_) nil)       ;not supported
+                (_ (list spec))))
+            specs)
+           :version 1 :default-vc 'Git)
      (current-buffer))
     (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--release-subdir))
     (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--devel-subdir))))
