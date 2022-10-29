@@ -18,16 +18,28 @@ the [[https://elpa.gnu.org/][GNU ELPA]] and NonGNU ELPA archives.
 
 * Getting the source
 
-Start with source that is cloned directly from Savannah.  See [[https://savannah.gnu.org/git/?group=emacs][the Savannah page]]
-and look for "GNU ELPA".  Using a clone of a clone does not work.
+Start with source that is cloned directly from Savannah
+(See [[https://savannah.gnu.org/git/?group=emacs][the Savannah page]] and look for "ELPA").
+Using a clone of a clone might not work.
 
-You must then do some setup:
+The repository is large because it contains all the packages, so you
+will usually want to clone with =--single-branch= to avoid downloading
+a large amount of irrelevant data.  More specifically, here is how you
+can get the source and setup the general infrastructure:
+
 #+begin_src shell
-   make setup
+  git clone --single-branch git://git.savannah.gnu.org/emacs/elpa.git
+  cd elpa
+  make
 #+end_src
 
-That leaves the =packages= directory empty; you must check out the
-ones you want.
+Where the =Makefile= in the =main= branch is used to automatically
+pull the =elpa-admin= branch to populate the =admin= subdirectory.
+
+However, it leaves the =packages= directory empty; you must check out
+the ones you want.
+
+** Check out all packages
 
 If you wish to check out all the packages into the =packages=
 directory, you can run the command:
@@ -36,12 +48,22 @@ directory, you can run the command:
    make worktrees
 #+end_src
 
+** Check out specific package
+
 You can check out a specific package =<pkgname>= into the =packages=
 directory with this command:
 
 #+begin_src
    make packages/<pkgname>
 #+end_src
+
+The first time you run this command, it just populates that directory.
+After that, it will (re)"build" the package for use in-place, i.e. it will
+create (or refresh) the =<pkgname>-pkg.el= and  =<pkgname>-autoloads.el= files
+and (re)compile the ELisp files under the assumption that you have put
+=.../elpa/packages/= into your =package-directory-list=.
+
+** Updating a package directory
 
 If you already have a =packages/<pkgname>= directory with a previous
 checkout, you can update it like this:
