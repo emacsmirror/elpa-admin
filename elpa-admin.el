@@ -1691,10 +1691,10 @@ arbitrary code."
                       (car pkg) (car pkg)
                       (package-version-join (aref (cdr pkg) 0))
                       (aref (cdr pkg) 2))))
-    (insert (format "                </table>
+    (insert "                </table>
             </div>
             <div class=\"push\"></div>
-        </div>" (format-time-string "%Y-%m-%d %H:%M")))
+        </div>")
     (insert (elpaa--html-footer))
     (write-region (point-min) (point-max) "index.html")))
 
