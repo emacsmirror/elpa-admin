@@ -1315,7 +1315,7 @@ readme file has an unconventional name"
         </div>
 
 </body>\n"
-          (format-time-string "%Y-%b-%d %R" nil t)
+          (format-time-string "%Y-%b-%d %R %Z" nil t)
           (format-time-string "%Y" nil t)))
 
 (defun elpaa--html-bytes-format (bytes) ;Aka memory-usage-format.
