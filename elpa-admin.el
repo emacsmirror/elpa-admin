@@ -1669,7 +1669,7 @@ arbitrary code."
                               file (elpaa--html-quote file)
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (elpaa--html-bytes-format (nth 7 attrs)))))))
-        (insert "</table>\n"))
+        (insert "</table>\n</div>\n"))
       (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
           (insert "<h2>News</h2>\n"
