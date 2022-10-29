@@ -1693,7 +1693,6 @@ arbitrary code."
                       (aref (cdr pkg) 2))))
     (insert (format "                </table>
             </div>
-              <p>Last update: %s</p>
             <div class=\"push\"></div>
         </div>" (format-time-string "%Y-%m-%d %H:%M")))
     (insert (elpaa--html-footer))
