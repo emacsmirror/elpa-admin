@@ -799,9 +799,6 @@ of the current `process-environment'.  Return the modified copy."
     (prin1
      (list (mapcan
             (lambda (spec)
-              (let ((rel (ignore-errors (elpaa--get-last-release spec))))
-                (when rel
-                  (nconc spec (list :release-rev (cdr rel)))))
               (pcase spec
                 (`(,name :url nil . ,rest)
                  `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
