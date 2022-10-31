@@ -1311,7 +1311,7 @@ readme file has an unconventional name"
                 <p>Design provided by <a href=\"https://nicolas.petton.fr\">Nicolas Petton</a></p>
                 <p>
                   This website is licensed under the
-                  <a href=\"https://creativecommons.org/licenses/by-nd/4.0/\">CC BY-ND 4.0</a>
+                  <a href=\"https://creativecommons.org/licenses/by-sa/4.0/\">CC BY-SA 4.0</a>
                   International License.
                 </p>
                 <p><a href=\"/jslicense.html\" data-jslicense=\"1\">JavaScript Licenses</a></p>
