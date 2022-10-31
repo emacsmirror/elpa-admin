@@ -154,6 +154,12 @@ Delete backup files also."
 	       (backup-file-name-p f))
 	   (delete-file f)))))
 
+(defun elpaa--write-archive-contents (ac dir)
+  "Write archive contents AC into directory DIR."
+  (with-temp-buffer
+    (pp ac (current-buffer))
+    (write-region nil nil (expand-file-name "archive-contents" dir))))
+
 (defun elpaa--update-archive-contents (pkg-desc dir)
   "Update the `archive-contents' file in DIR with new package PKG-DESC."
   (let* ((filename (expand-file-name "archive-contents" dir))
@@ -166,11 +172,9 @@ Delete backup files also."
                          (lambda (x y)
                            (string-lessp (symbol-name (car x)) (symbol-name (car y))))))
     (elpaa--message "new AC: %S" ac)
-    (with-temp-buffer
-      (pp ac (current-buffer))
-      (write-region nil nil filename)
-      (let ((default-directory (expand-file-name dir)))
-        (elpaa--html-make-index (cdr ac))))))
+    (elpaa--write-archive-contents ac dir)
+    (let ((default-directory (expand-file-name dir)))
+      (elpaa--html-make-index (cdr ac)))))
 
 (defun elpaa--get-specs ()
   (elpaa--form-from-file-contents elpaa--specs-file))
@@ -788,6 +792,21 @@ of the current `process-environment'.  Return the modified copy."
 	  (list pkgname))
       spec)))
 
+(defun elpaa--scrub-archive-contents (dir specs)
+  "Remove dead packages from archive contents in DIR.
+SPECS is the list of package specifications."
+  (let* ((filename (expand-file-name "archive-contents" dir))
+         (ac (if (file-exists-p filename)
+                 (elpaa--form-from-file-contents filename)
+               '(1))))
+    (elpaa--write-archive-contents
+     (cons (car ac)
+           (mapcan
+            (lambda (pkg)
+              (and (assoc (car pkg) specs #'string=) (list pkg)))
+            (cdr ac)))
+     dir)))
+
 (defun elpaa--publish-package-specs (specs)
   "Process and publish SPECS in elpa-packages.eld files."
   (with-temp-buffer
@@ -815,6 +834,8 @@ of the current `process-environment'.  Return the modified copy."
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
   (let ((specs (elpaa--get-specs)))
+    (elpaa--scrub-archive-contents elpaa--release-subdir specs)
+    (elpaa--scrub-archive-contents elpaa--devel-subdir specs)
     (dolist (spec specs)
       (condition-case err
           (elpaa--make-one-package spec)
