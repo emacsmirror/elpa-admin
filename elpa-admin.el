@@ -317,7 +317,7 @@ returns.  Return the selected revision."
       (with-temp-buffer
         ;; Run it within the true-filename directory holding the mainfile,
         ;; so that for :core packages we properly affect the Emacs tree.
-        (elpaa--call t "git" "reset" "--merge" rev)
+        (elpaa--call t "git" "checkout" "--detach" rev)
         (elpaa--message "Reverted to release revision %s\n%s"
                         rev (buffer-string)))
       ;; We should make sure we go back to the head of the branch afterwards,
@@ -377,7 +377,15 @@ returns.  Return the selected revision."
   (let* ((default-directory (elpaa--dirname dir))
          (generated-files
           (directory-files "." nil
-                           "-\\(pkg\\|autoloads\\)\\.el\\'\\|\\.elc\\'")))
+                           "-\\(pkg\\|autoloads\\)\\.el\\'\\|\\.elc\\'"))
+         (rev (with-temp-buffer
+                (when (zerop (elpaa--call t "git" "rev-parse" "HEAD"))
+                  (buffer-substring (point-min) (1- (point-max))))))
+         (branch
+          (with-temp-buffer
+            (and (zerop (elpaa--call t "git" "branch" "--show-current"))
+                 (> (buffer-size) 0)
+                 (buffer-substring (point-min) (1- (point-max)))))))
     (mapc #'delete-file generated-files)
     (when (file-exists-p ".git")
       (with-temp-buffer
@@ -410,7 +418,11 @@ returns.  Return the selected revision."
            (with-temp-buffer
              (let* ((default-directory (elpaa--dirname dir)))
                (elpaa--call t "git" "clean" "-x" "-d" "-f")
-               (elpaa--call t "git" "checkout" "--" "."))
+               (elpaa--call t "git" "reset" "--hard")
+               (when branch
+                 (elpaa--call t "git" "checkout" branch))
+               (when rev
+                 (elpaa--call t "git" "reset" "--hard" rev)))
              (elpaa--message "%s" (buffer-string)))))))))
 
 (defvar elpaa--keep-max 20)
@@ -1007,7 +1019,8 @@ place the resulting tarball into the file named TARBALL-ONLY."
           (elpaa--message "Package %s not released yet!" pkgname))
          ;; negative version numbers are used for pre-releases
          ;; (i.e. snapshots, alpha, beta, and rc).
-         ((< (apply #'min (version-to-list vers)) 0)
+         ((or (< (apply #'min (version-to-list vers)) 0)
+              (elpaa--spec-get pkg-spec :release-branch))
           (cond
            ((not (or new
                      ;; Even if there's nothing new on the devel branch,
