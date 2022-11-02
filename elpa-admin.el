@@ -1144,18 +1144,19 @@ PKG is the name of the package and DIR is the directory where it is."
       (with-temp-buffer
 	(insert-file-contents mainfile)
 	(goto-char (point-min))
-        (let* ((pkg-desc
+        (let* ((lmheader-advice
+                (when (or (plist-get (cdr pkg-spec) :version-map)
+                          (plist-get (cdr pkg-spec) :dont-release))
+                  (apply-partially
+                   #'elpaa--override-version
+                   pkg-spec)))
+               (pkg-desc
                 (unwind-protect
                     (progn
-                      (when (or (plist-get (cdr pkg-spec) :version-map)
-                                (plist-get (cdr pkg-spec) :dont-release))
-                        (advice-add 'lm-header :around
-                                    (apply-partially
-                                     #'elpaa--override-version
-                                     pkg-spec)))
+                      (when lmheader-advice
+                        (advice-add 'lm-header :around lmheader-advice))
                       (package-buffer-info))
-                  (advice-remove 'lm-header
-                                 #'elpaa--override-version)))
+                  (advice-remove 'lm-header lmheader-advice)))
                (extras (package-desc-extras pkg-desc))
                (version (package-desc-version pkg-desc))
                (keywords (lm-keywords-list))
