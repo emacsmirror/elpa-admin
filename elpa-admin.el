@@ -1715,7 +1715,7 @@ arbitrary code."
                   "<div class=\"splice news\">\n"
                   (elpaa--section-to-html news)
                   "\n</div>\n")))
-      (insert </div>\n)
+      (insert "</div>\n")
       (insert (elpaa--html-footer))
       (write-region (point-min) (point-max) (concat name ".html")))))
 
