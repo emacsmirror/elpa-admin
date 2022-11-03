@@ -1708,13 +1708,14 @@ arbitrary code."
                               file (elpaa--html-quote file)
                               (format-time-string "%Y-%b-%d" (nth 5 attrs))
                               (elpaa--html-bytes-format (nth 7 attrs)))))))
-        (insert "</table>\n</div>\n"))
+        (insert "</table>\n"))
       (let ((news (elpaa--get-NEWS pkg-spec srcdir)))
         (when news
           (insert "<h2>News</h2>\n"
                   "<div class=\"splice news\">\n"
                   (elpaa--section-to-html news)
                   "\n</div>\n")))
+      (insert </div>\n)
       (insert (elpaa--html-footer))
       (write-region (point-min) (point-max) (concat name ".html")))))
 
