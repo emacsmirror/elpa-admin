@@ -123,6 +123,8 @@ It can be a single file name or a list of file names.
 Specifies the branch to follow in the upstream Git repository, in case
 it should be different from the default branch.
 
+If there is no upstream (=:url= is nil), this is simply ignored.
+
 ** =:lisp-dir=
 Subdirectory in which the main ELisp found are found.
 Defaults to the top-level directory.
@@ -141,7 +143,7 @@ and only if the version number in the development branch indicates that it
 contains development code (i.e. a "snapshot" version, according to
 `version-to-list`).
 
-If there is no upstream (:url is nil), the presence of :release-branch
+If there is no upstream (=:url= is nil), the presence of :release-branch
 just indicates that release and devel branches in elpa.git are desired
 (the name given in :release-branch is ignored). The release branch is
 named `externals-release/<pkg-name>' for GNU ELPA and
