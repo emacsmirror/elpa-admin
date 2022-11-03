@@ -606,8 +606,9 @@ auxillary files unless TARBALL-ONLY is non-nil ."
       (progn
         (elpaa--message "Tarball %s already built!" tarball)
         nil)
-    (message "======== Building tarball %s..." tarball)
-    (let ((res nil))
+    (let ((msg-start (with-current-buffer "*Messages*" (point-marker)))
+          (res nil))
+      (message "======== Building tarball %s..." tarball)
       (unwind-protect
           (condition-case-unless-debug err
               (setq res (elpaa--make-one-tarball-1
@@ -617,7 +618,18 @@ auxillary files unless TARBALL-ONLY is non-nil ."
                    nil))
         (message (if res "######## Built new package %s!"
                    "######## Build of package %s FAILED!!")
-                 tarball)))))
+                 tarball)
+        (let ((logfile (expand-file-name (concat (car pkg-spec)
+                                                 "-build-failure.log")
+                                         (file-name-directory tarball))))
+          (if res
+              (delete-file logfile)
+            ;; FIXME: Add a link from <PKG>.html to this log.
+            ;; Maybe also send an email notification to the maintainer
+            ;; if the file is new or is different (longer?) than before.
+            (let ((msg (with-current-buffer (marker-buffer msg-start)
+                         (buffer-substring msg-start (point-max)))))
+              (write-region msg nil logfile nil 'silent))))))))
 
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
