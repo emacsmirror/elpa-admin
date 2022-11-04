@@ -884,22 +884,25 @@ SPECS is the list of package specifications."
 (defun elpaa--string-width (str)
   "Determine string width in pixels of STR."
   (with-temp-buffer
-    ;; Current (2021) ImageMagick recommends using the "magick"
-    ;; driver, rather than "convert" directly, but Debian doesn't
-    ;; provide it yet.
-    (elpaa--call (current-buffer)
-                 "convert" "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
-                 "-pointsize" "110" "-annotate" "0" str "null:")
-    (goto-char (point-min))
-    (if (not (re-search-forward "Metrics:.*?width: \\([0-9]+\\)"))
-        (error "Could not determine string width")
-      (let ((width (string-to-number (match-string 1))))
-        ;; This test aims to catch the case where the font is missing,
-        ;; but it seems it only works in some cases :-(
-        (if (and (> (string-width str) 0) (not (> width 0)))
-            (progn (message "convert:\n%s" (buffer-string))
-                   (error "Could not determine string width"))
-          width)))))
+    ;; ImageMagick 7.1.0 or later requires using the "magick" driver,
+    ;; rather than "convert" directly, but Debian doesn't provide it
+    ;; yet (2021).
+    (let ((args
+           (append (list (current-buffer))
+                   (if (executable-find "magick") '("magick" "convert") '("convert"))
+                   (list "-debug" "annotate" "xc:" "-font" "DejaVu-Sans"
+                         "-pointsize" "110" "-annotate" "0" str "null:"))))
+      (apply #'elpaa--call args)
+      (goto-char (point-min))
+      (if (not (re-search-forward "Metrics:.*?width: \\([0-9]+\\)"))
+          (error "Could not determine string width")
+        (let ((width (string-to-number (match-string 1))))
+          ;; This test aims to catch the case where the font is missing,
+          ;; but it seems it only works in some cases :-(
+          (if (and (> (string-width str) 0) (not (> width 0)))
+              (progn (message "convert:\n%s" (buffer-string))
+                     (error "Could not determine string width"))
+            width))))))
 
 (defun elpaa--make-badge (file left right)
   "Make badge svg FILE with LEFT and RIGHT string."
