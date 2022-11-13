@@ -844,6 +844,7 @@ SPECS is the list of package specifications."
             (lambda (spec)
               (pcase spec
                 (`(,name :url nil . ,rest)
+                 (if (stringp name) (setq name (intern name)))
                  `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
                           :branch ,(concat elpaa--branch-prefix (car spec))
                           ,@rest)))
