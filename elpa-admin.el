@@ -586,7 +586,7 @@ returns.  Return the selected revision."
                                  &optional revision-function tarball-only)
   "Create file TARBALL for PKG-SPEC if not done yet.
 Return non-nil if a new tarball was created.  Also create some
-auxillary files unless TARBALL-ONLY is non-nil ."
+auxiliary files unless TARBALL-ONLY is non-nil ."
   (elpaa--message "Building tarball %s..." tarball)
   (if (and (or (file-readable-p tarball)
                (file-readable-p (replace-regexp-in-string
@@ -842,19 +842,28 @@ SPECS is the list of package specifications."
     (prin1
      (list (mapcan
             (lambda (spec)
-              (pcase spec
-                (`(,name :url nil . ,rest)
+              (pcase-exhaustive spec
+                (`(,name :url ,url . ,rest)
                  (if (stringp name) (setq name (intern name)))
-                 `((,name :url ,(concat "https://git.sv.gnu.org/git/" elpaa--gitrepo)
-                          :branch ,(concat elpaa--branch-prefix (car spec))
-                          ,@rest)))
+                 (unless url
+                   ;; Use the `git:' URL rather than the `https:' URL
+                   ;; because it's a lot faster on this repository when
+                   ;; cloning a single branch.
+                   (setq url (concat "git://git.sv.gnu.org/"
+                                     elpaa--gitrepo))
+                   (setq rest
+                         `(:branch ,(concat elpaa--branch-prefix (car spec))
+                           . ,rest)))
+                 `((,name :url ,url ,@rest)))
                 (`(,_ :core ,_ . ,_) nil)       ;not supported
-                (_ (list spec))))
+                ))
             specs)
            :version 1 :default-vc 'Git)
      (current-buffer))
-    (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--release-subdir))
-    (write-region nil nil (expand-file-name "elpa-packages.eld" elpaa--devel-subdir))))
+    (write-region nil nil
+                  (expand-file-name "elpa-packages.eld" elpaa--release-subdir))
+    (write-region nil nil
+                  (expand-file-name "elpa-packages.eld" elpaa--devel-subdir))))
 
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
@@ -1616,7 +1625,8 @@ arbitrary code."
                     '("cgit/%s/?h=%s%s"
                       "gitweb/?p=%s;a=shortlog;h=refs/heads/%s%s")))))
     (insert (format
-             (concat (format "<dt>Browse %srepository</dt> <dd>" (if url "ELPA's " ""))
+             (concat (format "<dt>Browse %srepository</dt> <dd>"
+                             (if url "ELPA's " ""))
                      "<a href=%S>%s</a> or <a href=%S>%s</a></dd>\n")
              (concat git-sv (nth 0 urls))
              'CGit
