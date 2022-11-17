@@ -831,6 +831,40 @@ SPECS is the list of package specifications."
             (cdr ac)))
      dir)))
 
+(defconst elpaa--supported-keywords
+  '(:url :core :auto-sync :ignored-files :release-branch :release
+    :readme :news :doc :renames :version-map :make :shell-command
+    :branch :lisp-dir :main-file :merge :excludes)
+  "List of keywords that can appear in a spec.")
+
+(defun elpaa--publishes-package-spec (spec)
+  (let ((extra-keys
+         (seq-difference (map-keys (cdr spec)) elpaa--supported-keywords)))
+    (when extra-keys
+      (message "Error: unknown keys in %S: %S"
+               (car spec) extra-keys)))
+  (condition-case err
+      (pcase-exhaustive spec
+        (`(,name :url ,url . ,rest)
+         (if (stringp name) (setq name (intern name)))
+         (unless url
+           ;; Use the `git:' URL rather than the `https:' URL
+           ;; because it's a lot faster on this repository when
+           ;; cloning a single branch.
+           (setq url (concat "git://git.sv.gnu.org/"
+                             elpaa--gitrepo))
+           (setq rest
+                 (plist-put rest :branch
+                            (concat elpaa--branch-prefix (car spec))))
+           (when (plist-get :release-branch rest)
+             (setq rest (plist-put rest :release-branch
+                                   (concat elpaa--release-branch-prefix
+                                           (car spec))))))
+         `(,name :url ,url ,@rest))
+        (`(,_ :core ,_ . ,_) nil)) ;Not supported in the published specs.
+    (error (message "Error: %S" err)
+           nil)))
+
 (defun elpaa--publish-package-specs (specs)
   "Process and publish SPECS in elpa-packages.eld files."
   (with-temp-buffer
@@ -840,24 +874,7 @@ SPECS is the list of package specifications."
     ;; {nongnu,elpa}.git.  The file is intended to be used by
     ;; package-vc.el.
     (prin1
-     (list (mapcan
-            (lambda (spec)
-              (pcase-exhaustive spec
-                (`(,name :url ,url . ,rest)
-                 (if (stringp name) (setq name (intern name)))
-                 (unless url
-                   ;; Use the `git:' URL rather than the `https:' URL
-                   ;; because it's a lot faster on this repository when
-                   ;; cloning a single branch.
-                   (setq url (concat "git://git.sv.gnu.org/"
-                                     elpaa--gitrepo))
-                   (setq rest
-                         `(:branch ,(concat elpaa--branch-prefix (car spec))
-                           . ,rest)))
-                 `((,name :url ,url ,@rest)))
-                (`(,_ :core ,_ . ,_) nil)       ;not supported
-                ))
-            specs)
+     (list (delq nil (mapcar #'elpaa--publishes-package-spec specs))
            :version 1 :default-vc 'Git)
      (current-buffer))
     (write-region nil nil
