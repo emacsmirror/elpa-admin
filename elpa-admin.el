@@ -873,10 +873,10 @@ SPECS is the list of package specifications."
 (defconst elpaa--supported-keywords
   '(:url :core :auto-sync :ignored-files :release-branch :release
     :readme :news :doc :renames :version-map :make :shell-command
-    :branch :lisp-dir :main-file :merge :excludes)
+    :branch :lisp-dir :main-file :merge :excludes :rolling-release)
   "List of keywords that can appear in a spec.")
 
-(defun elpaa--publishes-package-spec (spec)
+(defun elpaa--publish-package-spec (spec)
   (let ((extra-keys
          (seq-difference (map-keys (cdr spec)) elpaa--supported-keywords)))
     (when extra-keys
@@ -914,7 +914,7 @@ SPECS is the list of package specifications."
     ;; {nongnu,elpa}.git.  The file is intended to be used by
     ;; package-vc.el.
     (prin1
-     (list (delq nil (mapcar #'elpaa--publishes-package-spec specs))
+     (list (delq nil (mapcar #'elpaa--publish-package-spec specs))
            :version 1 :default-vc 'Git)
      (current-buffer))
     (write-region nil nil
@@ -927,11 +927,11 @@ SPECS is the list of package specifications."
   (let ((specs (elpaa--get-specs)))
     (elpaa--scrub-archive-contents elpaa--release-subdir specs)
     (elpaa--scrub-archive-contents elpaa--devel-subdir specs)
+    (elpaa--publish-package-specs specs)
     (dolist (spec specs)
       (condition-case err
           (elpaa--make-one-package spec)
-        (error (message "Build error for %s: %S" (car spec) err))))
-    (elpaa--publish-package-specs specs)))
+        (error (message "Build error for %s: %S" (car spec) err))))))
 
 (defun elpaa-batch-make-one-package (&rest _)
   "Build the new tarballs (if needed) for one particular package."
