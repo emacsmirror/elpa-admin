@@ -52,6 +52,7 @@
 (defvar elpaa--email-to nil) ;;"gnu-emacs-sources@gnu.org"
 (defvar elpaa--email-from nil) ;;"ELPA update <do.not.reply@elpa.gnu.org>"
 (defvar elpaa--email-reply-to nil)
+(defvar elpaa--notification-email-bcc "elpasync@gnu.org")
 
 (defvar elpaa--sandbox-extra-ro-dirs nil)
 
@@ -114,7 +115,9 @@ See variable `org-export-options-alist'.")
               ('sandbox			elpaa--sandbox)
               ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
               ('doc-dir                 elpaa--doc-subdirectory)
-              ('debug			elpaa--debug))
+              ('debug			elpaa--debug)
+              ((guard (boundp (intern (format "elpaa--%s" var))))
+               (symbol-value (intern (format "elpaa--%s" var)))))
             val))))
 
 (when (file-readable-p "elpa-config") (elpaa-read-config "elpa-config"))
@@ -624,17 +627,45 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
         (message (if res "######## Built new package %s!"
                    "######## Build of package %s FAILED!!")
                  tarball)
-        (let ((logfile (expand-file-name (format "%s-build-failure.log"
-                                                 (car pkg-spec))
-                                         (file-name-directory tarball))))
+        (let* ((pkg-name (car pkg-spec))
+               (logfile (expand-file-name (format "%s-build-failure.log"
+                                                  pkg-name)
+                                          (file-name-directory tarball))))
           (if res
               (delete-file logfile)
-            ;; FIXME: Add a link from <PKG>.html to this log.
+            ;; FIXME: Add a link from <PKG>.html to this log?
             ;; Maybe also send an email notification to the maintainer
             ;; if the file is new or is different (longer?) than before.
-            (let ((msg (with-current-buffer (marker-buffer msg-start)
+            (let ((prev-size
+                   (or (file-attribute-size (file-attributes logfile)) 0))
+                  (msg (with-current-buffer (marker-buffer msg-start)
                          (buffer-substring msg-start (point-max)))))
-              (write-region msg nil logfile nil 'silent))))))))
+              (write-region msg nil logfile nil 'silent)
+              (when (and elpaa--email-to
+                         (> (or (file-attribute-size (file-attributes logfile)) 0)
+                            prev-size))
+                (let ((maintainers (elpaa--maintainers
+                                    (elpaa--metadata dir pkg-spec))))
+                  (unless (equal maintainers "")
+                    (elpaa--send-email
+                     `((From    . ,elpaa--email-from)
+                       (To      . ,maintainers)
+                       (Bcc	. ,elpaa--notification-email-bcc)
+                       (Subject . ,(format "[%s ELPA] Tarball build failure for %s"
+                                           elpaa--name pkg-name)))
+                     ;; FIXME: Compute the actual URL.  We currently can't
+                     ;; do that for the devel site (sadly, the most important
+                     ;; case) because we don't know its URL.
+                     (format
+                      "The build scripts failed to build the tarball
+for version %s of the package %s.
+You can consult the latest error output in the file
+\"%s-build-failure.log\" in the corresponding ELPA archive web site.
+
+This current error output was the following:\n\n%s"
+                      (or (car-safe metadata-or-version) metadata-or-version)
+                      pkg-name pkg-name msg))))))))))))
+
 
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
@@ -2194,62 +2225,91 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (if (equal (downcase name) name)
         (capitalize name) name)))
 
+(defun elpaa--send-email (headers body)
+  (with-temp-buffer
+    (message-mode)
+    (declare-function message-setup "message"
+                      (headers &optional yank-action actions continue
+                               switch-function return-action))
+    (declare-function message-send "message" (&optional arg))
+    (message-setup headers)
+    (insert body)
+    (pop-to-buffer (current-buffer)) (debug t)
+    (message-send)
+    ))
+
+(defun elpaa--maintainers (metadata)
+  (let* ((maint (cdr (assq :maintainer (nth 4 metadata))))
+         ;; `:maintainer' can hold a list or a single maintainer.
+         (maints (if (consp (car maint)) maint (list maint)))
+         (maint-emails
+          (mapcar (lambda (x)
+                    (let ((name  (car-safe x))
+                          (email (cdr-safe x)))
+                      (if (not (and (stringp email)
+                                    (string-match "@" email)))
+                          (progn
+                            (message "Error, no email address: %S" x)
+                            nil)
+                        (while (and (stringp name)
+                                    (string-match "[<@>,]" name))
+                          (message "Error, weird char \"%s\" in name: %S"
+                                   (match-string 0 name) name)
+                          (setq name (replace-match " " t t name)))
+                        (format "%s <%s>" name email))))
+                  maints)))
+    (mapconcat #'identity (delq nil maint-emails) ",")))
+
 (defun elpaa--release-email (pkg-spec metadata dir)
   (when elpaa--email-to
     (with-temp-buffer
-      (message-mode)
-      (declare-function message-setup "message"
-                        (headers &optional yank-action actions continue
-                                 switch-function return-action))
-      (declare-function message-send "message" (&optional arg))
       (let* ((version (nth 1 metadata))
              (pkg (car pkg-spec))
              (name (elpaa--pkg-name pkg-spec))
-             (maint (cdr (assq :maintainer (nth 4 metadata))))
-             ;; `:maintainer' can hold a list or a single maintainer.
-             (maints (if (consp (car maint)) maint (list maint)))
-             (maint-emails
-              (mapcar (lambda (x)
-                        (let ((name  (car-safe x))
-                              (email (cdr-safe x)))
-                          (if (not (and (stringp email)
-                                        (string-match "@" email)))
-                              (progn
-                                (message "Error, no email address: %S" x)
-                                nil)
-                            (while (and (stringp name)
-                                        (string-match "[<@>,]" name))
-                              (message "Error, weird char \"%s\" in name: %S"
-                                       (match-string 0 name) name)
-                              (setq name (replace-match " " t t name)))
-                            (format "%s <%s>" name email))))
-                      maints))
+             (desc (nth 2 metadata))
              (maintainers
-              (mapconcat #'identity (delq nil maint-emails) ",")))
-        (message-setup `((From    . ,elpaa--email-from)
-                         (To      . ,elpaa--email-to)
-                         (Subject . ,(format "[%s ELPA] %s version %s"
-                                             elpaa--name name version))
-                         ,@(unless (equal maintainers "")
-                             `((Cc . ,maintainers)))
-                         ,@(if elpaa--email-reply-to
-                               `((Reply-To . ,elpaa--email-reply-to)))))
+              (elpaa--maintainers metadata)))
         (insert "Version " version
                 " of package " name
-                " has just been released in " elpaa--name " ELPA.
-You can now find it in M-x list-packages RET.
-
-" name " describes itself as:
-  " (nth 2 metadata) "
-
-More at " (elpaa--default-url pkg))
+                " has just been released in " elpaa--name " ELPA.\n"
+                "You can now find it in M-x list-packages RET.\n\n"
+                name " describes itself as:\n\n  "
+                (make-string (string-width desc) ?=) "\n  "
+                desc "\n  "
+                (make-string (string-width desc) ?=) "\n\nMore at "
+                (elpaa--default-url pkg))
+        (let ((readme (elpaa--get-README pkg-spec dir)))
+          (unless (bolp) (insert "\n"))
+          (insert "\n## Summary:\n\n")
+          (let ((beg (point)))
+            (insert (if (not readme)
+                        "[Not available 🙁]"
+                      (elpaa--section-to-plain-text readme)))
+            ;; Keep a max of about 10 lines of full-length text.
+            (delete-region (min (+ beg 800) (point)) (point))
+            (delete-region
+             ;; Truncate at the end of the nearest paragraph.
+             (or (re-search-backward "\n[ \t]*$" beg t)
+                 (re-search-backward "\n" beg t)
+                 (point))
+             (point))
+            (indent-rigidly beg (point) 2)))
         (let ((news (elpaa--get-NEWS pkg-spec dir)))
-          (when news
-            (insert "\n\nRecent NEWS:\n\n"
+          (unless (bolp) (insert "\n"))
+          (insert "\n## Recent NEWS:\n\n"
+                  (if (not news)
+                      "[Not available 🙁]"
                     (elpaa--section-to-plain-text news))))
-        ;; (pop-to-buffer (current-buffer)) (debug t)
-        (message-send)
-        ))))
+        (elpaa--send-email
+         `((From    . ,elpaa--email-from)
+           (To      . ,elpaa--email-to)
+           (Subject . ,(format "[%s ELPA] %s version %s"
+                               elpaa--name name version))
+           ,@(unless (equal maintainers "")
+               `((Cc . ,maintainers)))
+           ,@(if elpaa--email-reply-to
+                 `((Reply-To . ,elpaa--email-reply-to))))
+         (buffer-string))))))
 
 ;;; Build Info files from Texinfo
 
