@@ -2234,7 +2234,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (declare-function message-send "message" (&optional arg))
     (message-setup headers)
     (insert body)
-    (pop-to-buffer (current-buffer)) (debug t)
+    ;; (pop-to-buffer (current-buffer)) (debug t)
     (message-send)
     ))
 
