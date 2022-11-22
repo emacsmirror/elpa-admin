@@ -710,7 +710,9 @@ You can consult the latest error output in the file
 \"%s-build-failure.log\" in the corresponding ELPA archive web site.
 
 This current error output was the following:\n\n%s"
-                      (or (car-safe metadata-or-version) metadata-or-version)
+                      (if (consp metadata-or-version)
+                          (nth 1 metadata-or-version)
+                        metadata-or-version)
                       pkg-name pkg-name msg))))))))))))
 
 
