@@ -54,6 +54,9 @@
 (defvar elpaa--email-reply-to nil)
 (defvar elpaa--notification-email-bcc "elpasync@gnu.org")
 
+(defvar elpaa--dependencies-archive-contents nil
+  "List of `archive-contents' files.")
+
 (defvar elpaa--sandbox-extra-ro-dirs nil)
 
 (defvar elpaa--sandbox
@@ -534,6 +537,50 @@ returns.  Return the selected revision."
                               kept))))
         kept))))))
 
+(defun elpaa--dependencies-archive-contents ()
+  (let ((ac nil))
+    (dolist (file elpaa--dependencies-archive-contents)
+      (let ((form (elpaa--form-from-file-contents file)))
+        (if ac
+            (nconc ac (cdr form))
+          (setq ac form))))
+    ac))
+
+(defun elpaa--check-dependencies (metadata &optional ac)
+  ;; We have various sources of data we could use here to find which
+  ;; packages are available and at which version:
+  ;;
+  ;; - `archive-contents'.
+  ;; - `pkg-specs'.
+  ;; - main files's headers (requires `pkg-specs').
+  ;;
+  ;; For use by the package maintainers (who would likely only have
+  ;; a partial clone of the repositories), we can at best count on
+  ;; `pkg-specs' and that only for the current repository.  So we
+  ;; should probably support fetching&updating a local copy of the
+  ;; official (Non)GNU(-devel) ELPA's `archive-contents'.
+  ;;
+  ;; For use on elpa.gnu.org, we already have a local copy of
+  ;; `archive-contents'.
+  (when elpaa--dependencies-archive-contents
+    (let ((reqs (nth 3 metadata)))
+      (elpaa--message "Checking dependencies: %S" reqs)
+      (pcase-dolist (`(,pkg ,vers) reqs)
+        (if (assq pkg package--builtin-versions)
+            ;; Don't bother checking versions for builtin packages, since
+            ;; the package can legitimately depend on versions more recent than
+            ;; the currently running Emacs.
+            nil
+          (unless ac (setq ac (elpaa--dependencies-archive-contents)))
+          (let* ((ac-data (assq pkg ac))
+                 (pkg-vers (if ac-data (aref (cdr ac-data) 0))))
+            (cond
+             ((and pkg-vers (version-list-<= vers pkg-vers)) nil)
+             ((not ac-data)
+              (error "Unknown required package: %S" pkg))
+             (t (error "Unavailable version %S for package %S"
+                       (package-version-join vers) pkg)))))))))
+
 (defun elpaa--prune-old-tarballs (tarball oldtarballs destdir &optional minage)
   ;; Make sure we don't count ourselves among the "old" tarballs.
   (let ((self (rassoc (file-name-nondirectory tarball) oldtarballs)))
@@ -708,6 +755,7 @@ This current error output was the following:\n\n%s"
        (cl-pushnew (list (file-name-as-directory ldir) "") renames
                    :test #'equal))
      (elpaa--copyright-check pkg-spec)
+     (elpaa--check-dependencies metadata)
      (let ((process-environment (elpaa--makeenv vers revision)))
        ;; Run `make' before building the Info file, so that the `make'
        ;; rule can be used to build the Info/Texinfo file.
@@ -1652,9 +1700,7 @@ arbitrary code."
                       "...\n...\n"))))))
 
 
-(defun elpaa--html-quote (txt)
-  (replace-regexp-in-string "<" "&lt;"
-                            (replace-regexp-in-string "&" "&amp;" txt)))
+(defalias 'elpaa--html-quote #'url-insert-entities-in-string)
 
 (defun elpaa--insert-repolinks (pkg-spec url)
   (when url
@@ -2204,9 +2250,10 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                             filtered "\n"))
         (error "Abort")))))
 
-(defun elpaa-batch-copyright-check (&rest _)
+(defun elpaa-batch-check (&rest _)
   (let ((specs (elpaa--get-specs))
-        (pkgs command-line-args-left))
+        (pkgs command-line-args-left)
+        (ac (elpaa--dependencies-archive-contents)))
     (setq command-line-args-left nil)
     (when (equal pkgs '("-"))
       (setq pkgs (delq nil (mapcar (lambda (spec)
@@ -2215,8 +2262,13 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                        (car spec)))
                                    specs))))
     (dolist (pkg pkgs)
-      (ignore-error 'error
-        (elpaa--copyright-check (elpaa--get-package-spec pkg specs))))))
+      (let ((pkg-spec (elpaa--get-package-spec pkg specs)))
+        (ignore-error 'error
+          (elpaa--copyright-check pkg-spec))
+        (condition-case err
+            (let* ((metadata (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec)))
+              (elpaa--check-dependencies metadata ac))
+          (error (message "Dependency error in %S:\n%S" pkg err)))))))
 
 ;;; Announcement emails
 
@@ -2287,12 +2339,13 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                       (elpaa--section-to-plain-text readme)))
             ;; Keep a max of about 10 lines of full-length text.
             (delete-region (min (+ beg 800) (point)) (point))
-            (delete-region
-             ;; Truncate at the end of the nearest paragraph.
-             (or (re-search-backward "\n[ \t]*$" beg t)
-                 (re-search-backward "\n" beg t)
-                 (point))
-             (point))
+            (let ((end (point)))
+              (delete-region
+               ;; Truncate at the end of the nearest paragraph.
+               (or (re-search-backward "\n[ \t]*$" beg t)
+                   (re-search-backward "\n" beg t)
+                   (point))
+               end))
             (indent-rigidly beg (point) 2)))
         (let ((news (elpaa--get-NEWS pkg-spec dir)))
           (unless (bolp) (insert "\n"))

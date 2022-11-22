@@ -14,7 +14,7 @@ all: all-in-place
 check-all: check/-
 check/%:
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el	\
-	         -f elpaa-batch-copyright-check $*
+	         -f elpaa-batch-check $*
 
 .PHONY: build/% build-all %.tar
 build/%:
