@@ -681,8 +681,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
           (if res
               (delete-file logfile)
             ;; FIXME: Add a link from <PKG>.html to this log?
-            ;; Maybe also send an email notification to the maintainer
-            ;; if the file is new or is different (longer?) than before.
+            ;; FIXME: Add a link to this file in the notification email?
             (let ((prev-size
                    (or (file-attribute-size (file-attributes logfile)) 0))
                   (msg (with-current-buffer (marker-buffer msg-start)
@@ -709,7 +708,7 @@ for version %s of the package %s.
 You can consult the latest error output in the file
 \"%s-build-failure.log\" in the corresponding ELPA archive web site.
 
-This current error output was the following:\n\n%s"
+The current error output was the following:\n\n%s"
                       (if (consp metadata-or-version)
                           (nth 1 metadata-or-version)
                         metadata-or-version)
@@ -2548,6 +2547,41 @@ relative to elpa root."
   (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
                       candidate rev)))
 
+(defun elpaa--record-sync-failure (pkg-spec msg)
+  (let* ((pkg (car pkg-spec))
+         (logfile (expand-file-name (format "%s-sync-failure.log" pkg)
+                                    "archive")))
+    (if (null msg)
+        (delete-file logfile)
+      (let ((prev-size
+             (or (file-attribute-size (file-attributes logfile)) 0))
+            (maintainers (elpaa--maintainers
+                          (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec))))
+        (write-region msg nil logfile nil 'silent)
+;;         (when (and elpaa--email-to
+;;                    (> (or (file-attribute-size (file-attributes logfile)) 0)
+;;                       prev-size)
+;;                    (not (equal maintainers "")))
+;;           (elpaa--send-email
+;;            `((From    . ,elpaa--email-from)
+;;              (To      . ,maintainers)
+;;              (Bcc	. ,elpaa--notification-email-bcc)
+;;              (Subject . ,(format "[%s ELPA] Tarball build failure for %s"
+;;                                  elpaa--name pkg-name)))
+;;            ;; FIXME: Compute the actual URL.  We currently can't
+;;            ;; do that for the devel site (sadly, the most important
+;;            ;; case) because we don't know its URL.
+;;            (format
+;;             "The build scripts failed to build the tarball
+;; for version %s of the package %s.
+;; You can consult the latest error output in the file
+;; \"%s-build-failure.log\" in the corresponding ELPA archive web site.
+
+;; The current error output was the following:\n\n%s"
+;;             (or (car-safe metadata-or-version) metadata-or-version)
+;;             pkg-name pkg-name msg)))
+        ))))
+
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
          (url (elpaa--spec-get pkg-spec :url))
@@ -2580,17 +2614,24 @@ relative to elpa root."
           (message "Nothing new upstream for %s" pkg))
          ((not (or (elpaa--is-ancestor ortb urtb)
                    (elpaa--spec-get pkg-spec :merge)))
-          (message "Upstream of %s has DIVERGED!\n" pkg)
-          (when show-diverged
-            (elpaa--call t "git" "log"
-                         "--format=%h  %<(16,trunc)%ae  %s"
-                         (format "%s..%s" urtb ortb))
-            (message "  Local changes:\n%s" (buffer-string))
-            (erase-buffer)
-            (elpaa--call t "git" "log"
-                         "--format=%h  %<(16,trunc)%ae  %s"
-                         (format "%s..%s" ortb urtb))
-            (message "  Upstream changes:\n%s" (buffer-string))))
+          (message "%s" (delete-and-extract-region (point-min) (point-max)))
+          (let ((msg (format "Upstream of %s has DIVERGED!\n\n" pkg)))
+            (when (or show-diverged (eq k #'elpaa--push))
+              (setq msg (list msg))
+              (elpaa--call t "git" "log"
+                           "--format=%h  %<(16,trunc)%ae  %s"
+                           (format "%s..%s" urtb ortb))
+              (push "  Local changes:\n" msg)
+              (push (delete-and-extract-region (point-min) (point-max)) msg)
+              (elpaa--call t "git" "log"
+                           "--format=%h  %<(16,trunc)%ae  %s"
+                           (format "%s..%s" ortb urtb))
+              (push "\n  Upstream changes:\n" msg)
+              (push (delete-and-extract-region (point-min) (point-max)) msg)
+              (setq msg (mapconcat #'identity (nreverse msg) ""))
+              (when (eq k #'elpaa--push)
+                (elpaa--record-sync-failure pkg-spec msg)))
+            (message "%s" msg)))
          ((not (zerop (elpaa--call t "git" "log"
                                    "--format=%h  %<(16,trunc)%ae  %s"
                                    (format "%s..%s" ortb urtb))))
@@ -2644,7 +2685,7 @@ relative to elpa root."
          (ortb-p (elpaa--git-branch-p ortb))
          (urtb (elpaa--urtb pkg-spec))
          (merge (elpaa--spec-get pkg-spec :merge)))
-    ;; FIXME: Arrange to merge if it's not a fast-forward.
+    (elpaa--record-sync-failure pkg-spec nil)
     (with-temp-buffer
       (cond
        ((and ortb-p (elpaa--is-ancestor urtb ortb))
