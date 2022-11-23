@@ -2654,22 +2654,22 @@ relative to elpa root."
           (message "%s" (delete-and-extract-region (point-min) (point-max)))
           (let* ((msg (format "Upstream of %s has DIVERGED!\n\n" pkg)))
             (when (or show-diverged (eq k #'elpaa--push))
-              (setq msg (list msg))
-              (elpaa--call t "git" "log"
-                           "--format=%h  %<(16,trunc)%ae  %s"
-                           (format "%s..%s" urtb ortb))
-              (push "  Local changes:\n" msg)
-              (push (delete-and-extract-region (point-min) (point-max)) msg)
-              (elpaa--call t "git" "log"
-                           "--format=%h  %<(16,trunc)%ae  %s"
-                           (format "%s..%s" ortb urtb))
-              (push "\n  Upstream changes:\n" msg)
-              (push (delete-and-extract-region (point-min) (point-max)) msg)
-              (let ((total-msg
-                     (mapconcat #'identity (nreverse msg) "")))
-                (when show-diverged (setq msg total-msg))
-                (when (eq k #'elpaa--push)
-                  (elpaa--record-sync-failure pkg-spec total-msg))))
+              (let ((msgs (list msg)))
+                (elpaa--call t "git" "log"
+                             "--format=%h  %<(16,trunc)%ae  %s"
+                             (format "%s..%s" urtb ortb))
+                (push "  Local changes:\n" msgs)
+                (push (delete-and-extract-region (point-min) (point-max)) msgs)
+                (elpaa--call t "git" "log"
+                             "--format=%h  %<(16,trunc)%ae  %s"
+                             (format "%s..%s" ortb urtb))
+                (push "\n  Upstream changes:\n" msgs)
+                (push (delete-and-extract-region (point-min) (point-max)) msgs)
+                (let ((total-msg
+                       (mapconcat #'identity (nreverse msgs) "")))
+                  (when show-diverged (setq msg total-msg))
+                  (when (eq k #'elpaa--push)
+                    (elpaa--record-sync-failure pkg-spec total-msg)))))
             (message "%s" msg)))
          ((not (zerop (elpaa--call t "git" "log"
                                    "--format=%h  %<(16,trunc)%ae  %s"
