@@ -677,7 +677,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
                    "######## Build of package %s FAILED!!")
                  tarball)
         (let* ((pkg-name (car pkg-spec))
-               (logfile (expand-file-name (format "%s-build-failure.log"
+               (logfile (expand-file-name (format "%s-build-failure.txt"
                                                   pkg-name)
                                           (file-name-directory tarball))))
           (if res
@@ -708,7 +708,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
                       "The build scripts failed to build the tarball
 for version %s of the package %s.
 You can consult the latest error output in the file
-\"%s-build-failure.log\" in the corresponding ELPA archive web site.
+\"%s-build-failure.txt\" in the corresponding ELPA archive web site.
 
 The current error output was the following:\n\n%s"
                       (if (consp metadata-or-version)
@@ -2552,7 +2552,7 @@ relative to elpa root."
 (defun elpaa--record-sync-failure (pkg-spec msg)
   (when (file-directory-p elpaa--sync-failures-dir)
     (let* ((pkg (car pkg-spec))
-           (logfile (expand-file-name (format "%s-sync-failure.log" pkg)
+           (logfile (expand-file-name (format "%s-sync-failure.txt" pkg)
                                       elpaa--sync-failures-dir)))
       (if (null msg)
           (delete-file logfile)
@@ -2578,7 +2578,7 @@ relative to elpa root."
 ;;             "The build scripts failed to build the tarball
 ;; for version %s of the package %s.
 ;; You can consult the latest error output in the file
-;; \"%s-build-failure.log\" in the corresponding ELPA archive web site.
+;; \"%s-sync-failure.txt\" in the corresponding ELPA archive web site.
 
 ;; The current error output was the following:\n\n%s"
 ;;             (or (car-safe metadata-or-version) metadata-or-version)
