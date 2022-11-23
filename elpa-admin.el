@@ -77,6 +77,8 @@ If nil, don't build the docs in the first place.
 Directory is relative to the tarball directory.
 Can be set in elpa-config via `doc-dir'.")
 
+(defvar elpaa--sync-failures-dir "sync-failures/")
+
 (defvar elpaa--debug (getenv "ELPA_DEBUG")
   "Non-nil means to print debug messages.")
 
@@ -2548,16 +2550,17 @@ relative to elpa root."
                       candidate rev)))
 
 (defun elpaa--record-sync-failure (pkg-spec msg)
-  (let* ((pkg (car pkg-spec))
-         (logfile (expand-file-name (format "%s-sync-failure.log" pkg)
-                                    "archive")))
-    (if (null msg)
-        (delete-file logfile)
-      (let ((prev-size
-             (or (file-attribute-size (file-attributes logfile)) 0))
-            (maintainers (elpaa--maintainers
-                          (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec))))
-        (write-region msg nil logfile nil 'silent)
+  (when (file-directory-p elpaa--sync-failures-dir)
+    (let* ((pkg (car pkg-spec))
+           (logfile (expand-file-name (format "%s-sync-failure.log" pkg)
+                                      elpaa--sync-failures-dir)))
+      (if (null msg)
+          (delete-file logfile)
+        ;; (let ((prev-size
+        ;;        (or (file-attribute-size (file-attributes logfile)) 0))
+        ;;       (maintainers (elpaa--maintainers
+        ;;                     (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec))))
+          (write-region msg nil logfile nil 'silent)
 ;;         (when (and elpaa--email-to
 ;;                    (> (or (file-attribute-size (file-attributes logfile)) 0)
 ;;                       prev-size)
@@ -2579,8 +2582,8 @@ relative to elpa root."
 
 ;; The current error output was the following:\n\n%s"
 ;;             (or (car-safe metadata-or-version) metadata-or-version)
-;;             pkg-name pkg-name msg)))
-        ))))
+;;             pkg-name pkg-name msg))))
+          ))))
 
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
@@ -2615,7 +2618,7 @@ relative to elpa root."
          ((not (or (elpaa--is-ancestor ortb urtb)
                    (elpaa--spec-get pkg-spec :merge)))
           (message "%s" (delete-and-extract-region (point-min) (point-max)))
-          (let ((msg (format "Upstream of %s has DIVERGED!\n\n" pkg)))
+          (let* ((msg (format "Upstream of %s has DIVERGED!\n\n" pkg)))
             (when (or show-diverged (eq k #'elpaa--push))
               (setq msg (list msg))
               (elpaa--call t "git" "log"
@@ -2628,9 +2631,11 @@ relative to elpa root."
                            (format "%s..%s" ortb urtb))
               (push "\n  Upstream changes:\n" msg)
               (push (delete-and-extract-region (point-min) (point-max)) msg)
-              (setq msg (mapconcat #'identity (nreverse msg) ""))
-              (when (eq k #'elpaa--push)
-                (elpaa--record-sync-failure pkg-spec msg)))
+              (let ((total-msg
+                     (mapconcat #'identity (nreverse msg) "")))
+                (when show-diverged (setq msg total-msg))
+                (when (eq k #'elpaa--push)
+                  (elpaa--record-sync-failure pkg-spec total-msg))))
             (message "%s" msg)))
          ((not (zerop (elpaa--call t "git" "log"
                                    "--format=%h  %<(16,trunc)%ae  %s"
