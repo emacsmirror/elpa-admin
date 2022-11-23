@@ -662,9 +662,8 @@ returns.  Return the selected revision."
                  (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
                                      (format title-format pkg))))
                (concat msg
-               (concat msg
                        "\n\n## The current error output was the following:\n\n"
-                       txt))))))))))
+                       txt)))))))))
 
 (defun elpaa--check-sync-failures (pkg-spec metadata)
   (let* ((pkg (car pkg-spec))
