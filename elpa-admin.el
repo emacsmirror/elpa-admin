@@ -639,6 +639,95 @@ returns.  Return the selected revision."
           (setf (cdr oldtarball) (concat file ".lz"))))))
   oldtarballs)
 
+(defun elpaa--report-failure ( pkg-spec metadata txt basename destdir
+                               title-format msg)
+  (let* ((pkg (car pkg-spec))
+         (file (expand-file-name basename destdir)))
+    (if (not txt)
+        (delete-file file)
+      (let ((prev-size (or (file-attribute-size (file-attributes file)) 0)))
+        (write-region msg nil file nil 'silent)
+        (when (and elpaa--email-to
+                   (> (file-attribute-size (file-attributes file))
+                      prev-size))
+          (let ((maintainers (elpaa--maintainers
+                              (or metadata
+                                  (elpaa--metadata (elpaa--pkg-root pkg)
+                                                   pkg-spec)))))
+            (unless (equal maintainers "")
+              (elpaa--send-email
+               `((From    . ,elpaa--email-from)
+                 (To      . ,maintainers)
+                 (Bcc	. ,elpaa--notification-email-bcc)
+                 (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
+                                     (format title-format pkg))))
+               (concat msg
+               (concat msg
+                       "\n\n## The current error output was the following:\n\n"
+                       txt))))))))))
+
+(defun elpaa--check-sync-failures (pkg-spec metadata)
+  (let* ((pkg (car pkg-spec))
+         (basename (format "%s-sync-failure.txt" pkg))
+         (syncfail-file (expand-file-name basename elpaa--sync-failures-dir)))
+    ;; FIXME: Add a link from <PKG>.html to this status report?
+    (elpaa--report-failure
+     pkg-spec metadata
+     (when (file-exists-p syncfail-file)
+       (with-temp-buffer
+         (insert-file-contents syncfail-file)
+         (buffer-string)))
+     basename elpaa--release-subdir
+     "Sync failure: %s has diverged!"
+     (format "The scripts failed to synchronize with the upstream version
+because the two have diverged.  This is usually the result of an
+overly-optimistic force-push.  Please refrain from using force-push
+on such public branches.
+
+The archive will not be able to track your code until you resolve this
+problem by (re)merging the code that's already in %S.  You can do that
+with the following commands:
+
+    git fetch git://git.sv.gnu.org/%s %s%s
+    git merge FETCH_HEAD
+
+Of course, feel free to undo the changes it may introduce in the file
+contents: we only need the metadata to indicate that this code was merged.
+
+You can consult the latest error output
+[the sync-failure file](%s%s)."
+             elpaa--gitrepo elpaa--gitrepo
+             elpaa--branch-prefix pkg
+             elpaa--url basename))))
+
+(defun elpaa--report-build-failure (pkg-spec version destdir txt)
+  (let* ((pkg (car pkg-spec))
+         (basename (format "%s-build-failure.txt" pkg)))
+    ;; FIXME: Add a link from <PKG>.html to this status report?
+    (elpaa--report-failure
+     pkg-spec nil txt basename destdir
+     "Tarball build failure for %s"
+     ;; FIXME: Compute the actual URL.  We currently can't
+     ;; do that for the devel site (sadly, the most important
+     ;; case) because we don't know its URL.
+     (format
+      "The build scripts failed to build the tarball
+for version %s of the package %s.
+You can consult the latest error output in the file
+%S in the corresponding ELPA archive web site.
+
+You can also try and reproduce the error locally as follows:
+
+    git clone --single-branch git://git.sv.gnu.org/%s
+    cd %s
+    make                # Setup the infrastructure
+    make packages/%s    # Create a worktree of the package
+    make build/%s       # Build the tarballs into archive/ and archive-devel/"
+      version pkg basename
+      elpaa--gitrepo
+      (file-name-sans-extension (file-name-nondirectory elpaa--gitrepo))
+      pkg pkg))))
+
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata-or-version
                                  &optional revision-function tarball-only)
   "Create file TARBALL for PKG-SPEC if not done yet.
@@ -656,7 +745,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
 	       ;; created:
                (let ((pkgname (car pkg-spec))
 		     (default-directory
-		       (expand-file-name (file-name-directory tarball))))
+		      (expand-file-name (file-name-directory tarball))))
 		 (and (file-readable-p (format "%s-readme.txt" pkgname))
 		      (file-readable-p (format "%s.html" pkgname))
 		      (file-readable-p (format "%s.svg" pkgname))))))
@@ -676,45 +765,16 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
         (message (if res "######## Built new package %s!"
                    "######## Build of package %s FAILED!!")
                  tarball)
-        (let* ((pkg-name (car pkg-spec))
-               (logfile (expand-file-name (format "%s-build-failure.txt"
-                                                  pkg-name)
-                                          (file-name-directory tarball))))
-          (if res
-              (delete-file logfile)
-            ;; FIXME: Add a link from <PKG>.html to this log?
-            ;; FIXME: Add a link to this file in the notification email?
-            (let ((prev-size
-                   (or (file-attribute-size (file-attributes logfile)) 0))
-                  (msg (with-current-buffer (marker-buffer msg-start)
-                         (buffer-substring msg-start (point-max)))))
-              (write-region msg nil logfile nil 'silent)
-              (when (and elpaa--email-to
-                         (> (or (file-attribute-size (file-attributes logfile)) 0)
-                            prev-size))
-                (let ((maintainers (elpaa--maintainers
-                                    (elpaa--metadata dir pkg-spec))))
-                  (unless (equal maintainers "")
-                    (elpaa--send-email
-                     `((From    . ,elpaa--email-from)
-                       (To      . ,maintainers)
-                       (Bcc	. ,elpaa--notification-email-bcc)
-                       (Subject . ,(format "[%s ELPA] Tarball build failure for %s"
-                                           elpaa--name pkg-name)))
-                     ;; FIXME: Compute the actual URL.  We currently can't
-                     ;; do that for the devel site (sadly, the most important
-                     ;; case) because we don't know its URL.
-                     (format
-                      "The build scripts failed to build the tarball
-for version %s of the package %s.
-You can consult the latest error output in the file
-\"%s-build-failure.txt\" in the corresponding ELPA archive web site.
 
-The current error output was the following:\n\n%s"
-                      (if (consp metadata-or-version)
-                          (nth 1 metadata-or-version)
-                        metadata-or-version)
-                      pkg-name pkg-name msg))))))))))))
+        (let ((msg (unless res
+                     (with-current-buffer (marker-buffer msg-start)
+                       (buffer-substring msg-start (point-max)))))
+              (version (if (consp metadata-or-version)
+                           (nth 1 metadata-or-version)
+                         metadata-or-version)))
+          (elpaa--report-build-failure pkg-spec version
+                                       (file-name-directory tarball)
+                                       msg))))))
 
 
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
@@ -1115,6 +1175,7 @@ place the resulting tarball into the file named TARBALL-ONLY."
          (metadata (elpaa--metadata dir pkg-spec))
          (vers (nth 1 metadata)))
     (elpaa--message "metadata = %S" metadata)
+    (elpaa--check-sync-failures pkg-spec metadata)
     (if (null metadata)
         (error "No metadata found for package: %s" pkgname)
       ;; Disregard the simple/multi distinction.  This might have been useful
@@ -2556,34 +2617,7 @@ relative to elpa root."
                                       elpaa--sync-failures-dir)))
       (if (null msg)
           (delete-file logfile)
-        ;; (let ((prev-size
-        ;;        (or (file-attribute-size (file-attributes logfile)) 0))
-        ;;       (maintainers (elpaa--maintainers
-        ;;                     (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec))))
-          (write-region msg nil logfile nil 'silent)
-;;         (when (and elpaa--email-to
-;;                    (> (or (file-attribute-size (file-attributes logfile)) 0)
-;;                       prev-size)
-;;                    (not (equal maintainers "")))
-;;           (elpaa--send-email
-;;            `((From    . ,elpaa--email-from)
-;;              (To      . ,maintainers)
-;;              (Bcc	. ,elpaa--notification-email-bcc)
-;;              (Subject . ,(format "[%s ELPA] Tarball build failure for %s"
-;;                                  elpaa--name pkg-name)))
-;;            ;; FIXME: Compute the actual URL.  We currently can't
-;;            ;; do that for the devel site (sadly, the most important
-;;            ;; case) because we don't know its URL.
-;;            (format
-;;             "The build scripts failed to build the tarball
-;; for version %s of the package %s.
-;; You can consult the latest error output in the file
-;; \"%s-sync-failure.txt\" in the corresponding ELPA archive web site.
-
-;; The current error output was the following:\n\n%s"
-;;             (or (car-safe metadata-or-version) metadata-or-version)
-;;             pkg-name pkg-name msg))))
-          ))))
+        (write-region msg nil logfile nil 'silent)))))
 
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
