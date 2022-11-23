@@ -646,7 +646,7 @@ returns.  Return the selected revision."
     (if (not txt)
         (delete-file file)
       (let ((prev-size (or (file-attribute-size (file-attributes file)) 0)))
-        (write-region msg nil file nil 'silent)
+        (write-region txt nil file nil 'silent)
         (when (and elpaa--email-to
                    (> (file-attribute-size (file-attributes file))
                       prev-size))
@@ -656,9 +656,9 @@ returns.  Return the selected revision."
                                                    pkg-spec)))))
             (unless (equal maintainers "")
               (elpaa--send-email
-               `((From    . ,elpaa--email-from)
-                 (To      . ,maintainers)
-                 (Bcc	. ,elpaa--notification-email-bcc)
+               `((From	  . ,elpaa--email-from)
+                 (To	  . ,maintainers)
+                 (Bcc	  . ,elpaa--notification-email-bcc)
                  (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
                                      (format title-format pkg))))
                (concat msg
