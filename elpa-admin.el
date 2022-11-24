@@ -693,7 +693,7 @@ with the following commands:
 Of course, feel free to undo the changes it may introduce in the file
 contents: we only need the metadata to indicate that this code was merged.
 
-You can consult the latest error output
+You can consult the latest error output in
 [the sync-failure file](%s%s)."
              elpaa--gitrepo elpaa--gitrepo
              elpaa--branch-prefix pkg
@@ -713,18 +713,19 @@ You can consult the latest error output
       "The build scripts failed to build the tarball
 for version %s of the package %s.
 You can consult the latest error output in the file
-%S in the corresponding ELPA archive web site.
+%S in the %s ELPA archive web site.
 
 You can also try and reproduce the error locally as follows:
 
     git clone --single-branch git://git.sv.gnu.org/%s
     cd %s
-    make                # Setup the infrastructure
-    make packages/%s    # Create a worktree of the package
-    make build/%s       # Build the tarballs into archive/ and archive-devel/"
-      version pkg basename
+    make %s           # Setup the infrastructure
+    make packages/%s  # Create a worktree of the package
+    make build/%s     # Build the tarballs into archive(-devel)/"
+      version pkg basename elpaa--name
       elpaa--gitrepo
       (file-name-sans-extension (file-name-nondirectory elpaa--gitrepo))
+      (make-string (string-width (format "%s" pkg)) ?\s)
       pkg pkg))))
 
 (defun elpaa--make-one-tarball ( tarball dir pkg-spec metadata-or-version
@@ -2650,10 +2651,11 @@ relative to elpa root."
           (message "Nothing new upstream for %s" pkg))
          ((not (or (elpaa--is-ancestor ortb urtb)
                    (elpaa--spec-get pkg-spec :merge)))
-          (message "%s" (delete-and-extract-region (point-min) (point-max)))
-          (let* ((msg (format "Upstream of %s has DIVERGED!\n\n" pkg)))
+          (let ((output (delete-and-extract-region (point-min) (point-max))))
+            (if (> (length output) 0) (message "%s" output)))
+          (let* ((msg (format "Upstream of %s has DIVERGED!" pkg)))
             (when (or show-diverged (eq k #'elpaa--push))
-              (let ((msgs (list msg)))
+              (let ((msgs (list "\n\n" msg)))
                 (elpaa--call t "git" "log"
                              "--format=%h  %<(16,trunc)%ae  %s"
                              (format "%s..%s" urtb ortb))
