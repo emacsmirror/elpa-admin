@@ -2751,7 +2751,7 @@ relative to elpa root."
                             (elpaa--urtb pkg-spec "release")
                             elpaa--release-branch-prefix pkg))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (when (file-directory-p (expand-file-name pkg "packages"))
+        (when (file-directory-p (elpaa--pkg-root pkg))
           (elpaa--worktree-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
