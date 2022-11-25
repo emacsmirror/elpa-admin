@@ -580,7 +580,7 @@ returns.  Return the selected revision."
              ((and pkg-vers (version-list-<= vers pkg-vers)) nil)
              ((not ac-data)
               (error "Unknown required package: %S" pkg))
-             (t (error "%S-%s > than available (%s)"
+             (t (error "Required %S-%s > than available (%s)"
                        pkg (package-version-join vers) pkg-vers)))))))))
 
 (defun elpaa--prune-old-tarballs (tarball oldtarballs destdir &optional minage)
