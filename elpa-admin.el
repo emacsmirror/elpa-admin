@@ -2860,7 +2860,8 @@ relative to elpa root."
     (require 'package)
     (if (null lisp-dir)
         (progn
-          (cl-assert (equal alf (format "%s%s-autoloads" (or dir "") pkgname)))
+          (cl-assert (equal alf (format "%s%s-autoloads.el"
+                                        (or dir "") pkgname)))
           (package-generate-autoloads pkgname dir))
       (package-generate-autoloads pkgname (concat dir lisp-dir))
       (write-region
