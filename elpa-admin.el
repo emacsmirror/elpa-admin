@@ -327,27 +327,33 @@ returns.  Return the selected revision."
     ;; Don't fail in case `rev' is not known.
     (if (or (not rev) (equal rev cur-rev))
         (elpaa--message "Current revision is already desired revision!")
-      (with-temp-buffer
-        ;; Run it within the true-filename directory holding the mainfile,
-        ;; so that for :core packages we properly affect the Emacs tree.
-        (elpaa--call t "git" "checkout" "--detach" rev)
-        (elpaa--message "Reverted to release revision %s\n%s"
-                        rev (buffer-string)))
-      ;; We should make sure we go back to the head of the branch afterwards,
-      ;; tho it's convenient to do it more lazily, e.g. in case of error it
-      ;; can make it easier to diagnose the problem.
-      ;; But for `:core' packages it's important because the same tree
-      ;; may be used for another package in the same run, so we'd otherwise
-      ;; end up (re)building old versions.
-      ;; FIXME: We should probably fix this better in
-      ;; `elpaa--get-release-revision' and/or `elpaa--get-last-release'
-      ;; not to depend on the current in-tree revision.
-      (when (eq :core (cadr pkg-spec))
+      (let* ((oldbranch
+              (with-temp-buffer
+                (and (zerop (elpaa--call t "git" "branch" "--show-current"))
+                     (> (buffer-size) 0)
+                     (buffer-substring (point-min) (1- (point-max))))))
+             (oldrev
+              (unless oldbranch
+                (with-temp-buffer
+                  (when (zerop (elpaa--call t "git" "rev-parse" "HEAD"))
+                    (buffer-substring (point-min) (1- (point-max))))))))
+        (with-temp-buffer
+          ;; Run it within the true-filename directory holding the mainfile,
+          ;; so that for :core packages we properly affect the Emacs tree.
+          (elpaa--call t "git" "checkout" "--detach" rev)
+          (elpaa--message "Selected release revision %s\n%s"
+                          rev (buffer-string)))
         (elpaa--temp-file
          (lambda ()
            (let ((default-directory (file-name-directory ftn)))
              (with-temp-buffer
-               (elpaa--call t "git" "merge")
+               ;; Re-select the original branch/commit.
+               (elpaa--call t "git" "clean" "-x" "-d" "-f")
+               (if oldrev
+                   (elpaa--call t "git" "reset" "--hard" oldrev)
+                 (elpaa--call t "git" "reset" "--hard")
+                 (when oldbranch
+                   (elpaa--call t "git" "checkout" oldbranch)))
                (elpaa--message "Restored the head revision\n%s"
                                (buffer-string))))))))
     (or rev cur-rev)))
@@ -390,15 +396,7 @@ returns.  Return the selected revision."
   (let* ((default-directory (elpaa--dirname dir))
          (generated-files
           (directory-files "." nil
-                           "-\\(pkg\\|autoloads\\)\\.el\\'\\|\\.elc\\'"))
-         (rev (with-temp-buffer
-                (when (zerop (elpaa--call t "git" "rev-parse" "HEAD"))
-                  (buffer-substring (point-min) (1- (point-max))))))
-         (branch
-          (with-temp-buffer
-            (and (zerop (elpaa--call t "git" "branch" "--show-current"))
-                 (> (buffer-size) 0)
-                 (buffer-substring (point-min) (1- (point-max)))))))
+                           "-\\(pkg\\|autoloads\\)\\.el\\'\\|\\.elc\\'")))
     (mapc #'delete-file generated-files)
     (when (file-exists-p ".git")
       (with-temp-buffer
@@ -431,11 +429,7 @@ returns.  Return the selected revision."
            (with-temp-buffer
              (let* ((default-directory (elpaa--dirname dir)))
                (elpaa--call t "git" "clean" "-x" "-d" "-f")
-               (elpaa--call t "git" "reset" "--hard")
-               (when branch
-                 (elpaa--call t "git" "checkout" branch))
-               (when rev
-                 (elpaa--call t "git" "reset" "--hard" rev)))
+               (elpaa--call t "git" "reset" "--hard"))
              (elpaa--message "%s" (buffer-string)))))))))
 
 (defvar elpaa--keep-max 20)
