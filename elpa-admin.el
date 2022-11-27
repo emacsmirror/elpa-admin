@@ -575,7 +575,8 @@ returns.  Return the selected revision."
              ((not ac-data)
               (error "Unknown required package: %S" pkg))
              (t (error "Required %S-%s > than available (%s)"
-                       pkg (package-version-join vers) pkg-vers)))))))))
+                       pkg (package-version-join vers)
+                       (package-version-join pkg-vers))))))))))
 
 (defun elpaa--prune-old-tarballs (tarball oldtarballs destdir &optional minage)
   ;; Make sure we don't count ourselves among the "old" tarballs.
