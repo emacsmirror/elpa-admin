@@ -644,10 +644,10 @@ returns.  Return the selected revision."
         (write-region txt nil file nil 'silent)
         (when (and elpaa--email-to
                    (> (file-attribute-size (file-attributes file))
-                      ;; Arbitrarily require a "2 chars increase" minimum
+                      ;; Arbitrarily require a "8 chars increase" minimum
                       ;; so we don't resend a notification when the timestamp
                       ;; in the version got a bit longer.
-                      (+ prev-size 2)))
+                      (+ prev-size 8)))
           (let ((maintainers (elpaa--maintainers
                               (or metadata
                                   (elpaa--metadata (elpaa--pkg-root pkg)
