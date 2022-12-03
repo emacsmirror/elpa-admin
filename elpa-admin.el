@@ -349,11 +349,9 @@ returns.  Return the selected revision."
              (with-temp-buffer
                ;; Re-select the original branch/commit.
                (elpaa--call t "git" "clean" "-x" "-d" "-f")
-               (if oldrev
-                   (elpaa--call t "git" "reset" "--hard" oldrev)
-                 (elpaa--call t "git" "reset" "--hard")
-                 (when oldbranch
-                   (elpaa--call t "git" "checkout" oldbranch)))
+               (elpaa--call t "git" "reset" "--hard" oldrev)
+               (when oldbranch
+                 (elpaa--call t "git" "checkout" oldbranch))
                (elpaa--message "Restored the head revision\n%s"
                                (buffer-string))))))))
     (or rev cur-rev)))
