@@ -1,5 +1,5 @@
 #+TITLE: ELPA-Admin README
-#+DATE: 2022-10-26
+#+DATE: 2022-12-11
 
 Copyright (C) 2010-2022 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
@@ -113,9 +113,11 @@ The URL can be =nil= if there is no upstream repository.
 
 ** =:core FILES=
 This property has to come first.
-Indicates that this is a special package which will be built by extracting
-files directly from Emacs's source code.  For this to work, the Emacs
-source code should be available in the =emacs= subdirectory.
+Indicates that this is a special package which will be built by
+extracting files directly from Emacs's source code.  For this to work,
+the Emacs git repository should be cloned in the =emacs= subdirectory.
+(Using a symlink pointing outside of the elpa root is currently
+unsupported.)  Making a fresh clone only for this is recommended.
 FILES specifies the files that will be contained in the generated tarballs.
 It can be a single file name or a list of file names.
 
