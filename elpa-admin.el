@@ -1272,7 +1272,8 @@ The INFILE and DISPLAY arguments are fixed as nil."
   "Like ‘elpaa--call’ but sandboxed.
 More specifically, uses Bubblewrap such that the command is
 confined to only have write access to the `default-directory'.
-Signal an error if the command did not finish with exit code 0."
+Signal an error if the command did not finish with exit code 0.
+PROGRAM, DESTINATION, ARGS is like in `elpaa--call'."
   (if (not elpaa--sandbox)
       (apply #'elpaa--call destination args)
     (elpaa--message "call-sandboxed %S" args)
