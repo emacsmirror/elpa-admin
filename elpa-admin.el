@@ -1723,6 +1723,7 @@ arbitrary code."
              t "emacs" "--batch" "-l" (format "ox-%S" backend)
              input-filename
              "--eval" "(setq org-babel-confirm-evaluate-answer-no t)"
+             "--eval" "(setq org-export-with-toc nil)"
              "--eval" (format "(write-region (org-export-as '%s nil nil %S '%S) nil %S)"
                               backend body-only ext-plist output-filename)))
           (with-temp-buffer
