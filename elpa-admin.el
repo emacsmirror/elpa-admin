@@ -204,7 +204,7 @@ Delete backup files also."
                 (car pkg-spec)))))
 
 (defun elpaa--get-last-release-commit (pkg-spec &optional from)
-  "Return the commit that last changed `Version:'.
+  "Return the commit that last changed `Version:' for package PKG-SPEC.
 FROM is the start revision.  Return nil if not found."
   (with-temp-buffer
     (if (equal 0     ;Don't signal an error if call errors out.
