@@ -28,7 +28,7 @@ a large amount of irrelevant data.  More specifically, here is how you
 can get the source and setup the general infrastructure:
 
 #+begin_src shell
-  git clone --single-branch git://git.savannah.gnu.org/emacs/elpa.git
+  git clone --single-branch https://git.sv.gnu.org/git/emacs/elpa.git
   cd elpa
   make
 #+end_src

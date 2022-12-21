@@ -683,7 +683,7 @@ The archive will not be able to track your code until you resolve this
 problem by (re)merging the code that's already in %S.  You can do that
 with the following commands:
 
-    git fetch git://git.sv.gnu.org/%s %s%s
+    git fetch https://git.sv.gnu.org/git/%s %s%s
     git merge FETCH_HEAD
 
 Of course, feel free to undo the changes it may introduce in the file
@@ -713,7 +713,7 @@ You can consult the latest error output in the file
 
 You can also try and reproduce the error locally as follows:
 
-    git clone --single-branch git://git.sv.gnu.org/%s
+    git clone --single-branch https://git.sv.gnu.org/git/%s
     cd %s
     make %s           # Setup the infrastructure
     make packages/%s  # Create a worktree of the package
@@ -994,10 +994,7 @@ SPECS is the list of package specifications."
         (`(,name :url ,url . ,rest)
          (if (stringp name) (setq name (intern name)))
          (unless url
-           ;; Use the `git:' URL rather than the `https:' URL
-           ;; because it's a lot faster on this repository when
-           ;; cloning a single branch.
-           (setq url (concat "git://git.sv.gnu.org/"
+           (setq url (concat "https://git.sv.gnu.org/git/"
                              elpaa--gitrepo))
            (setq rest
                  (plist-put rest :branch
