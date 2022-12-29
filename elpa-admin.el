@@ -96,7 +96,7 @@ See variable `org-export-options-alist'.")
     (insert-file-contents filename)
     ;; This is unnecessary because ‘with-temp-buffer’ generates a new
     ;; (empty) buffer, and ‘insert-file-contents’ inserts after point.
-    ;; In other words, point is alraedy at bob.
+    ;; In other words, point is already at bob.
     ;;- (goto-char (point-min))
     (read (current-buffer))))
 
