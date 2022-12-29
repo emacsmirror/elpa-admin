@@ -650,16 +650,18 @@ returns.  Return the selected revision."
                               (or metadata
                                   (elpaa--metadata (elpaa--pkg-root pkg)
                                                    pkg-spec)))))
-            (unless (equal maintainers "")
-              (elpaa--send-email
-               `((From	  . ,elpaa--email-from)
-                 (To	  . ,maintainers)
-                 (Bcc	  . ,elpaa--notification-email-bcc)
-                 (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
-                                     (format title-format pkg))))
-               (concat msg
-                       "\n\n## The current error output was the following:\n\n"
-                       txt)))))))))
+            (elpaa--send-email
+             `((From	  . ,elpaa--email-from)
+               (To	  . ,(if (equal maintainers "")
+                                 elpaa--notification-email-bcc
+                               maintainers))
+               (Bcc	  . ,(unless (equal maintainers "")
+                               elpaa--notification-email-bcc))
+               (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
+                                   (format title-format pkg))))
+             (concat msg
+                     "\n\n## The current error output was the following:\n\n"
+                     txt))))))))
 
 (defun elpaa--check-sync-failures (pkg-spec metadata)
   (let* ((pkg (car pkg-spec))
