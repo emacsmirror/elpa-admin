@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2022  Free Software Foundation, Inc
+;; Copyright (C) 2011-2023  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -646,16 +646,12 @@ returns.  Return the selected revision."
                       ;; so we don't resend a notification when the timestamp
                       ;; in the version got a bit longer.
                       (+ prev-size 8)))
-          (let ((maintainers (elpaa--maintainers
-                              (or metadata
-                                  (elpaa--metadata (elpaa--pkg-root pkg)
-                                                   pkg-spec)))))
+          (let ((maintainers (elpaa--maintainers pkg-spec metadata)))
             (elpaa--send-email
              `((From	  . ,elpaa--email-from)
-               (To	  . ,(if (equal maintainers "")
-                                 elpaa--notification-email-bcc
-                               maintainers))
-               (Bcc	  . ,(unless (equal maintainers "")
+               (To	  . ,(or maintainers
+                                 elpaa--notification-email-bcc))
+               (Bcc	  . ,(when maintainers
                                elpaa--notification-email-bcc))
                (Subject . ,(concat (format "[%s ELPA] "  elpaa--name)
                                    (format title-format pkg))))
@@ -682,14 +678,14 @@ overly-optimistic force-push.  Please refrain from using force-push
 on such public branches.
 
 The archive will not be able to track your code until you resolve this
-problem by (re)merging the code that's already in %S.  You can do that
+problem by (re?)merging the code that's in %S.  You can do that
 with the following commands:
 
     git fetch https://git.sv.gnu.org/git/%s %s%s
     git merge FETCH_HEAD
 
 Of course, feel free to undo the changes it may introduce in the file
-contents: we only need the metadata to indicate that this code was merged.
+contents: we only need the metadata to indicate that this commit was merged.
 
 You can consult the latest error output in
 [the sync-failure file](%s%s)."
@@ -2324,7 +2320,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                    specs))))
     (dolist (pkg pkgs)
       (let ((pkg-spec (elpaa--get-package-spec pkg specs)))
-        (ignore-error 'error
+        (ignore-error error
           (elpaa--copyright-check pkg-spec))
         (condition-case err
             (let* ((metadata (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec)))
@@ -2351,8 +2347,11 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (message-send)
     ))
 
-(defun elpaa--maintainers (metadata)
-  (let* ((maint (cdr (assq :maintainer (nth 4 metadata))))
+(defun elpaa--maintainers (pkg-spec metadata)
+  (let* ((metadata (or metadata
+                       (elpaa--metadata (elpaa--pkg-root (car pkg-spec))
+                                        pkg-spec)))
+         (maint (cdr (assq :maintainer (nth 4 metadata))))
          ;; `:maintainer' can hold a list or a single maintainer.
          (maints (if (consp (car maint)) maint (list maint)))
          (maint-emails
@@ -2370,8 +2369,11 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                    (match-string 0 name) name)
                           (setq name (replace-match " " t t name)))
                         (format "%s <%s>" name email))))
-                  maints)))
-    (mapconcat #'identity (delq nil maint-emails) ",")))
+                  maints))
+         (emails (delq nil maint-emails)))
+    (if emails
+        (mapconcat #'identity emails ",")
+      (elpaa--spec-get pkg-spec :maintainer))))
 
 (defun elpaa--release-email (pkg-spec metadata dir)
   (when elpaa--email-to
@@ -2381,7 +2383,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
              (name (elpaa--pkg-name pkg-spec))
              (desc (nth 2 metadata))
              (maintainers
-              (elpaa--maintainers metadata)))
+              (elpaa--maintainers pkg-spec metadata)))
         (insert "Version " version
                 " of package " name
                 " has just been released in " elpaa--name " ELPA.\n"
@@ -2419,7 +2421,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
            (To      . ,elpaa--email-to)
            (Subject . ,(format "[%s ELPA] %s version %s"
                                elpaa--name name version))
-           ,@(unless (equal maintainers "")
+           ,@(when maintainers
                `((Cc . ,maintainers)))
            ,@(if elpaa--email-reply-to
                  `((Reply-To . ,elpaa--email-reply-to))))
