@@ -978,7 +978,8 @@ SPECS is the list of package specifications."
 (defconst elpaa--supported-keywords
   '(:url :core :auto-sync :ignored-files :release-branch :release
     :readme :news :doc :renames :version-map :make :shell-command
-    :branch :lisp-dir :main-file :merge :excludes :rolling-release)
+    :branch :lisp-dir :main-file :merge :excludes :rolling-release
+    :maintainer)
   "List of keywords that can appear in a spec.")
 
 (defun elpaa--publish-package-spec (spec)
