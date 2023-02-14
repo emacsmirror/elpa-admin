@@ -2691,7 +2691,7 @@ relative to elpa root."
                  default-directory)
         nil)
     (let* ((pkg (car pkg-spec))
-           (wt (expand-file-name pkg "packages"))
+           (wt (expand-file-name (format "packages/%s" pkg)))
            (merge-branch (format "elpa--merge/%s" pkg))
            last-release)
       ;; When the upstream changes includes changes to `Version:'), try to
@@ -2771,14 +2771,12 @@ relative to elpa root."
     (dolist (pkg pkgs)
       (let* ((pkg-spec (elpaa--get-package-spec pkg specs)))
         (cond
+         ((and all (elpaa--spec-get pkg-spec :manual-sync)) nil) ;Skip.
          ((or (eq condition ':)
               (elpaa--spec-get pkg-spec condition))
           ;; (unless (file-directory-p (expand-file-name pkg "packages"))
           ;;   (elpaa--worktree-sync pkg-spec))
-          (elpaa--fetch pkg-spec
-                        (if (and all (elpaa--spec-get pkg-spec :manual-sync))
-                            #'ignore k)
-                        show-diverged)))))))
+          (elpaa--fetch pkg-spec k show-diverged)))))))
 
 (defun elpaa-batch-fetch-and-show (&rest _)
   (elpaa--batch-fetch-and #'ignore))
