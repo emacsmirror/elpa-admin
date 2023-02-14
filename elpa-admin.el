@@ -979,7 +979,7 @@ SPECS is the list of package specifications."
   '(:url :core :auto-sync :ignored-files :release-branch :release
     :readme :news :doc :renames :version-map :make :shell-command
     :branch :lisp-dir :main-file :merge :excludes :rolling-release
-    :maintainer)
+    :maintainer :manual-sync)
   "List of keywords that can appear in a spec.")
 
 (defun elpaa--publish-package-spec (spec)
