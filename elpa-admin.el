@@ -746,6 +746,10 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
       (progn
         (elpaa--message "Tarball %s already built!" tarball)
         nil)
+    (when (file-readable-p elpaa--copyright-file)
+      ;; Eagerly load this file, so that any spurious "Followed link to" is
+      ;; emitted here rather than being included in the build failure report.
+      (find-file-noselect elpaa--copyright-file))
     (let ((msg-start (with-current-buffer "*Messages*" (point-marker)))
           (res nil))
       (message "======== Building tarball %s..." tarball)
