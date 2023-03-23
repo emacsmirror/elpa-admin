@@ -2637,7 +2637,8 @@ relative to elpa root."
                                       release-branch
                                       (elpaa--urtb pkg-spec "release")))))
     (if (not url)
-        (unless (elpaa--spec-member pkg-spec :url)
+        (unless (or (elpaa--spec-member pkg-spec :url)
+                    (elpaa--spec-member pkg-spec :core))
           (message "No upstream URL in %s for %s" elpaa--specs-file pkg))
       (message "Fetching updates for %s..." pkg)
       (with-temp-buffer
