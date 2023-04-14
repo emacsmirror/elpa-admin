@@ -2592,6 +2592,17 @@ relative to elpa root."
 
 ;;; Fetch updates from upstream
 
+(defvar elpaa--manual-sync-re
+  ;; SourceHut is giving us (slow) errors,
+  ;; maybe that black-listed us for excessive polling?
+  "git\\.sr\\.ht/"
+  "Regexp matching URLs from which we shouldn't poll.")
+
+(defun elpaa--manual-sync-p (pkg-spec)
+  (or (elpaa--spec-get pkg-spec :manual-sync)
+      (let ((url (elpaa--spec-get pkg-spec :url)))
+        (and url (string-match elpaa--manual-sync-re url)))))
+
 (defun elpaa--branch (pkg-spec)
   (elpaa--spec-get pkg-spec :branch))
 
@@ -2776,7 +2787,7 @@ relative to elpa root."
     (dolist (pkg pkgs)
       (let* ((pkg-spec (elpaa--get-package-spec pkg specs)))
         (cond
-         ((and all (elpaa--spec-get pkg-spec :manual-sync)) nil) ;Skip.
+         ((and all (elpaa--manual-sync-p pkg-spec)) nil) ;Skip.
          ((or (eq condition ':)
               (elpaa--spec-get pkg-spec condition))
           ;; (unless (file-directory-p (expand-file-name pkg "packages"))
