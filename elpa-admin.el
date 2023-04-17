@@ -107,20 +107,7 @@ See variable `org-export-options-alist'.")
                      (and (consp val) (cl-every #'stringp val)))
                  t)
       (setf (pcase-exhaustive var
-              ('name			elpaa--name)
-              ('gitrepo			elpaa--gitrepo)
-              ('url			elpaa--url)
-              ('branch-prefix		elpaa--branch-prefix)
-              ('release-branch-prefix	elpaa--release-branch-prefix)
-              ('specs-file		elpaa--specs-file)
-              ('copyright-file		elpaa--copyright-file)
-              ('email-to		elpaa--email-to)
-              ('email-from		elpaa--email-from)
-              ('email-reply-to		elpaa--email-reply-to)
-              ('sandbox			elpaa--sandbox)
-              ('sandbox-extra-ro-dirs	elpaa--sandbox-extra-ro-dirs)
               ('doc-dir                 elpaa--doc-subdirectory)
-              ('debug			elpaa--debug)
               ((guard (boundp (intern (format "elpaa--%s" var))))
                (symbol-value (intern (format "elpaa--%s" var)))))
             val))))
@@ -2593,9 +2580,7 @@ relative to elpa root."
 ;;; Fetch updates from upstream
 
 (defvar elpaa--manual-sync-re
-  ;; SourceHut is giving us (slow) errors,
-  ;; maybe that black-listed us for excessive polling?
-  "git\\.sr\\.ht/"
+  regexp-unmatchable ;; "git\\.sr\\.ht/"
   "Regexp matching URLs from which we shouldn't poll.")
 
 (defun elpaa--manual-sync-p (pkg-spec)
