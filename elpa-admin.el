@@ -112,8 +112,6 @@ See variable `org-export-options-alist'.")
                (symbol-value (intern (format "elpaa--%s" var)))))
             val))))
 
-(when (file-readable-p "elpa-config") (elpaa-read-config "elpa-config"))
-
 (defun elpaa--message (&rest args)
   (when elpaa--debug (apply #'message args)))
 
@@ -2912,6 +2910,8 @@ relative to elpa root."
                (skip-chars-forward " \t\n")
                (skip-chars-backward " \t"))
              (lambda () (forward-comment (point-max)))))
+
+(when (file-readable-p "elpa-config") (elpaa-read-config "elpa-config"))
 
 (provide 'elpa-admin)
 
