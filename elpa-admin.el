@@ -1995,7 +1995,7 @@ Return non-nil if there's an \"emacs\" repository present."
         (throw 'found-important-file file)))
     nil))
 
-(defun elpaa--cleanup-packages (specs with-core)
+(defun elpaa--cleanup-packages (specs _with-core)
   "Remove unknown subdirectories of `packages/'.
 This is any subdirectory inside `packages/' that's not under
 version control nor listed in SPECS.
@@ -2026,21 +2026,20 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                 (progn (delete-directory dir 'recursive t)
                        (message "Deleted all of %s" dir))
               (message "Keeping leftover unclean %s:\n%s" dir status))))
-         ;; Check if `dir' is under version control.
-         ((and with-core
-               (not (zerop (elpaa--call nil "git" "ls-files"
-                                         "--error-unmatch" dir))))
-          ;; Not under version control.  Check if it only contains
-          ;; symlinks and generated files, in which case it is probably
-          ;; a leftover :core package that can safely be deleted.
-          ;; (let ((file (elpaa--find-non-trivial-file dir)))
-          ;;   (if file
-          ;;       (message "Keeping %s for non-trivial file \"%s\"" dir file)
-          ;;     (progn
-          ;;       (message "Deleted untracked package %s" dir)
-          ;;       (delete-directory dir 'recursive t))))
-          ))))))
-
+         ;; ;; Check if `dir' is under version control.
+         ;; ((and with-core
+         ;;       (not (zerop (elpaa--call nil "git" "ls-files"
+         ;;                                 "--error-unmatch" dir))))
+         ;;  ;; Not under version control.  Check if it only contains
+         ;;  ;; symlinks and generated files, in which case it is probably
+         ;;  ;; a leftover :core package that can safely be deleted.
+         ;;  (let ((file (elpaa--find-non-trivial-file dir)))
+         ;;    (if file
+         ;;        (message "Keeping %s for non-trivial file \"%s\"" dir file)
+         ;;      (progn
+         ;;        (message "Deleted untracked package %s" dir)
+         ;;        (delete-directory dir 'recursive t)))))
+         )))))
 
 (defun elpaa--worktree-sync (pkg-spec)
   "Sync worktree of PKG-SPEC."
