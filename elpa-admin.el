@@ -1864,7 +1864,8 @@ arbitrary code."
       (elpaa--html-insert-docs pkg-spec)
       (insert "</dl>")
       (insert (format "<p>To install this package, run in Emacs:</p>
-                       <pre>M-x <span class=\"kw\">package-install</span> RET <span class=\"kw\">%s</span> RET</pre>"
+                       <pre>M-x <span class=\"kw\">list-packages</span> RET</pre>
+                       <p>Then, find <span class=\"kw\">%s</span> in the list, click on the link, and click <pre>Install</pre>.</p>"
                       name))
       (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
              (readme-text plain-readme)
