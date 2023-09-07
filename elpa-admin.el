@@ -760,8 +760,16 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
                                        msg))))))
 
 
+(defun elpa-admin--tar-command ()
+  (if (and (memq system-type '(berkeley-unix darwin))
+           (not (string-match-p (rx "tar (GNU tar)")
+                                (shell-command-to-string "tar --version"))))
+      (or (executable-find "gtar")
+          (error "Please install GNU tar"))
+    "tar"))
+
 (defun elpaa--make-one-tarball-1 ( tarball dir pkg-spec metadata-or-version
-                                 &optional revision-function tarball-only)
+                              &optional revision-function tarball-only)
   (elpaa--with-temp-files
    dir
    (let* ((destdir (file-name-directory tarball))
@@ -813,7 +821,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
      (cl-assert (not (string-match "[][*\\|?]" vers)))
      (apply #'elpaa--call
-            nil "tar"
+            nil (elpa-admin--tar-command)
             `("--exclude-vcs"
               ,@(mapcar (lambda (i) (format "--exclude=packages/%s/%s" pkg i))
                         ignores)
