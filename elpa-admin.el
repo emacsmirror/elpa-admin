@@ -1863,10 +1863,9 @@ arbitrary code."
       (insert (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n" (elpaa--html-quote name)))
       (elpaa--html-insert-docs pkg-spec)
       (insert "</dl>")
-      (insert (format "<p>To install this package, run in Emacs:</p>
-                       <pre>M-x <span class=\"kw\">list-packages</span> RET</pre>
-                       <p>Then, find <span class=\"kw\">%s</span> in the list, click on the link, and click <pre>Install</pre>.</p>"
-                      name))
+      (insert (format "<p>To install this package from Emacs, use %s.</p>"
+                      (if (elpaa--spec-get pkg-spec :core) "<code>list-packages</code>"
+                        "<code>package-install</code> or <code>list-packages</code>")))
       (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
              (readme-text plain-readme)
              (readme-html (elpaa--section-to-html readme-content))
