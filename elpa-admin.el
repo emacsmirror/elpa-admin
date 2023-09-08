@@ -2086,8 +2086,8 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                       "-B" branch "--no-track"
                                       name (elpaa--urtb pkg-spec)))
                       (t
-                       (error "No branch %s for the worktree of %s:\n%s"
-                              branch name (buffer-string))))
+                       (message "No branch %s for the worktree of %s:\n%s"
+                                branch name (buffer-string))))
                      (buffer-string))))
 	     (message "%s" output)))
           ((not (file-exists-p (format "%s/.git" name)))
