@@ -916,20 +916,52 @@ of the current `process-environment'.  Return the modified copy."
                0)))
     (encode-time (list s mi h d mo y nil nil zs))))
 
+(defun elpaa--core-files (pkg-spec)
+  "Get a list of core files (and only files) for PKG-SPEC.
+Core folders are recursively searched, excluded files are ignored."
+  (let* ((file-patterns (ensure-list (elpaa--spec-get pkg-spec :core)))
+         (excludes (elpaa--spec-get pkg-spec :excludes))
+         (emacs-repo-root (expand-file-name "emacs"))
+         (default-directory emacs-repo-root)
+         (core-files nil))
+
+    ;; ensure we look at files from a core package
+    (cl-assert file-patterns)
+
+    ;; we look at each file or files in folder and add them
+    ;; to core-files
+    (dolist (item file-patterns)
+      (if (file-directory-p item)
+          (setq core-files (append core-files (directory-files-recursively item ".*")))
+        (push item core-files)))
+
+    ;; remove all files which match a wildcard in the excludes
+    (setq core-files (cl-remove-if
+                      (lambda (file-name)
+                        (seq-some
+                         (lambda (wildcard)
+                           (string-match-p (wildcard-to-regexp wildcard) file-name))
+                         excludes))
+                      core-files))
+    core-files))
+
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
-  (let* ((ftn (file-truename      ;; Follow symlinks!
-              (expand-file-name (elpaa--main-file pkg-spec) dir)))
-         (default-directory (file-name-directory ftn))
-         (gitdate
+  (let* ((gitdate
           (with-temp-buffer
-           (if (plist-get (cdr pkg-spec) :core)
-               ;; For core packages, don't use the date of the last
-               ;; commit to the branch, but that of the last commit
-               ;; to the main file.
-               (elpaa--call t "git" "log" "--pretty=format:%cI" "--no-patch"
-                            "-1" "--" (file-name-nondirectory ftn))
-             (elpaa--call t "git" "show" "--pretty=format:%cI" "--no-patch"))
+            (if (plist-get (cdr pkg-spec) :core)
+                (let
+                    ((core-files (elpaa--core-files pkg-spec))
+                     (default-directory (expand-file-name "emacs")))
+                  ;; For core packages, don't use the date of the last
+                  ;; commit to the branch, but that of the last commit
+                  ;; to the core files.
+                  (apply #'elpaa--call t "git" "log" "--pretty=format:%cI" "--no-patch"
+                         "-1" "--" core-files))
+              (let* ((ftn (file-truename      ;; Follow symlinks!
+                           (expand-file-name (elpaa--main-file pkg-spec) dir)))
+                     (default-directory (file-name-directory ftn)))
+                (elpaa--call t "git" "show" "--pretty=format:%cI" "--no-patch")))
             (buffer-string)))
          (verdate
           ;; Convert Git's date into something that looks like a version number.
