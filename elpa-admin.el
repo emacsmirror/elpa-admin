@@ -1863,9 +1863,12 @@ arbitrary code."
       (insert (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n" (elpaa--html-quote name)))
       (elpaa--html-insert-docs pkg-spec)
       (insert "</dl>")
-      (insert (format "<p>To install this package from Emacs, use %s.</p>"
-                      (if (elpaa--spec-get pkg-spec :core) "<code>list-packages</code>"
-                        "<code>package-install</code> or <code>list-packages</code>")))
+      (insert (format "<p>To install this package from Emacs, use %s%s.</p>"
+                      (if (elpaa--spec-get pkg-spec :core)
+                          ;; Just `package-install' doesn't really work for
+                          ;; :core packages :-(
+                          "" "<code>package-install</code> or ")
+                      "<code>list-packages</code>"))
       (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
              (readme-text plain-readme)
              (readme-html (elpaa--section-to-html readme-content))
