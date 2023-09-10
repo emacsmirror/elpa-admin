@@ -1845,8 +1845,8 @@ arbitrary code."
                   ".</dd>\n")
         (let* ((file (cdr (assoc latest files)))
                (attrs (file-attributes file)))
-          (insert (format "<dt>Latest</dt> <dd><a href=%S>%s</a>, %s, %s</dd>\n"
-                          file (elpaa--html-quote file)
+          (insert (format "<dt>Latest</dt> <dd><a href=%S>%s</a> (<a href=%S>.sig</a>), %s, %s</dd>\n"
+                          file (elpaa--html-quote file) (concat file ".sig")
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (elpaa--html-bytes-format (nth 7 attrs))))))
       (let ((maints (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
