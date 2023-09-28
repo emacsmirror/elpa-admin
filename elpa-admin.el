@@ -104,7 +104,7 @@ See variable `org-export-options-alist'.")
   (let ((config (elpaa--form-from-file-contents file)))
     (pcase-dolist (`(,var ,val) config)
       (cl-assert (or (stringp val) (booleanp val)
-                     (and (consp val) (cl-every #'stringp val)))
+                     (and (consp val) (seq-every-p #'stringp val)))
                  t)
       (setf (pcase-exhaustive var
               ('doc-dir                 elpaa--doc-subdirectory)
@@ -936,7 +936,7 @@ Core folders are recursively searched, excluded files are ignored."
         (push item core-files)))
 
     ;; remove all files which match a wildcard in the excludes
-    (setq core-files (cl-remove-if
+    (setq core-files (seq-remove
                       (lambda (file-name)
                         (seq-some
                          (lambda (wildcard)
@@ -1465,8 +1465,8 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
      (concat (format ";; Generated package description from %s.el  -*- no-byte-compile: t -*-\n"
 		     name)
 	     (prin1-to-string
-              (cl-destructuring-bind (version desc requires extras)
-                  (cdr metadata)
+              (pcase-let ((`(,version ,desc ,requires ,extras)
+                           (cdr metadata)))
                 (nconc
                  (list 'define-package
                        (format "%s" name) ;It's been a string, historically :-(
@@ -2273,13 +2273,13 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                         ".github" ".travis.yml"
                         "test" "tests"))
          (dir-files (lambda (d)
-                      (cl-set-difference (directory-files d)
-                                         all-ignores :test #'equal)))
-         (pending (cl-set-difference
+                      (seq-difference (directory-files d)
+                                      all-ignores #'equal)))
+         (pending (seq-difference
                    (funcall dir-files ".")
                    (list (format "%s-pkg.el" pkg)
                          (format "%s-autoloads.el" pkg))
-                   :test #'equal))
+                   #'equal))
          (files '()))
     (while pending
       (pcase (pop pending)
