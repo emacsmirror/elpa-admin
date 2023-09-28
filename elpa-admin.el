@@ -921,43 +921,46 @@ of the current `process-environment'.  Return the modified copy."
 Core folders are recursively searched, excluded files are ignored."
   (let* ((file-patterns (ensure-list (elpaa--spec-get pkg-spec :core)))
          (excludes (elpaa--spec-get pkg-spec :excludes))
-         (emacs-repo-root (expand-file-name "emacs"))
-         (default-directory emacs-repo-root)
+         (default-directory (expand-file-name "emacs/"))
          (core-files nil))
 
-    ;; ensure we look at files from a core package
+    ;; Ensure we look at files from a core package.
     (cl-assert file-patterns)
 
-    ;; we look at each file or files in folder and add them
-    ;; to core-files
+    ;; We look at each file or files in folder and add them
+    ;; to core-files.
     (dolist (item file-patterns)
       (if (file-directory-p item)
-          (setq core-files (append core-files (directory-files-recursively item ".*")))
+          (setq core-files (nconc (directory-files-recursively item ".*")
+                                  core-files))
         (push item core-files)))
 
-    ;; remove all files which match a wildcard in the excludes
-    (setq core-files (seq-remove
-                      (lambda (file-name)
-                        (seq-some
-                         (lambda (wildcard)
-                           (string-match-p (wildcard-to-regexp wildcard) file-name))
-                         excludes))
-                      core-files))
-    core-files))
+    ;; Remove all files which match a wildcard in the excludes.
+    (if (null excludes)
+        core-files
+      (let ((re (concat "\\(?: "
+                        (mapconcat #'wildcard-to-regexp excludes "\\)\\|\\(?:")
+                        "\\)")))
+        (seq-remove
+         (lambda (file-name)
+           (string-match-p re file-name))
+         core-files)))))
 
 (defun elpaa--get-devel-version (dir pkg-spec)
   "Compute the date-based pseudo-version used for devel builds."
   (let* ((gitdate
           (with-temp-buffer
             (if (plist-get (cdr pkg-spec) :core)
-                (let
-                    ((core-files (elpaa--core-files pkg-spec))
-                     (default-directory (expand-file-name "emacs")))
+                (let ((core-files (elpaa--core-files pkg-spec))
+                      (default-directory (expand-file-name "emacs/")))
                   ;; For core packages, don't use the date of the last
                   ;; commit to the branch, but that of the last commit
                   ;; to the core files.
                   (apply #'elpaa--call t "git" "log" "--pretty=format:%cI" "--no-patch"
                          "-1" "--" core-files))
+              ;; FIXME: Why follow symlinks?  I have the nagging feeling that
+              ;; this used to be needed for the :core case only, so not needed
+              ;; here any more.
               (let* ((ftn (file-truename      ;; Follow symlinks!
                            (expand-file-name (elpaa--main-file pkg-spec) dir)))
                      (default-directory (file-name-directory ftn)))
