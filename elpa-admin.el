@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2023  Free Software Foundation, Inc
+;; Copyright (C) 2011-2024  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -1302,6 +1302,12 @@ PROGRAM, DESTINATION, ARGS is like in `elpaa--call'."
 (add-to-list 'version-regexp-alist '("^[-.+ ]*beta-?$" . -2)) ;"1.0.0-beta-3"
 (add-to-list 'version-regexp-alist '("^[-.+ ]*dev$" . -4))    ;2.5-dev
 
+(defun elpaa--lm-maintainers (orig-fun header &rest args)
+  (if (not (equal header "maintainer"))
+      (apply orig-fun header args)
+    (or (apply orig-fun "package-maintainer" args)
+        (apply orig-fun header args))))
+
 (defun elpaa--metadata (dir pkg-spec)
   "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS).
 SIMPLE is non-nil if the package is simple;
@@ -1332,7 +1338,10 @@ PKG is the name of the package and DIR is the directory where it is."
                     (progn
                       (when lmheader-advice
                         (advice-add 'lm-header :around lmheader-advice))
+                      (advice-add 'lm-header-multiline
+                                  :around #'elpaa--lm-maintainers)
                       (package-buffer-info))
+                  (advice-remove 'lm-header-multiline #'elpaa--lm-maintainers)
                   (advice-remove 'lm-header lmheader-advice)))
                (extras (package-desc-extras pkg-desc))
                (version (package-desc-version pkg-desc))
@@ -1841,6 +1850,7 @@ arbitrary code."
                           file (elpaa--html-quote file)
                           (format-time-string "%Y-%b-%d" (nth 5 attrs))
                           (elpaa--html-bytes-format (nth 7 attrs))))))
+      ;; FIXME: Use `elpaa--maintainers'?
       (let ((maints (elpaa--get-prop "Maintainer" name srcdir mainsrcfile)))
         (elpaa--message "maints=%S" maints)
         (insert
@@ -2641,6 +2651,8 @@ relative to elpa root."
         (cond
          ((not (equal 0 (apply #'elpaa--call
                                t "git" "fetch" "--no-tags"
+                               "--negotiation-tip"
+                               (elpaa--urtb pkg-spec "*")
                                url refspec
                                (if release-refspec
                                    (list release-refspec)))))
