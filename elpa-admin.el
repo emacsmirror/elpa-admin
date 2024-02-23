@@ -1959,15 +1959,15 @@ arbitrary code."
     (insert (elpaa--html-header
              (concat elpaa--name " ELPA Packages")
              nil elpaa--index-javascript-headers))
-    (insert "<table>\n")
-    (insert "<tr><th>Package</th><th>Version</th><th>Description</th></tr>\n")
+    (insert "<table id=\"packages\">\n")
+    (insert "<thead><tr><th>Package</th><th>Version</th><th>Description</th></tr></thead>\n")
+    (insert "<tbody>")
     (dolist (pkg pkgs)
       (insert (format "<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td></tr>\n"
                       (car pkg) (car pkg)
                       (package-version-join (aref (cdr pkg) 0))
                       (aref (cdr pkg) 2))))
-    (insert "                </table>
-            </div>
+    (insert "</tbody></table>
             <div class=\"push\"></div>
         </div>")
     (insert (elpaa--html-footer))
