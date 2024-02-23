@@ -1553,13 +1553,13 @@ readme file has an unconventional name"
 
         <div class=\"wrapper\">
 
-            <div class=\"header small\">
+            <header class=\"small\">
                 <div class=\"container\">
                     <h1>%s</h1>
                 </div>
-            </div>
+            </header>
 
-            <div class=\"container\">\n"
+            <main class=\"container\">\n"
           title (or head-extra "") (or header title)))
 
 (defvar elpaa--index-javascript-headers "
@@ -1569,7 +1569,7 @@ readme file has an unconventional name"
 
 (defun elpaa--html-footer ()
   (format "\n
-        <div class=\"footer\">
+        <footer>
             <div class=\"container\">
                 <p>Last refreshed on %s</p>
                 <p>Copyright 2016-%s <a href=\"https://fsf.org\">Free Software Foundation</a>, Inc.</p>
@@ -1581,7 +1581,7 @@ readme file has an unconventional name"
                 </p>
                 <p><a href=\"/jslicense.html\" data-jslicense=\"1\">JavaScript Licenses</a></p>
             </div>
-        </div>
+        </footer>
 
 </body>\n"
           (format-time-string "%Y-%b-%d %R %Z" nil t)
@@ -1950,7 +1950,7 @@ arbitrary code."
                   "<div class=\"splice news\">\n"
                   (elpaa--section-to-html news)
                   "\n</div>\n")))
-      (insert "</div>\n")
+      (insert "</main>\n")
       (insert (elpaa--html-footer))
       (write-region (point-min) (point-max) (concat name ".html")))))
 
@@ -1969,7 +1969,7 @@ arbitrary code."
                       (aref (cdr pkg) 2))))
     (insert "</tbody></table>
             <div class=\"push\"></div>
-        </div>")
+        </main>")
     (insert (elpaa--html-footer))
     (write-region (point-min) (point-max) "index.html")))
 
