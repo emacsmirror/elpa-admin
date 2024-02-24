@@ -121,7 +121,7 @@ packages/%.elc: packages/%.el
                           (list \"$(abspath other-packages)\")       \
 			  load-prefer-newer t			     \
 	                  package-user-dir \"$(abspath packages)\")" \
-	    -f package-initialize 		       	     	     \
+	    -f package-activate-all 		       	     	     \
 	    -L $(dir $@) -f batch-byte-compile $<
 
 # .PHONY: elcs
