@@ -1563,8 +1563,6 @@ readme file has an unconventional name"
           title (or head-extra "") (or header title)))
 
 (defvar elpaa--index-javascript-headers "
-        <script src=\"../javascript/jquery.min.js\" type=\"text/javascript\"></script>
-        <script src=\"../javascript/jquery.filtertable.min.js\" type=\"text/javascript\"></script>
         <script src=\"../javascript/package-search.js\" type=\"text/javascript\"></script>")
 
 (defun elpaa--html-footer ()
@@ -2658,7 +2656,7 @@ relative to elpa root."
   "Return non-nil iff BRANCH is an existing branch."
   (equal 0 (elpaa--call t "git" "show-ref" "--verify" "--quiet" branch)))
 
-(defun elpaa--is-ancestor (candidate rev)
+(defun elpaa--is-ancestor-p (candidate rev)
   "Return non-nil if CANDIDATE is ancestor of REV."
   (zerop (elpaa--call t "git" "merge-base" "--is-ancestor"
                       candidate rev)))
@@ -2703,9 +2701,9 @@ relative to elpa root."
 	 ((not (elpaa--git-branch-p ortb))
 	  (message "New package %s hasn't been pushed to origin yet" pkg)
 	  (when k (funcall k pkg-spec)))
-         ((elpaa--is-ancestor urtb ortb)
+         ((elpaa--is-ancestor-p urtb ortb)
           (message "Nothing new upstream for %s" pkg))
-         ((not (or (elpaa--is-ancestor ortb urtb)
+         ((not (or (elpaa--is-ancestor-p ortb urtb)
                    (elpaa--spec-get pkg-spec :merge)))
           (let ((output (delete-and-extract-region (point-min) (point-max))))
             (if (> (length output) 0) (message "%s" output)))
@@ -2757,7 +2755,7 @@ relative to elpa root."
       (while (and (setq last-release
                         (elpaa--get-last-release-commit pkg-spec
                                                         (concat urtb "~")))
-                  (not (elpaa--is-ancestor last-release ortb)))
+                  (not (elpaa--is-ancestor-p last-release ortb)))
         (message "NOTE: merging from %s only up to release %s!!"
                  urtb last-release)
         (setq urtb last-release))
@@ -2784,9 +2782,9 @@ relative to elpa root."
     (elpaa--record-sync-failure pkg-spec nil)
     (with-temp-buffer
       (cond
-       ((and ortb-p (elpaa--is-ancestor urtb ortb))
+       ((and ortb-p (elpaa--is-ancestor-p urtb ortb))
         (message "Nothing to push for %s" pkg))
-       ((xor (and ortb-p (not (elpaa--is-ancestor ortb urtb)))
+       ((xor (and ortb-p (not (elpaa--is-ancestor-p ortb urtb)))
              merge)
         (if merge
             (message "Error: ':merge' used when not needed: %S\n%S"
