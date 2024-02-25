@@ -43,6 +43,7 @@
 (defvar elpaa--name "NonGNU")
 (defvar elpaa--gitrepo "emacs/nongnu.git")
 (defvar elpaa--url "https://elpa.gnu.org/nongnu/")
+(defvar elpaa--css-url "https://www.gnu.org/software/emacs/manual.css")
 
 (defvar elpaa--branch-prefix "elpa/")
 (defvar elpaa--release-branch-prefix "elpa-release/")
@@ -2532,7 +2533,7 @@ directory; one of archive, archive-devel."
 	 (html-file (expand-file-name destname html-dir))
 	 (html-xref-file
 	  (expand-file-name destname (file-name-directory html-dir))))
-    (elpaa--makeinfo docfile html-file '("--html"))
+    (elpaa--makeinfo docfile html-file (list "--html" (format "--css-ref=%s" elpaa--css-url)))
     ;; FIXME: Use `push' in Emacs≥28
     (plist-put (cdr pkg-spec)
                :internal--html-docs
