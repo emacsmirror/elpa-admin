@@ -49,6 +49,13 @@ readme:
 			  (find-file \"README\")\
 			  (org-export-to-file 'html \"html/readme.html\"))"
 
+########## Updating specific files ############################################
+
+# Apparently `%` can't match the empty string!
+archiv%/index.html: archiv%/archive-contents
+	$(EMACS) -l admin/elpa-admin.el \
+	         -f elpaa-batch-html-make-index $< $*
+
 ########## Rules for in-place installation ####################################
 pkgs := $(wildcard packages/*)
 

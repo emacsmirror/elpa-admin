@@ -1971,6 +1971,14 @@ arbitrary code."
     (insert (elpaa--html-footer))
     (write-region (point-min) (point-max) "index.html")))
 
+(defun elpaa-batch-html-make-index ()
+  (let* ((ac-file (pop command-line-args-left))
+         (elpaa--name (concat elpaa--name
+                              (substring (pop command-line-args-left) 1)))
+         (ac (elpaa--form-from-file-contents ac-file))
+         (default-directory (file-name-directory (expand-file-name ac-file))))
+    (elpaa--html-make-index (cdr ac))))
+
 (defun elpaa--pull (dirname)
   (let ((default-directory (elpaa--dirname dirname)))
     (with-temp-buffer
