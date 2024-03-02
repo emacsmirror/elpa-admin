@@ -2450,7 +2450,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           (insert "\n## Summary:\n\n")
           (let ((beg (point)))
             (insert (if (not readme)
-                        "[Not available 🙁]"
+                        "[Not provided 🙁]"
                       (elpaa--section-to-plain-text readme)))
             ;; Keep a max of about 10 lines of full-length text.
             (delete-region (min (+ beg 800) (point)) (point))
@@ -2466,7 +2466,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
           (unless (bolp) (insert "\n"))
           (insert "\n## Recent NEWS:\n\n"
                   (if (not news)
-                      "[Not available 🙁]"
+                      "[Not provided 🙁]"
                     (elpaa--section-to-plain-text news))))
         (elpaa--send-email
          `((From    . ,elpaa--email-from)
