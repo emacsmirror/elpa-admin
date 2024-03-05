@@ -1980,6 +1980,120 @@ arbitrary code."
          (default-directory (file-name-directory (expand-file-name ac-file))))
     (elpaa--html-make-index (cdr ac))))
 
+;;; Statistics from the web server log
+
+(defconst elpaa--wsl-time-re
+  (rx (group (repeat 2 digit))          ;Day
+      "/" (group (repeat 3 alpha))      ;Month
+      "/" (group (repeat 4 digit))      ;Year
+      ":" (group                        ;Time
+           (repeat 2 digit) ":" (repeat 2 digit) ":" (repeat 2 digit)
+           " " (or "+" "-") (repeat 4 digit))))
+
+(defconst elpaa--wsl-line-re
+  (rx bol (1+ (or xdigit "." ":"))      ; IP of client
+      " - - "
+      "[" (group (+ (not "]"))) "]"                 ; Date/time
+      " \"" (or (seq (1+ (or alpha "_"))                ; Method
+                     " " (group (1+ (not (any blank)))) ; Path
+                     " " "HTTP/" (1+ (or alnum ".")))   ; Protocol
+                "-")
+      "\""
+      " " (1+ digit)                    ; Status code
+      " " (1+ digit)                    ; Size
+      " \"" (1+ (or (not (any "\"")) "\\\"")) "\" " ; Referrer
+      "\"" (1+ (or (not (any "\"")) "\\\"")) "\""
+      eol))
+
+(defun elpaa--wsl-read (logfile fn)
+  (with-temp-buffer
+    (insert-file-contents logfile)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (if (not (looking-at elpaa--wsl-line-re))
+          (message "Unrecognized log line: %s"
+                   (buffer-substring (point) (line-end-position)))
+        (let* ((timestr (match-string 1))
+               (file (match-string 2))
+               (timestr
+                (if (string-match "/\\([^/]*\\)/\\([^/:]*\\):" timestr)
+                    (replace-match " \\1 \\2 " t nil timestr)
+                  (message "Unrecognized timestamp: %s" timestr)
+                  timestr))
+               (time (encode-time (parse-time-string timestr))))
+          (when file
+            (let ((pkg (if (string-match
+                            (rx bos "/"
+                                (or "packages" "devel" "nongnu" "nongnu-devel")
+                                "/"
+                                (group (+? any))
+                                (\?
+                                 "-" (or
+                                      (seq
+                                       (+ (or digit "."))
+                                       (* (or "pre" "beta" "alpha" "snapshot")
+                                          (+ (or digit "."))))
+                                      "readme"))
+                                "."
+                                (or "tar" "txt" "el" "html"))
+                            file)
+                           (match-string 1 file))))
+              (funcall fn time pkg file)))))
+      (forward-line 1))))
+
+(defun elpaa--wsl-one-file (logfile stats)
+  (elpaa--wsl-read
+   logfile
+   ;; Keep a counter of accesses indexed by package and week.
+   (lambda (time pkg _file)
+     (let* ((secs (time-convert time 'integer))
+            (week (/ secs 3600 24 7)))
+       (cl-incf (alist-get week (gethash pkg stats) 0))))))
+
+(defvar elpaa--wsl-stats-file "wsl-stats.eld")
+
+(defvar elpaa--wsl-directory "/var/log/apache2/")
+
+(defun elpaa--wsl-collect ()
+  (let* ((stats (elpaa--form-from-file-contents elpaa--wsl-stats-file))
+         (seen (nth 1 stats))
+         (table (nth 2 stats))
+         (changed nil))
+    (cl-assert (eq :web-server-log-stats (nth 0 stats)))
+    (unless table (setq table (make-hash-table :test 'equal)))
+    ;; Only consider the compressed files, because we don't want to process
+    ;; files that may still be modified.
+    (dolist (logfile (directory-files elpaa--wsl-directory t "\\.[lgx]z\\'"))
+      (let ((attrs (file-attributes logfile)))
+        (cond
+         ((string-match "error_log" logfile) nil) ;Ignore the error log files.
+         ((member attrs seen) nil)                ;Already processed.
+         (t
+          (push attrs seen)
+          (setq changed t)
+          (elpaa--wsl-one-file logfile table)))))
+    (when changed
+      (with-temp-buffer
+        (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
+                 `(:web-server-log-stats ,seen ,table)
+                 (current-buffer))
+        (princ "\n" (current-buffer))
+        (write-region nil nil elpaa--wsl-stats-file)))))
+
+;; (defun elpaa--wsl-foo ()
+;;   (let ((diff (time-convert (time-subtract curtime time) 'integer))
+;;         (diff-weeks (/ diff 3600 24 7))
+;;         (timelog (/ (logb (1+ diff-weeks)) 2))
+;;         (vec (gethash pkg stats)))
+;;     (unless vec
+;;       (setf (gethash pkg stats) (setq vec (make-vector 4 0))))
+;;     (if (> timelog (length vec))
+;;         (message "Entry too old: %s" timestr)
+;;       (cl-incf (aref vec timelog)))))
+;;       stats)))
+
+;;; Maintain worktrees in the `packages' subdirectory
+
 (defun elpaa--pull (dirname)
   (let ((default-directory (elpaa--dirname dirname)))
     (with-temp-buffer
@@ -2030,8 +2144,6 @@ arbitrary code."
                           (eq (line-beginning-position 0) (point-min)))
                      " " "\n")
                  (buffer-string))))))
-
-;;; Maintain worktrees in the `packages' subdirectory
 
 (defun elpaa--sync-emacs-repo ()
   "Sync Emacs repository, if applicable.
