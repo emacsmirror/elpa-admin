@@ -40,6 +40,10 @@
   "Subdirectory where the ELPA release files (tarballs, ...) will be placed.")
 (defvar elpaa--devel-subdir "archive-devel/"
   "Subdirectory where the ELPA bleeding edge files (tarballs, ...) will be placed.")
+
+(defvar elpaa--wsl-stats-file "wsl-stats.eld"
+  "File where web-server access stats are kept.")
+
 (defvar elpaa--name "NonGNU")
 (defvar elpaa--gitrepo "emacs/nongnu.git")
 (defvar elpaa--url "https://elpa.gnu.org/nongnu/")
@@ -1955,22 +1959,33 @@ arbitrary code."
 
 (defun elpaa--html-make-index (pkgs)
   (with-temp-buffer
-    (insert (elpaa--html-header
-             (concat elpaa--name " ELPA Packages")
-             nil elpaa--index-javascript-headers))
-    (insert "<table id=\"packages\">\n")
-    (insert "<thead><tr><th>Package</th><th>Version</th><th>Description</th></tr></thead>\n")
-    (insert "<tbody>")
-    (dolist (pkg pkgs)
-      (insert (format "<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td></tr>\n"
-                      (car pkg) (car pkg)
-                      (package-version-join (aref (cdr pkg) 0))
-                      (aref (cdr pkg) 2))))
-    (insert "</tbody></table>
+    (let ((scores (and elpaa--wsl-stats-file
+                       (file-readable-p elpaa--wsl-stats-file)
+                       (nth 3 (elpaa--form-from-file-contents
+                               elpaa--wsl-stats-file)))))
+      (insert (elpaa--html-header
+               (concat elpaa--name " ELPA Packages")
+               nil elpaa--index-javascript-headers))
+      (insert "<table id=\"packages\">\n")
+      (insert "<thead><tr><th>Package</th><th>Version</th><th>Description</th><th>Rank</th></tr></thead>\n")
+      (insert "<tbody>")
+      (dolist (pkg pkgs)
+        (insert (format "<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
+                        (car pkg) (car pkg)
+                        (package-version-join (aref (cdr pkg) 0))
+                        (aref (cdr pkg) 2)
+                        ;; Average rank over all the weeks' ranks.
+                        ;; FIXME: Only use the more recent weeks?
+                        (let* ((ranks (and (hash-table-p scores)
+                                           (gethash (car pkg) scores)))
+                               (total (apply #'+ (mapcar #'cdr ranks))))
+                          (if (null ranks) "?"
+                            (format "%d%%" (/ total (length ranks))))))))
+      (insert "</tbody></table>
             <div class=\"push\"></div>
         </main>")
-    (insert (elpaa--html-footer))
-    (write-region (point-min) (point-max) "index.html")))
+      (insert (elpaa--html-footer))
+      (write-region (point-min) (point-max) "index.html"))))
 
 (defun elpaa-batch-html-make-index ()
   (let* ((ac-file (pop command-line-args-left))
@@ -2034,7 +2049,7 @@ arbitrary code."
                                       (seq
                                        (+ (or digit "."))
                                        (* (or "pre" "beta" "alpha" "snapshot")
-                                          (+ (or digit "."))))
+                                          (* (or digit "."))))
                                       "readme"))
                                 "."
                                 (or "tar" "txt" "el" "html"))
@@ -2051,8 +2066,6 @@ arbitrary code."
      (let* ((secs (time-convert time 'integer))
             (week (/ secs 3600 24 7)))
        (cl-incf (alist-get week (gethash pkg stats) 0))))))
-
-(defvar elpaa--wsl-stats-file "wsl-stats.eld")
 
 (defvar elpaa--wsl-directory "/var/log/apache2/")
 
