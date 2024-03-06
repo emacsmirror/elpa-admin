@@ -1991,18 +1991,20 @@ arbitrary code."
            " " (or "+" "-") (repeat 4 digit))))
 
 (defconst elpaa--wsl-line-re
-  (rx bol (1+ (or xdigit "." ":"))      ; IP of client
+  (rx bol
+      (\? (+ (not " ")) " ")            ; VHost
+      (+ (or xdigit "." ":"))           ; IP of client
       " - - "
-      "[" (group (+ (not "]"))) "]"                 ; Date/time
-      " \"" (or (seq (1+ (or alpha "_"))                ; Method
-                     " " (group (1+ (not (any blank)))) ; Path
-                     " " "HTTP/" (1+ (or alnum ".")))   ; Protocol
-                "-")
+      "[" (group (+ (not "]"))) "]"                    ; Date/time
+      " \"" (or (seq (+ (or alpha "_"))                ; Method
+                     " " (group (+ (not (any blank)))) ; Path
+                     " " "HTTP/" (+ (or alnum ".")))   ; Protocol
+                (* (not (any "\"" " "))))              ; Garbage
       "\""
-      " " (1+ digit)                    ; Status code
-      " " (1+ digit)                    ; Size
-      " \"" (1+ (or (not (any "\"")) "\\\"")) "\" " ; Referrer
-      "\"" (1+ (or (not (any "\"")) "\\\"")) "\""
+      " " (+ digit)                                ; Status code
+      " " (or (+ digit) "-")                       ; Size
+      " \"" (* (or (not (any "\"")) "\\\"")) "\" " ; Referrer
+      "\"" (* (or (not (any "\"")) "\\\"")) "\""   ; User-Agent
       eol))
 
 (defun elpaa--wsl-read (logfile fn)
@@ -2054,6 +2056,32 @@ arbitrary code."
 
 (defvar elpaa--wsl-directory "/var/log/apache2/")
 
+(defun elpaa--wsl-scores (table)
+  (let ((scores-by-week ()))
+   (maphash (lambda (pkg data)
+              (when (and pkg (not (string-match "/" pkg)))
+                (pcase-dolist (`(,week . ,count) data)
+                  (push (cons count pkg) (alist-get week scores-by-week)))))
+            table)
+   ;; For each week, we sort packages by number of downloads, to
+   ;; compute their percentile ranking.
+   ;; FIXME: We don't take into account that several (many?) packages can
+   ;; have the same number of downloads, in which case their relative ranking
+   ;; (within the equiv class) is a lie.
+   (dolist (scores scores-by-week)
+     (setf (cdr scores)
+           (nreverse (mapcar #'cdr (sort (cdr scores)
+                                    #'car-less-than-car)))))
+   (let ((score-table (make-hash-table :test 'equal)))
+     (pcase-dolist (`(,week . ,pkgs) scores-by-week)
+      (let* ((total (length pkgs))
+             (rest total))
+        (dolist (pkg pkgs)
+          (setq rest (1- rest))
+          (let ((percentile (/ (* 100 rest) total)))
+           (push (cons week percentile) (gethash pkg score-table))))))
+     score-table)))
+
 (defun elpaa--wsl-collect ()
   (let* ((stats (elpaa--form-from-file-contents elpaa--wsl-stats-file))
          (seen (nth 1 stats))
@@ -2066,16 +2094,18 @@ arbitrary code."
     (dolist (logfile (directory-files elpaa--wsl-directory t "\\.[lgx]z\\'"))
       (let ((attrs (file-attributes logfile)))
         (cond
-         ((string-match "error_log" logfile) nil) ;Ignore the error log files.
+         ((string-match "error.log" logfile) nil) ;Ignore the error log files.
          ((member attrs seen) nil)                ;Already processed.
          (t
           (push attrs seen)
           (setq changed t)
           (elpaa--wsl-one-file logfile table)))))
-    (when changed
+    (when t;; changed
       (with-temp-buffer
         (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
-                 `(:web-server-log-stats ,seen ,table)
+                 `(:web-server-log-stats ,seen ,table
+                   ;; Rebuild the scoreboard "by week".
+                   ,(elpaa--wsl-scores table))
                  (current-buffer))
         (princ "\n" (current-buffer))
         (write-region nil nil elpaa--wsl-stats-file)))))
