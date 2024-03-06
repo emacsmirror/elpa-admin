@@ -1977,7 +1977,8 @@ arbitrary code."
                         ;; Average rank over all the weeks' ranks.
                         ;; FIXME: Only use the more recent weeks?
                         (let* ((ranks (and (hash-table-p scores)
-                                           (gethash (car pkg) scores)))
+                                           (gethash (symbol-name (car pkg))
+                                                    scores)))
                                (total (apply #'+ (mapcar #'cdr ranks))))
                           (if (null ranks) "?"
                             (format "%d%%" (/ total (length ranks))))))))
