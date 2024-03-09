@@ -2114,7 +2114,7 @@ arbitrary code."
           (push attrs seen)
           (setq changed t)
           (elpaa--wsl-one-file logfile table)))))
-    (when t;; changed
+    (when changed
       (with-temp-buffer
         (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
                  `(:web-server-log-stats ,seen ,table
@@ -2677,6 +2677,9 @@ directory; one of archive, archive-devel."
       (let ((default-directory
              (if input-dir (expand-file-name input-dir)
                default-directory)))
+        ;; FIXME: The name of the output file is splattered all over the output
+        ;; file, so it ends up wrong after renaming.  Maybe it's harmless,
+        ;; I don't know, but it's not satisfactory.
         (apply #'elpaa--call-sandboxed
                t "makeinfo" "--no-split" input-name "-o" tmpfile extraargs))
       (message "%s" (buffer-string)))
@@ -2689,20 +2692,23 @@ directory; one of archive, archive-devel."
 	 (html-file (expand-file-name destname html-dir))
 	 (html-xref-file
 	  (expand-file-name destname (file-name-directory html-dir))))
-    (elpaa--makeinfo docfile html-file (list "--html" (format "--css-ref=%s" elpaa--css-url)))
-    ;; FIXME: Use `push' in Emacs≥28
-    (plist-put (cdr pkg-spec)
-               :internal--html-docs
-               (cons (cons (file-name-base html-file)
-                           (file-name-nondirectory html-file))
-                     (plist-get (cdr pkg-spec) :internal--html-docs)))
+    (elpaa--makeinfo docfile html-file
+                     (list "--html" (format "--css-ref=%s" elpaa--css-url)))
+    (push (cons (file-name-base html-file)
+                (file-name-nondirectory html-file))
+          (plist-get (cdr pkg-spec) :internal--html-docs))
 
     ;; Create a symlink from elpa/archive[-devel]/doc/* to
     ;; the actual file, so html references work.
     (with-demoted-errors "%S" ;; 'make-symbolic-link' doesn't work on Windows
-      (make-symbolic-link
-       (concat (file-name-nondirectory html-dir) "/" destname)
-       html-xref-file t))))
+      (let ((target (file-name-concat (file-name-nondirectory html-dir)
+                                      destname))
+            (current-target (file-attribute-type
+                             (file-attributes html-xref-file))))
+        (if (and (stringp current-target)
+                 (not (equal target current-target)))
+            (error "Manual name %S conflicts with %S" destname current-target)
+          (make-symbolic-link target html-xref-file))))))
 
 (defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
