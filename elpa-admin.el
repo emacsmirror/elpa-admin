@@ -32,6 +32,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(eval-when-compile (require 'map))
+(require 'xml)
 (require 'lisp-mnt)
 (require 'package)
 
@@ -731,6 +733,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
 		     (default-directory
 		      (expand-file-name (file-name-directory tarball))))
 		 (and (file-readable-p (format "%s-readme.txt" pkgname))
+                      (file-readable-p (format "%s.xml" pkgname))
 		      (file-readable-p (format "%s.html" pkgname))
 		      (file-readable-p (format "%s.svg" pkgname))))))
       (progn
@@ -874,7 +877,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
                                             (if revision-function
                                                 (* 60 60 24 365 2)))))
          (let ((default-directory (expand-file-name destdir)))
-           ;; This also creates <pkg>-readme.txt and <pkg>.svg.
+           ;; This also creates <pkg>.xml (atom feed), <pkg>-readme.txt and <pkg>.svg.
            (elpaa--html-make-pkg pkgdesc pkg-spec
                                  `((,vers . ,(file-name-nondirectory tarball))
                                    . ,oldtarballs)
@@ -1868,6 +1871,36 @@ arbitrary code."
 	  ))
       (insert "</dd>\n"))))
 
+(defun elpaa--make-atom-feed (pkg pkg-spec srcdir files)
+  (let* ((name (symbol-name (car pkg)))
+         (path (if (string-match "\\`https?://[^/]+/\\(.*\\)" elpaa--url)
+                   (match-string 1 elpaa--url)
+                 (error "Failed to infer path from %S" elpaa--url)))
+         (metadata (elpaa--metadata srcdir pkg-spec))
+         (desc (nth 2 metadata)))
+    (with-temp-buffer
+      (elpaa--render-atom
+       (format "Update feed for %s" name)
+       (concat "/" path  name ".xml")
+       (mapcan
+        (lambda (file)
+          (let ((version (car file)))
+            `(( :title ,(format "%s ELPA: Release of \"%s\", Version %s"
+                                elpaa--name name version)
+                :time ,(file-attribute-modification-time
+                        (file-attributes (cdr file)))
+                :path ,(format "%s%s.xml#v%s" path name version)
+                :content
+                ((p nil
+                    ,(concat "Version " version " of package ")
+                    (a ((href . ,(elpaa--default-url name))) ,name)
+                    ,(concat " has just been released in " elpaa--name " ELPA."))
+                 (p nil "You can now find it in " (kbd nil "M-x list-packages RET") ".")
+                 (p nil ,(concat name " describes itself as:"))
+                 (blockquote nil ,desc))))))
+        files))
+      (write-region (point-min) (point-max) (concat name ".xml")))))
+
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir plain-readme)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
@@ -1877,11 +1910,14 @@ arbitrary code."
     (elpaa--make-badge (concat name ".svg")
                        (format "%s ELPA" elpaa--name)
                        (format "%s %s" name latest))
+    (elpaa--make-atom-feed pkg pkg-spec srcdir files)
     (with-temp-buffer
       (insert (elpaa--html-header
                (format "%s ELPA - %s" elpaa--name name)
                (format "<a href=\"index.html\">%s ELPA</a> - %s"
-                       elpaa--name name)))
+                       elpaa--name name)
+               (format "<link href=\"%s.atom\" type=\"application/atom+xml\" rel=\"alternate\" />"
+                       name)))
       (insert (format "<h2 class=\"package\">%s</h2>" name))
       (insert "<dl>")
       (insert (format "<dt>Description</dt><dd>%s</dd>\n" (elpaa--html-quote desc)))
@@ -1912,6 +1948,7 @@ arbitrary code."
                       (list maints))
                     ", ")
          "</dd>\n"))
+      (insert "<dt>Atom feed</dt><dd><a href=\"" name ".xml\">" name ".xml</a></dd>")
       (elpaa--insert-repolinks
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
@@ -3138,6 +3175,56 @@ relative to elpa root."
              (lambda () (forward-comment (point-max)))))
 
 (when (file-readable-p "elpa-config") (elpaa-read-config "elpa-config"))
+
+;;; Atom feed generation
+
+(defun elpaa--render-atom (title path articles)
+  "Insert an Atom feed at point.
+TITLE sets the title of the feed, PATH is the request path
+relative to the server route of where the Atom feed will be
+hosted.  ARTICLES is a list of plists, consisting of the keys
+`:title' for an article title, `:time' a timestamp in in
+`current-time'-format, `:path' is a root-relative HTTP path to
+the article."
+  (cl-flet ((newer-p (a1 a2)
+              (time-less-p (plist-get a1 :time) (plist-get a2 :time)))
+            (rfc3339 (time)
+              (format-time-string "%Y-%m-%dT%H:%M:%SZ" time)))
+    (let* ((articles (sort articles #'newer-p))
+           (domain (if (string-match "\\`https?://\\([^/]+\\)/" elpaa--url)
+                       (match-string 1 elpaa--url)
+                     (error "Failed to infer domain from %S" elpaa--url)))
+           (self (concat "https://" domain path)))
+      (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
+      (xml-print
+       ;; See https://validator.w3.org/feed/docs/rfc4287.html
+       `((feed
+          ((xmlns . "http://www.w3.org/2005/Atom"))
+          (title nil ,title)
+          (link ((href . ,self) (rel . "self")))
+          (id nil ,self)
+          (updated nil ,(rfc3339 (plist-get :time (car articles))))
+          ,@(mapcar
+             (pcase-lambda ((map (:title title) (:time time)
+                                 (:path path) (:content content)))
+               `(entry
+                 nil
+                 (title nil ,title)
+                 (updated nil ,(rfc3339 time))
+                 (author
+                  nil
+                  (name nil "elpa-admin")
+                  (email nil "emacs-devel@gnu.org"))
+                 (id nil ,(format "tag:%s,%s:%s"
+                                  domain
+                                  (format-time-string "%F" time)
+                                  path))
+                 (content
+                  ((type . "html"))
+                  ,(with-temp-buffer
+                     (xml-print content)
+                     (buffer-string)))))
+             articles)))))))
 
 (provide 'elpa-admin)
 
