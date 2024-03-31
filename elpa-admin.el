@@ -2700,15 +2700,17 @@ directory; one of archive, archive-devel."
 
     ;; Create a symlink from elpa/archive[-devel]/doc/* to
     ;; the actual file, so html references work.
-    (with-demoted-errors "%S" ;; 'make-symbolic-link' doesn't work on Windows
-      (let ((target (file-name-concat (file-name-nondirectory html-dir)
-                                      destname))
-            (current-target (file-attribute-type
-                             (file-attributes html-xref-file))))
-        (if (and (stringp current-target)
-                 (not (equal target current-target)))
-            (error "Manual name %S conflicts with %S" destname current-target)
-          (make-symbolic-link target html-xref-file))))))
+    (let ((target (file-name-concat (file-name-nondirectory html-dir)
+                                    destname))
+          (current-target (file-attribute-type
+                           (file-attributes html-xref-file))))
+      (cond
+       ((not (stringp current-target))
+        (with-demoted-errors "%S" ;; 'make-symbolic-link' fails on Windows.
+          (make-symbolic-link target html-xref-file)))
+       ((equal target current-target) nil) ;Nothing to do.
+       (t (error "Manual name %S conflicts with %S"
+                 destname current-target))))))
 
 (defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
