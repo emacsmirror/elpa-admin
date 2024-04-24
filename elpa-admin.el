@@ -492,20 +492,21 @@ returns.  Return the selected revision."
             (let* ((bucket (car buckets))
                    (len (length (try-completion "" bucket)))
                    (newbuckets ()))
-              (dolist (oldtarball (cdr bucket))
-                (let ((tvers (car oldtarball)))
-                  (push oldtarball
-                        (alist-get (substring tvers 0
-                                              (min (length tvers) (1+ len)))
-                                   newbuckets nil nil #'equal))))
-              (when (< (+ (length newbuckets) (length (cdr buckets)))
-                       (- n (length kept)))
-                ;; (message "Spreading one bucket")
-                (setq buckets (nconc (cdr buckets)
-                                     (mapcar (lambda (b)
-                                               (cons (length (car b)) (cdr b)))
-                                             newbuckets)))
-                t)))
+              (when (cddr bucket) ;There's more than 1 entry in this bucket.
+                (dolist (oldtarball (cdr bucket))
+                  (let ((tvers (car oldtarball)))
+                    (push oldtarball
+                          (alist-get (substring tvers 0
+                                                (min (length tvers) (1+ len)))
+                                     newbuckets nil nil #'equal))))
+                (when (< (+ (length newbuckets) (length (cdr buckets)))
+                         (- n (length kept)))
+                  ;; (message "Spreading one bucket into: %S" newbuckets)
+                  (setq buckets (nconc (cdr buckets)
+                                       (mapcar (lambda (b)
+                                                 (cons (length (car b)) (cdr b)))
+                                               newbuckets)))
+                  t))))
         ;; Finally, evenly select elements from every bucket.
         (setq buckets (sort buckets (lambda (b1 b2) (<= (length b1) (length b2)))))
         (while buckets
