@@ -1919,7 +1919,9 @@ arbitrary code."
                        elpaa--name name)
                (format "<link href=\"%s.atom\" type=\"application/atom+xml\" rel=\"alternate\" />"
                        name)))
-      (insert (format "<h2 class=\"package\">%s</h2>" name))
+      (insert (format "<h2 class=\"package\">%s" name))
+      (insert " <a class=\"badge\" href=\"" name ".xml\"><img src=\"/images/rss.svg\" alt=\"Atom Feed\"></a>")
+      (insert "</h2>")
       (insert "<dl>")
       (insert (format "<dt>Description</dt><dd>%s</dd>\n" (elpaa--html-quote desc)))
       (if (zerop (length latest))
@@ -1949,7 +1951,6 @@ arbitrary code."
                       (list maints))
                     ", ")
          "</dd>\n"))
-      (insert "<dt>Atom feed</dt><dd><a href=\"" name ".xml\">" name ".xml</a></dd>")
       (elpaa--insert-repolinks
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
