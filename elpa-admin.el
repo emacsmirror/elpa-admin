@@ -3197,7 +3197,7 @@ the article."
             (rfc3339 (time)
               (format-time-string "%Y-%m-%dT%H:%M:%SZ" time)))
     (let* ((articles (sort articles #'newer-p))
-           (domain (if (string-match "\\`https?://\\([^/]+\\)/" elpaa--url)
+           (domain (if (string-match "\\`https?://\\([^/]+/\\)" elpaa--url)
                        (match-string 1 elpaa--url)
                      (error "Failed to infer domain from %S" elpaa--url)))
            (self (concat "https://" domain path)))
@@ -3225,6 +3225,8 @@ the article."
                                   domain
                                   (format-time-string "%F" time)
                                   path))
+                 (link ((href . ,(concat "https://" domain path))
+                        (rel . "self")))
                  (content
                   ((type . "html"))
                   ,(with-temp-buffer
