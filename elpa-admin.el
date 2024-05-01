@@ -49,6 +49,7 @@
 (defvar elpaa--name "NonGNU")
 (defvar elpaa--gitrepo "emacs/nongnu.git")
 (defvar elpaa--url "https://elpa.gnu.org/nongnu/")
+(defvar elpaa--devel-url "https://elpa.gnu.org/nongnu-devel/")
 (defvar elpaa--css-url "https://www.gnu.org/software/emacs/manual.css")
 
 (defvar elpaa--branch-prefix "elpa/")
@@ -1231,7 +1232,8 @@ place the resulting tarball into the file named TARBALL-ONLY."
                                   elpaa--devel-subdir
                                   pkgname devel-vers)))
              (new
-              (let ((elpaa--name (concat elpaa--name "-devel")))
+              (let ((elpaa--name (concat elpaa--name "-devel"))
+                    (elpaa--url elpaa--devel-url))
                 ;; Build the archive-devel tarball.
                 (elpaa--make-one-tarball tarball
                                          dir pkg-spec
