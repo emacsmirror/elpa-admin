@@ -734,6 +734,8 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
                (let ((pkgname (car pkg-spec))
 		     (default-directory
 		      (expand-file-name (file-name-directory tarball))))
+		 ;; FIXME: We shouldn't rebuild the tarball but only the
+		 ;; particular missing file(s)!!!
 		 (and (file-readable-p (format "%s-readme.txt" pkgname))
                       (file-readable-p (format "%s.xml" pkgname))
 		      (file-readable-p (format "%s.html" pkgname))
@@ -1520,11 +1522,12 @@ readme file has an unconventional name"
         rendered))
      ((let* ((readme-file (elpaa--spec-get pkg-spec :readme))
              (known-readme-names            ;see `package--get-description'
-              '("README-elpa"
-                "README-elpa.md"
+              '("README-elpa.md"
+                "README-elpa"
                 "README"
+                "README.org"
                 "README.rst"
-                "README.org")))
+                "README.md")))
         (when (and readme-file
                    (not (eq readme-file 'ignore))
                    (not (member readme-file known-readme-names)))
