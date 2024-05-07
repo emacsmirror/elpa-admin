@@ -87,6 +87,8 @@ Can be set in elpa-config via `doc-dir'.")
 
 (defvar elpaa--sync-failures-dir "sync-failures/")
 
+(defvar elpaa--aggregated-feed-filename ".aggregated-feed.xml")
+
 (defvar elpaa--debug (getenv "ELPA_DEBUG")
   "Non-nil means to print debug messages.")
 
@@ -1922,7 +1924,7 @@ arbitrary code."
                (format "%s ELPA - %s" elpaa--name name)
                (format "<a href=\"index.html\">%s ELPA</a> - %s"
                        elpaa--name name)
-               (format "<link href=\"%s.atom\" type=\"application/atom+xml\" rel=\"alternate\" />"
+               (format "<link href=\"%s.xml\" type=\"application/atom+xml\" rel=\"alternate\" />"
                        name)))
       (insert (format "<h2 class=\"package\">%s" name))
       (insert " <a class=\"badge\" href=\"" name ".xml\"><img src=\"/images/rss.svg\" alt=\"Atom Feed\"></a>")
@@ -2008,8 +2010,11 @@ arbitrary code."
                        (nth 3 (elpaa--form-from-file-contents
                                elpaa--wsl-stats-file)))))
       (insert (elpaa--html-header
-               (concat elpaa--name " ELPA Packages")
-               nil elpaa--index-javascript-headers))
+               (concat elpaa--name " ELPA Packages") nil
+               (concat
+                elpaa--index-javascript-headers
+                (format "<link href=\"%s\" type=\"application/atom+xml\" rel=\"alternate\" />"
+                        elpaa--aggregated-feed-filename))))
       (insert "<table id=\"packages\">\n")
       (insert "<thead><tr><th>Package</th><th>Version</th><th>Description</th><th>Rank</th></tr></thead>\n")
       (insert "<tbody>")
@@ -2034,11 +2039,13 @@ arbitrary code."
 
 (defun elpaa-batch-html-make-index ()
   (let* ((ac-file (pop command-line-args-left))
-         (elpaa--name (concat elpaa--name
-                              (substring (pop command-line-args-left) 1)))
+         (devel (string-match "devel" (pop command-line-args-left)))
+         (elpaa--name (concat elpaa--name (if devel "-devel" "")))
+         (elpaa--url (if devel elpaa--devel-url elpaa--url))
          (ac (elpaa--form-from-file-contents ac-file))
          (default-directory (file-name-directory (expand-file-name ac-file))))
-    (elpaa--html-make-index (cdr ac))))
+    (elpaa--html-make-index (cdr ac))
+    (elpaa--make-aggregated-atom-feed elpaa--aggregated-feed-filename)))
 
 ;;; Statistics from the web server log
 
@@ -3187,6 +3194,9 @@ relative to elpa root."
 
 ;;; Atom feed generation
 
+(defun elpaa--rfc3339 (time)
+  (format-time-string "%Y-%m-%dT%H:%M:%SZ" time))
+
 (defun elpaa--render-atom (title path articles)
   "Insert an Atom feed at point.
 TITLE sets the title of the feed, PATH is the request path
@@ -3196,9 +3206,8 @@ hosted.  ARTICLES is a list of plists, consisting of the keys
 `current-time'-format, `:path' is a root-relative HTTP path to
 the article."
   (cl-flet ((newer-p (a1 a2)
-              (time-less-p (plist-get a1 :time) (plist-get a2 :time)))
-            (rfc3339 (time)
-              (format-time-string "%Y-%m-%dT%H:%M:%SZ" time)))
+              (time-less-p (plist-get a1 :time) (plist-get a2 :time))))
+    ;; FIXME: Why do we need to split elpaa--url into a domain and a path?
     (let* ((articles (sort articles #'newer-p))
            (domain (if (string-match "\\`https?://\\([^/]+/\\)" elpaa--url)
                        (match-string 1 elpaa--url)
@@ -3212,14 +3221,14 @@ the article."
           (title nil ,title)
           (link ((href . ,self) (rel . "self")))
           (id nil ,self)
-          (updated nil ,(rfc3339 (plist-get :time (car articles))))
+          (updated nil ,(elpaa--rfc3339 (plist-get :time (car articles))))
           ,@(mapcar
              (pcase-lambda ((map (:title title) (:time time)
                                  (:path path) (:content content)))
                `(entry
                  nil
                  (title nil ,title)
-                 (updated nil ,(rfc3339 time))
+                 (updated nil ,(elpaa--rfc3339 time))
                  (author
                   nil
                   (name nil "elpa-admin")
@@ -3236,6 +3245,45 @@ the article."
                      (xml-print content)
                      (buffer-string)))))
              articles)))))))
+
+(defun elpaa--make-aggregated-atom-feed (filename)
+  (let* ((files (sort
+                 (directory-files "." nil "\\.xml\\'" 'nosort)
+                 (lambda (f1 f2)
+                   (time-less-p
+                    (file-attribute-modification-time (file-attributes f2))
+                    (file-attribute-modification-time (file-attributes f1))))))
+         (tail (nthcdr 100 files))
+         (entries '()))
+    (when tail (setcdr tail nil))
+    (setq files (delete filename files))
+    ;; Fetch the last entry (which seems to be where the most recent
+    ;; entry is placed) of each feed.
+    (with-temp-buffer
+      (dolist (file files)
+        (erase-buffer)
+        (insert-file-contents file)
+        (let* ((xml (with-demoted-errors "%S" (libxml-parse-xml-region)))
+               (lastentry (assq 'entry (nreverse xml))))
+          (when lastentry
+            (push lastentry entries))))
+      ;; Wrap the list into an actual Atom feed.
+      ;; We don't bother to sort the entries because we assume that the
+      ;; time of the last entry of each input feed is about the same as the
+      ;; modification time of the file, so they should already be ordered.
+      (erase-buffer)
+      (let* ((self (concat elpaa--url filename)))
+        (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
+        (xml-print
+         ;; See https://validator.w3.org/feed/docs/rfc4287.html
+         `((feed
+            ((xmlns . "http://www.w3.org/2005/Atom"))
+            (title nil ,(concat elpaa--name " ELPA News"))
+            (link ((href . ,self) (rel . "self")))
+            (id nil ,self)
+            (updated nil ,(elpaa--rfc3339 (current-time)))
+            ,@entries)))
+        (write-region (point-min) (point-max) filename)))))
 
 (provide 'elpa-admin)
 
