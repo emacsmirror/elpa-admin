@@ -178,9 +178,7 @@ Delete backup files also."
                          (lambda (x y)
                            (string-lessp (symbol-name (car x)) (symbol-name (car y))))))
     (elpaa--message "new AC: %S" ac)
-    (elpaa--write-archive-contents ac dir)
-    (let ((default-directory (expand-file-name dir)))
-      (elpaa--html-make-index (cdr ac)))))
+    (elpaa--write-archive-contents ac dir)))
 
 (defun elpaa--get-specs ()
   (elpaa--form-from-file-contents elpaa--specs-file))
@@ -3263,7 +3261,8 @@ the article."
       (dolist (file files)
         (erase-buffer)
         (insert-file-contents file)
-        (let* ((xml (with-demoted-errors "%S" (libxml-parse-xml-region)))
+        (let* ((xml (with-demoted-errors "%S" (libxml-parse-xml-region
+                                               (point-min) (point-max))))
                (lastentry (assq 'entry (nreverse xml))))
           (when lastentry
             (push lastentry entries))))
