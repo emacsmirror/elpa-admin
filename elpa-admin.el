@@ -3232,7 +3232,7 @@ the article."
           (title nil ,title)
           (link ((href . ,self) (rel . "self")))
           (id nil ,self)
-          (updated nil ,(elpaa--rfc3339 (plist-get :time (car articles))))
+          (updated nil ,(elpaa--rfc3339 (current-time)))
           ,@(mapcar
              (pcase-lambda ((map (:title title) (:time time)
                                  (:path path) (:content content)))
