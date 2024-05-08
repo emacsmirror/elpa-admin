@@ -1879,15 +1879,13 @@ arbitrary code."
 
 (defun elpaa--make-atom-feed (pkg pkg-spec srcdir files)
   (let* ((name (symbol-name (car pkg)))
-         (path (if (string-match "\\`https?://[^/]+/\\(.*\\)" elpaa--url)
-                   (match-string 1 elpaa--url)
-                 (error "Failed to infer path from %S" elpaa--url)))
          (metadata (elpaa--metadata srcdir pkg-spec))
+         (filename (concat name ".xml"))
          (desc (nth 2 metadata)))
     (with-temp-buffer
       (elpaa--render-atom
        (format "Update feed for %s" name)
-       (concat "/" path  name ".xml")
+       filename
        (mapcan
         (lambda (file)
           (let ((version (car file)))
@@ -1895,7 +1893,7 @@ arbitrary code."
                                 elpaa--name name version)
                 :time ,(file-attribute-modification-time
                         (file-attributes (cdr file)))
-                :path ,(format "%s%s.xml#v%s" path name version)
+                :path ,(format "%s.xml#v%s" name version)
                 :content
                 ((p nil
                     ,(concat "Version " version " of package ")
@@ -1905,7 +1903,7 @@ arbitrary code."
                  (p nil ,(concat name " describes itself as:"))
                  (blockquote nil ,desc))))))
         files))
-      (write-region (point-min) (point-max) (concat name ".xml")))))
+      (write-region (point-min) (point-max) filename))))
 
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir plain-readme)
   (let* ((name (symbol-name (car pkg)))
@@ -3206,22 +3204,26 @@ relative to elpa root."
 (defun elpaa--rfc3339 (time)
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time))
 
-(defun elpaa--render-atom (title path articles)
+(defun elpaa--rfc4151 (url time)
+  (unless (string-match "\\`\\(?:[^:/]*:\\)?/*\\([^/]+\\)/?" url)
+    (error "Can't find the \"domain\" of this URL: %S" url))
+  (let ((domain (match-string 1 url))
+        (specific (substring url (match-end 0))))
+    (concat "tag:" domain "," (format-time-string "%F" time)
+            ":" specific)))
+
+(defun elpaa--render-atom (title filename articles)
   "Insert an Atom feed at point.
-TITLE sets the title of the feed, PATH is the request path
-relative to the server route of where the Atom feed will be
-hosted.  ARTICLES is a list of plists, consisting of the keys
+TITLE sets the title of the feed, FILENAME is where the Atom feed will be
+stored.  ARTICLES is a list of plists, consisting of the keys
 `:title' for an article title, `:time' a timestamp in in
-`current-time'-format, `:path' is a root-relative HTTP path to
+`current-time'-format, `:path' is a relative HTTP path to
 the article."
   (cl-flet ((newer-p (a1 a2)
               (time-less-p (plist-get a1 :time) (plist-get a2 :time))))
     ;; FIXME: Why do we need to split elpaa--url into a domain and a path?
     (let* ((articles (sort articles #'newer-p))
-           (domain (if (string-match "\\`https?://\\([^/]+/\\)" elpaa--url)
-                       (match-string 1 elpaa--url)
-                     (error "Failed to infer domain from %S" elpaa--url)))
-           (self (concat "https://" domain path)))
+           (self (concat elpaa--url filename)))
       (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
       (xml-print
        ;; See https://validator.w3.org/feed/docs/rfc4287.html
@@ -3234,25 +3236,22 @@ the article."
           ,@(mapcar
              (pcase-lambda ((map (:title title) (:time time)
                                  (:path path) (:content content)))
-               `(entry
-                 nil
-                 (title nil ,title)
-                 (updated nil ,(elpaa--rfc3339 time))
-                 (author
-                  nil
-                  (name nil "elpa-admin")
-                  (email nil "emacs-devel@gnu.org"))
-                 (id nil ,(format "tag:%s,%s:%s"
-                                  domain
-                                  (format-time-string "%F" time)
-                                  path))
-                 (link ((href . ,(concat "https://" domain path))
-                        (rel . "self")))
-                 (content
-                  ((type . "html"))
-                  ,(with-temp-buffer
-                     (xml-print content)
-                     (buffer-string)))))
+               (let ((self (concat elpaa--url path)))
+                 `(entry
+                   nil
+                   (title nil ,title)
+                   (updated nil ,(elpaa--rfc3339 time))
+                   (author
+                    nil
+                    (name nil "elpa-admin")
+                    (email nil "emacs-devel@gnu.org"))
+                   (id nil ,(elpaa--rfc4151 self time))
+                   (link ((href . ,self) (rel . "self")))
+                   (content
+                    ((type . "html"))
+                    ,(with-temp-buffer
+                       (xml-print content)
+                       (buffer-string))))))
              articles)))))))
 
 (defun elpaa--make-aggregated-atom-feed (filename)
