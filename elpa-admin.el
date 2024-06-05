@@ -2892,6 +2892,12 @@ relative to elpa root."
           (delete-file logfile)
         (write-region msg nil logfile nil 'silent)))))
 
+(defun elpaa--git-short-log (from to)
+  (elpaa--call t "git" "log"
+               "--date=format:%Y-%M"
+               "--format=%h %cd  %<(16,trunc)%ae  %s"
+               (format "%s..%s" from to)))
+
 (defun elpaa--fetch (pkg-spec &optional k show-diverged)
   (let* ((pkg (car pkg-spec))
          (url (elpaa--spec-get pkg-spec :url))
@@ -2932,14 +2938,10 @@ relative to elpa root."
           (let* ((msg (format "Upstream of %s has DIVERGED!" pkg)))
             (when (or show-diverged (eq k #'elpaa--push))
               (let ((msgs (list "\n\n" msg)))
-                (elpaa--call t "git" "log"
-                             "--format=%h  %<(16,trunc)%ae  %s"
-                             (format "%s..%s" urtb ortb))
+                (elpaa--git-short-log urtb ortb)
                 (push "  Local changes:\n" msgs)
                 (push (delete-and-extract-region (point-min) (point-max)) msgs)
-                (elpaa--call t "git" "log"
-                             "--format=%h  %<(16,trunc)%ae  %s"
-                             (format "%s..%s" ortb urtb))
+                (elpaa--git-short-log ortb urtb)
                 (push "\n  Upstream changes:\n" msgs)
                 (push (delete-and-extract-region (point-min) (point-max)) msgs)
                 (let ((total-msg
@@ -2948,9 +2950,7 @@ relative to elpa root."
                   (when (eq k #'elpaa--push)
                     (elpaa--record-sync-failure pkg-spec total-msg)))))
             (message "%s" msg)))
-         ((not (zerop (elpaa--call t "git" "log"
-                                   "--format=%h  %<(16,trunc)%ae  %s"
-                                   (format "%s..%s" ortb urtb))))
+         ((not (zerop (elpaa--git-short-log ortb urtb)))
           (message "Log error for %s:\n%s" pkg (buffer-string)))
          ((eq (point-min) (point-max))
           (message "No pending upstream changes for %s" pkg)
@@ -3113,7 +3113,7 @@ relative to elpa root."
             (insert
              (format "%s/%s-pkg.el: %s/%s\n"
                      dir pkgname dir (elpaa--main-file pkg-spec)))
-            (let ((make-targets (elpaa--spec-get pkg-spec :make)))
+            (let ((make-targets (ensure-list (elpaa--spec-get pkg-spec :make))))
               (when (consp make-targets)
                 (dolist (target make-targets)
                   (insert (format "%s: %s/%s\n" dir dir target))
