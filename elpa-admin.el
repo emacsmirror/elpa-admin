@@ -2894,7 +2894,7 @@ relative to elpa root."
 
 (defun elpaa--git-short-log (from to)
   (elpaa--call t "git" "log"
-               "--date=format:%Y-%M"
+               "--date=format:%Y-%m"
                "--format=%h %cd  %<(16,trunc)%ae  %s"
                (format "%s..%s" from to)))
 
