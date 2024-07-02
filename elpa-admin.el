@@ -1659,7 +1659,7 @@ which see."
   (if (executable-find "markdown2")
       ;; Presumably https://github.com/trentm/python-markdown2.
       ;; Stay conservative in the set of extensions we support.
-      '("markdown2" "-x" "code-friendly,tables")
+      '("markdown2" "-x" "code-friendly,tables,fenced-code-blocks,nofollow")
     '("markdown")))
 
 (cl-defmethod elpaa--section-to-html ((section (head text/markdown)))
