@@ -2066,7 +2066,7 @@ arbitrary code."
                      " " "HTTP/" (+ (or alnum ".")))   ; Protocol
                 (* (not (any "\"" " "))))              ; Garbage
       "\""
-      " " (+ digit)                                ; Status code
+      " " (group (+ digit))                        ; Status code
       " " (or (+ digit) "-")                       ; Size
       " \"" (* (or (not (any "\"")) "\\\"")) "\" " ; Referrer
       "\"" (* (or (not (any "\"")) "\\\"")) "\""   ; User-Agent
@@ -2083,17 +2083,18 @@ arbitrary code."
         (let* ((line (match-string 0))
                (timestr (match-string 1))
                (file (match-string 2))
+               (status (match-string 3))
                (timestr
                 (if (string-match "/\\([^/]*\\)/\\([^/:]*\\):" timestr)
                     (replace-match " \\1 \\2 " t nil timestr)
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (encode-time (parse-time-string timestr))))
-          (when file
+          (when (and file (not (member status '("404"))))
             (let ((pkg (if (string-match
                             (rx bos "/"
                                 (or "packages" "devel" "nongnu" "nongnu-devel")
-                                "/"
+                                (+ "/")
                                 (group (+? any))
                                 (\?
                                  "-" (or
