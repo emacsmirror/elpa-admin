@@ -2112,9 +2112,12 @@ arbitrary code."
   (elpaa--wsl-read
    logfile
    ;; Keep a counter of accesses indexed by package and week.
-   (lambda (time pkg _file)
+   (lambda (time pkg file)
      (let* ((secs (time-convert time 'integer))
-            (week (/ secs 3600 24 7)))
+            (week (/ secs 3600 24 7))
+            (old (gethash pkg stats)))
+       (unless old
+         (message "New package: %S %S %S" time pkg file))
        (cl-incf (alist-get week (gethash pkg stats) 0))))))
 
 (defvar elpaa--wsl-directory "/var/log/apache2/")
@@ -2149,7 +2152,8 @@ arbitrary code."
   (let* ((stats (elpaa--form-from-file-contents elpaa--wsl-stats-file))
          (seen (nth 1 stats))
          (table (nth 2 stats))
-         (changed nil))
+         (changed nil)
+         (newseen ()))
     (cl-assert (eq :web-server-log-stats (nth 0 stats)))
     (unless table (setq table (make-hash-table :test 'equal)))
     ;; Only consider the compressed files, because we don't want to process
@@ -2158,15 +2162,15 @@ arbitrary code."
       (let ((attrs (file-attributes logfile)))
         (cond
          ((string-match "error.log" logfile) nil) ;Ignore the error log files.
-         ((member attrs seen) nil)                ;Already processed.
+         ((member attrs seen) (push attrs newseen)) ;Already processed.
          (t
-          (push attrs seen)
+          (push attrs newseen)
           (setq changed t)
           (elpaa--wsl-one-file logfile table)))))
     (when changed
       (with-temp-buffer
         (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
-                 `(:web-server-log-stats ,seen ,table
+                 `(:web-server-log-stats ,newseen ,table
                    ;; Rebuild the scoreboard "by week".
                    ,(elpaa--wsl-scores table))
                  (current-buffer))
