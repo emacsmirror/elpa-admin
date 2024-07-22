@@ -1659,7 +1659,7 @@ which see."
   (if (executable-find "markdown2")
       ;; Presumably https://github.com/trentm/python-markdown2.
       ;; Stay conservative in the set of extensions we support.
-      '("markdown2" "-x" "code-friendly,tables")
+      '("markdown2" "-x" "code-friendly,tables,fenced-code-blocks,nofollow")
     '("markdown")))
 
 (cl-defmethod elpaa--section-to-html ((section (head text/markdown)))
@@ -2066,7 +2066,7 @@ arbitrary code."
                      " " "HTTP/" (+ (or alnum ".")))   ; Protocol
                 (* (not (any "\"" " "))))              ; Garbage
       "\""
-      " " (+ digit)                                ; Status code
+      " " (group (+ digit))                        ; Status code
       " " (or (+ digit) "-")                       ; Size
       " \"" (* (or (not (any "\"")) "\\\"")) "\" " ; Referrer
       "\"" (* (or (not (any "\"")) "\\\"")) "\""   ; User-Agent
@@ -2080,19 +2080,21 @@ arbitrary code."
       (if (not (looking-at elpaa--wsl-line-re))
           (message "Unrecognized log line: %s"
                    (buffer-substring (point) (line-end-position)))
-        (let* ((timestr (match-string 1))
+        (let* ((line (match-string 0))
+               (timestr (match-string 1))
                (file (match-string 2))
+               (status (match-string 3))
                (timestr
                 (if (string-match "/\\([^/]*\\)/\\([^/:]*\\):" timestr)
                     (replace-match " \\1 \\2 " t nil timestr)
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (encode-time (parse-time-string timestr))))
-          (when file
+          (when (and file (not (member status '("404"))))
             (let ((pkg (if (string-match
                             (rx bos "/"
                                 (or "packages" "devel" "nongnu" "nongnu-devel")
-                                "/"
+                                (+ "/")
                                 (group (+? any))
                                 (\?
                                  "-" (or
@@ -2100,56 +2102,62 @@ arbitrary code."
                                        (+ (or digit "."))
                                        (* (or "pre" "beta" "alpha" "snapshot")
                                           (* (or digit "."))))
-                                      "readme"))
+                                      "readme"
+                                      "sync-failure"
+                                      "build-failure"))
                                 "."
                                 (or "tar" "txt" "el" "html"))
                             file)
                            (match-string 1 file))))
-              (funcall fn time pkg file)))))
+              (funcall fn time pkg file line)))))
       (forward-line 1))))
 
 (defun elpaa--wsl-one-file (logfile stats)
   (elpaa--wsl-read
    logfile
    ;; Keep a counter of accesses indexed by package and week.
-   (lambda (time pkg _file)
+   (lambda (time pkg file line)
      (let* ((secs (time-convert time 'integer))
-            (week (/ secs 3600 24 7)))
+            (week (/ secs 3600 24 7))
+            (old (gethash pkg stats)))
+       (unless old
+         (message "New package: %S %S %S %S" time pkg file line))
        (cl-incf (alist-get week (gethash pkg stats) 0))))))
 
 (defvar elpaa--wsl-directory "/var/log/apache2/")
 
 (defun elpaa--wsl-scores (table)
   (let ((scores-by-week ()))
-   (maphash (lambda (pkg data)
-              (when (and pkg (not (string-match "/" pkg)))
-                (pcase-dolist (`(,week . ,count) data)
-                  (push (cons count pkg) (alist-get week scores-by-week)))))
-            table)
-   ;; For each week, we sort packages by number of downloads, to
-   ;; compute their percentile ranking.
-   ;; FIXME: We don't take into account that several (many?) packages can
-   ;; have the same number of downloads, in which case their relative ranking
-   ;; (within the equiv class) is a lie.
-   (dolist (scores scores-by-week)
-     (setf (cdr scores)
-           (nreverse (mapcar #'cdr (sort (cdr scores)
-                                    #'car-less-than-car)))))
-   (let ((score-table (make-hash-table :test 'equal)))
-     (pcase-dolist (`(,week . ,pkgs) scores-by-week)
-      (let* ((total (length pkgs))
-             (rest total))
-        (dolist (pkg pkgs)
-          (setq rest (1- rest))
-          (let ((percentile (/ (* 100 rest) total)))
-           (push (cons week percentile) (gethash pkg score-table))))))
-     score-table)))
+    (maphash (lambda (pkg data)
+               (when (and pkg (not (string-match "/" pkg)))
+                 (pcase-dolist (`(,week . ,count) data)
+                   (push (cons count pkg) (alist-get week scores-by-week)))))
+             table)
+    ;; For each week, we sort packages by number of downloads, to
+    ;; compute their percentile ranking.
+    ;; FIXME: We don't take into account that several (many?) packages can
+    ;; have the same number of downloads, in which case their relative ranking
+    ;; (within the equiv class) is a lie.
+    (dolist (scores scores-by-week)
+      (setf (cdr scores)
+            (nreverse (mapcar #'cdr (sort (cdr scores)
+                                          #'car-less-than-car)))))
+    (let ((score-table (make-hash-table :test 'equal)))
+      (pcase-dolist (`(,week . ,pkgs) scores-by-week)
+        (let* ((total (length pkgs))
+               (rest total))
+          (dolist (pkg pkgs)
+            (setq rest (1- rest))
+            (let ((percentile (/ (* 100 rest) total)))
+              (push (cons week percentile) (gethash pkg score-table))))))
+      score-table)))
 
 (defun elpaa--wsl-collect ()
   (let* ((stats (elpaa--form-from-file-contents elpaa--wsl-stats-file))
          (seen (nth 1 stats))
          (table (nth 2 stats))
-         (changed nil))
+         (changed nil)
+         (newseen ()))
     (cl-assert (eq :web-server-log-stats (nth 0 stats)))
     (unless table (setq table (make-hash-table :test 'equal)))
     ;; Only consider the compressed files, because we don't want to process
@@ -2161,15 +2169,15 @@ arbitrary code."
         (setf (nth 6 attrs) nil)
         (cond
          ((string-match "error.log" logfile) nil) ;Ignore the error log files.
-         ((member attrs seen) nil)                ;Already processed.
+         ((member attrs seen) (push attrs newseen)) ;Already processed.
          (t
-          (push attrs seen)
+          (push attrs newseen)
           (setq changed t)
           (elpaa--wsl-one-file logfile table)))))
     (when changed
       (with-temp-buffer
         (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
-                 `(:web-server-log-stats ,seen ,table
+                 `(:web-server-log-stats ,newseen ,table
                    ;; Rebuild the scoreboard "by week".
                    ,(elpaa--wsl-scores table))
                  (current-buffer))
