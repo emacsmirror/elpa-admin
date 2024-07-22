@@ -2156,6 +2156,9 @@ arbitrary code."
     ;; files that may still be modified.
     (dolist (logfile (directory-files elpaa--wsl-directory t "\\.[lgx]z\\'"))
       (let ((attrs (file-attributes logfile)))
+        ;; The log files get renamed, which changes their `ctime', so let's
+        ;; throw out this information.
+        (setf (nth 6 attrs) nil)
         (cond
          ((string-match "error.log" logfile) nil) ;Ignore the error log files.
          ((member attrs seen) nil)                ;Already processed.
