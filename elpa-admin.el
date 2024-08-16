@@ -2060,7 +2060,7 @@ arbitrary code."
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (encode-time (parse-time-string timestr))))
-          (when (and file (not (member status '("404"))))
+          (when (and file (not (member status '("404" "400"))))
             (let ((pkg (if (string-match
                             (rx bos "/"
                                 (or "packages" "devel" "nongnu" "nongnu-devel")
@@ -2079,7 +2079,11 @@ arbitrary code."
                                 (or "tar" "txt" "el" "html"))
                             file)
                            (match-string 1 file))))
-              (funcall fn time pkg file line)))))
+              ;; It would make sense to include accesses to "doc/<NAME>" in
+              ;; the counts, except that <NAME> is not always the name of the
+              ;; corresponding package.
+              (when (and pkg (not (string-match-p "/" pkg)))
+                (funcall fn time pkg file line))))))
       (forward-line 1))))
 
 (defun elpaa--wsl-one-file (logfile stats)
