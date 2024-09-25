@@ -1208,8 +1208,8 @@ place the resulting tarball into the file named TARBALL-ONLY."
              ((eq (nth 1 pkg-spec) :core) (elpaa--core-package-sync pkg-spec))
              (t (elpaa--worktree-sync pkg-spec))))
          (_ (elpaa--message "pkg-spec for %s: %S" pkgname pkg-spec))
-         (metadata (elpaa--metadata dir pkg-spec))
-         (vers (nth 1 metadata)))
+         (metadata (with-demoted-errors "elpaa--metadata error: %S"
+                     (elpaa--metadata dir pkg-spec))))
     (elpaa--message "metadata = %S" metadata)
     (elpaa--check-sync-failures pkg-spec metadata)
     (if (null metadata)
@@ -1220,7 +1220,8 @@ place the resulting tarball into the file named TARBALL-ONLY."
       ;; First, try and build the devel tarball
       ;; Do it before building the release tarball, because building
       ;; the release tarball may revert to some older commit.
-      (let* ((date-version (elpaa--get-devel-version dir pkg-spec))
+      (let* ((vers (nth 1 metadata))
+             (date-version (elpaa--get-devel-version dir pkg-spec))
              ;; Add a ".0." so that when the version number goes from
              ;; NN.MM to NN.MM.1 we don't end up with the devel build
              ;; of NN.MM comparing as more recent than NN.MM.1.
@@ -2591,8 +2592,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 
 (defun elpaa--maintainers (pkg-spec metadata)
   (let* ((metadata (or metadata
-                       (elpaa--metadata (elpaa--pkg-root (car pkg-spec))
-                                        pkg-spec)))
+                       (with-demoted-errors "elpaa--maintainers: %S"
+                         (elpaa--metadata (elpaa--pkg-root (car pkg-spec))
+                                          pkg-spec))))
          (maint (cdr (assq :maintainer (nth 4 metadata))))
          ;; `:maintainer' can hold a list or a single maintainer.
          (maints (if (consp (car maint)) maint (list maint)))
