@@ -2032,16 +2032,19 @@ arbitrary code."
       (+ (or xdigit "." ":"))           ; IP of client
       " - - "
       "[" (group (+ (not "]"))) "]"                    ; Date/time
-      " \"" (or (seq (+ (or alpha "_"))                ; Method
-                     " " (group (+ (not (any blank)))) ; Path
-                     " " "HTTP/" (+ (or alnum ".")))   ; Protocol
-                (* (not (any "\"" " "))))              ; Garbage
+      " \"" (group (* (or (not (any "\"" "\\"))
+                          (seq "\\" anychar))))
       "\""
       " " (group (+ digit))                        ; Status code
       " " (or (+ digit) "-")                       ; Size
       " \"" (* (or (not (any "\"")) "\\\"")) "\" " ; Referrer
       "\"" (* (or (not (any "\"")) "\\\"")) "\""   ; User-Agent
       eol))
+
+(defconst elpaa--wsl-request-re
+  (rx (seq (+ (or alpha "_"))                ; Method
+           " " (group (+ (not (any blank)))) ; Path
+           " " "HTTP/" (+ (or alnum "."))))) ; Protocol
 
 (defun elpaa--wsl-read (logfile fn)
   (with-temp-buffer
@@ -2053,7 +2056,7 @@ arbitrary code."
                    (buffer-substring (point) (line-end-position)))
         (let* ((line (match-string 0))
                (timestr (match-string 1))
-               (file (match-string 2))
+               (request (match-string 2))
                (status (match-string 3))
                (timestr
                 (if (string-match "/\\([^/]*\\)/\\([^/:]*\\):" timestr)
@@ -2061,30 +2064,35 @@ arbitrary code."
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (encode-time (parse-time-string timestr))))
-          (when (and file (not (member status '("404" "400"))))
-            (let ((pkg (if (string-match
-                            (rx bos "/"
-                                (or "packages" "devel" "nongnu" "nongnu-devel")
-                                (+ "/")
-                                (group (+? any))
-                                (\?
-                                 "-" (or
-                                      (seq
-                                       (+ (or digit "."))
-                                       (* (or "pre" "beta" "alpha" "snapshot")
-                                          (* (or digit "."))))
-                                      "readme"
-                                      "sync-failure"
-                                      "build-failure"))
-                                "."
-                                (or "tar" "txt" "el" "html"))
-                            file)
-                           (match-string 1 file))))
-              ;; It would make sense to include accesses to "doc/<NAME>" in
-              ;; the counts, except that <NAME> is not always the name of the
-              ;; corresponding package.
-              (when (and pkg (not (string-match-p "/" pkg)))
-                (funcall fn time pkg file line))))))
+          (when (not (member status '("404" "400")))
+            (if (not (string-match elpaa--wsl-request-re request))
+                (message "Unrecognized request: %s" request)
+              (let* ((file (match-string 1 request))
+                     (pkg (if (string-match
+                               (rx bos "/"
+                                   (or "packages" "devel"
+                                       "nongnu" "nongnu-devel")
+                                   (+ "/")
+                                   (group (+? any))
+                                   (\?
+                                    "-" (or
+                                         (seq
+                                          (+ (or digit "."))
+                                          (* (or "pre" "beta" "alpha"
+                                                 "snapshot")
+                                             (* (or digit "."))))
+                                         "readme"
+                                         "sync-failure"
+                                         "build-failure"))
+                                   "."
+                                   (or "tar" "txt" "el" "html"))
+                               file)
+                              (match-string 1 file))))
+                ;; It would make sense to include accesses to "doc/<NAME>" in
+                ;; the counts, except that <NAME> is not always the name of the
+                ;; corresponding package.
+                (when (and pkg (not (string-match-p "/" pkg)))
+                  (funcall fn time pkg file line)))))))
       (forward-line 1))))
 
 (defun elpaa--wsl-one-file (logfile stats)
