@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2024  Free Software Foundation, Inc
+;; Copyright (C) 2011-2025  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -2652,12 +2652,16 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
             (insert (if (not readme)
                         "[Not provided 🙁]"
                       (elpaa--section-to-plain-text readme)))
+            ;; It's import to terminate lines properly so we can detect
+            ;; truncated lines below to throw away the leftovers.
+            (unless (bolp) (insert "\n"))
             ;; Keep a max of about 10 lines of full-length text.
             (delete-region (min (+ beg 800) (point)) (point))
             (let ((end (point)))
               (delete-region
                ;; Truncate at the end of the nearest paragraph.
                (or (re-search-backward "\n[ \t]*$" beg t)
+                   ;; Throw away leftovers from truncated lines.
                    (re-search-backward "\n" beg t)
                    (point))
                end))
