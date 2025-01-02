@@ -2064,9 +2064,9 @@ arbitrary code."
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (encode-time (parse-time-string timestr))))
-          (when (not (member status '("404" "400")))
+          (when (not (member status '("404" "400" "408")))
             (if (not (string-match elpaa--wsl-request-re request))
-                (message "Unrecognized request: %s" request)
+                (message "Unrecognized request (status=%s): %s" status request)
               (let* ((file (match-string 1 request))
                      (pkg (if (string-match
                                (rx bos "/"
