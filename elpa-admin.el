@@ -671,8 +671,8 @@ This is the name of the branch as used in the (Non)GNU ELPA repository
 as well as in the local clone, not upstream."
   (format "%s%s"
           (if (and releasep (elpaa--spec-get pkg-spec :release-branch))
-              elpaa--branch-prefix
-            elpaa--release-branch-prefix)
+              elpaa--release-branch-prefix
+            elpaa--branch-prefix)
           (or (elpaa--spec-get pkg-spec  :parent--package)
               (let ((url (elpaa--spec-get pkg-spec :url)))
                 (if (and url (symbolp url))
