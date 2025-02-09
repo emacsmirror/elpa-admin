@@ -665,6 +665,11 @@ returns.  Return the selected revision."
                      "\n\n## The current error output was the following:\n\n"
                      txt))))))))
 
+(defun elpaa--parent-package (pkg-spec)
+  (or (elpaa--spec-get pkg-spec  :parent--package)
+      (let ((url (elpaa--spec-get pkg-spec :url)))
+        (and (symbolp url) url))))
+
 (defun elpaa--local-branch-name (pkg-spec &optional releasep)
   "Return the name of the branch in which the package is kept.
 This is the name of the branch as used in the (Non)GNU ELPA repository
@@ -673,11 +678,8 @@ as well as in the local clone, not upstream."
           (if (and releasep (elpaa--spec-get pkg-spec :release-branch))
               elpaa--release-branch-prefix
             elpaa--branch-prefix)
-          (or (elpaa--spec-get pkg-spec  :parent--package)
-              (let ((url (elpaa--spec-get pkg-spec :url)))
-                (if (and url (symbolp url))
-                    url
-                  (car pkg-spec))))))
+          (or (elpaa--parent-package pkg-spec)
+              (car pkg-spec))))
 
 (defun elpaa--check-sync-failures (pkg-spec metadata)
   (let* ((pkg (car pkg-spec))
@@ -2332,14 +2334,14 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
   "Sync worktree of PKG-SPEC."
   (let* ((pkg (car pkg-spec))
          (name (format "%s" pkg))
-         (url (nth 2 pkg-spec))
+         (parent (elpaa--parent-package pkg-spec))
          (default-directory (expand-file-name "packages/")))
     (unless (file-directory-p default-directory)
       (make-directory default-directory))
-    (cond ((and url (symbolp url))
+    (cond (parent
            (unless (file-exists-p name)
-             (message "Symlinking %s to %S" name url)
-             (make-symbolic-link (symbol-name url) name)))
+             (message "Symlinking %s to %S" name parent)
+             (make-symbolic-link (symbol-name parent) name)))
           ((not (file-exists-p name))
 	   (message "Cloning branch %s:" pkg)
            (let* ((branch (elpaa--local-branch-name pkg-spec))
