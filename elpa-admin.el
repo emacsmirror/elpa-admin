@@ -1516,7 +1516,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
 	(print-length nil))
     (elpaa--temp-file pkg-file)
     (write-region
-     (concat (format ";; Generated package description from %s.el  -*- no-byte-compile: t -*-\n"
+     (concat (format ";; Generated package description from %s.el  -*- mode: lisp-data; no-byte-compile: t -*-\n"
 		     name)
 	     (prin1-to-string
               (pcase-let ((`(,version ,desc ,requires ,extras)
