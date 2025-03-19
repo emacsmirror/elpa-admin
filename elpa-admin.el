@@ -202,7 +202,7 @@ Delete backup files also."
   (plist-member (cdr pkg-spec) prop))
 
 (defun elpaa--main-file (pkg-spec)
-  (or (elpaa--spec-get pkg-spec :main-file)
+  (or ;; (elpaa--spec-get pkg-spec :main-file)
       (let ((ldir (elpaa--spec-get pkg-spec :lisp-dir)))
         (format "%s%s.el"
                 (if ldir (file-name-as-directory ldir) "")
@@ -1050,7 +1050,7 @@ SPECS is the list of package specifications."
 (defconst elpaa--supported-keywords
   '(:url :core :auto-sync :ignored-files :release-branch :release
     :readme :news :doc :renames :version-map :make :shell-command
-    :branch :lisp-dir :main-file :merge :excludes :rolling-release
+    :branch :lisp-dir :merge :excludes :rolling-release ;;  :main-file
     :maintainer :manual-sync
     ;; Internal use only.
     :parent--package)
@@ -1515,12 +1515,17 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
         (print-quoted t)
 	(print-length nil))
     (elpaa--temp-file pkg-file)
-    (write-region
-     (concat (format ";; Generated package description from %s.el  -*- mode: lisp-data; no-byte-compile: t -*-\n"
-		     name)
-	     (prin1-to-string
-              (pcase-let ((`(,version ,desc ,requires ,extras)
-                           (cdr metadata)))
+    (pcase-let ((`(,version ,desc ,requires ,extras)
+                 (cdr metadata)))
+      (write-region
+       (concat (format ";; Generated package description from %s.el  -*- %sno-byte-compile: t -*-\n"
+		       (let* ((emacs-req (assq 'emacs requires))
+		              (emacs-vers (car (cadr emacs-req))))
+		         (if (not (and emacs-vers (>= emacs-vers 28)))
+		             ""     ;Need compatibility with Emacs<28.
+		           "mode: lisp-data; "))
+		       name)
+	       (prin1-to-string
                 (nconc
                  (list 'define-package
                        (format "%s" name) ;It's been a string, historically :-(
@@ -1533,10 +1538,10 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                                 (list (car elt)
                                       (package-version-join (cadr elt))))
                               requires)))
-                 (elpaa--alist-to-plist-args extras))))
-	     "\n")
-     nil
-     pkg-file)))
+                 (elpaa--alist-to-plist-args extras)))
+	       "\n")
+       nil
+       pkg-file))))
 
 (defun elpaa--write-plain-readme (pkg-dir pkg-spec)
   "Render a plain text readme from PKG-SPEC in PKG-DIR.
