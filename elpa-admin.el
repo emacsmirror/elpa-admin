@@ -3182,7 +3182,8 @@ relative to elpa root."
           (package-generate-autoloads pkgname dir))
       (package-generate-autoloads pkgname (concat dir lisp-dir))
       (write-region
-       (format "(load (concat (file-name-directory load-file-name) %S) nil 'nomsg)\n"
+       (format ";; -*- lexical-binding:t -*-
+(load (concat (file-name-directory load-file-name) %S) nil 'nomsg)\n"
                (format "%s/%s-autoloads.el" lisp-dir pkgname ))
        nil alf nil 'silent))))
 
