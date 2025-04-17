@@ -1519,12 +1519,12 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
                  (cdr metadata)))
       (write-region
        (concat (format ";; Generated package description from %s.el  -*- %sno-byte-compile: t -*-\n"
+		       name
 		       (let* ((emacs-req (assq 'emacs requires))
 		              (emacs-vers (car (cadr emacs-req))))
 		         (if (not (and emacs-vers (>= emacs-vers 28)))
 		             ""     ;Need compatibility with Emacs<28.
-		           "mode: lisp-data; "))
-		       name)
+		           "mode: lisp-data; ")))
 	       (prin1-to-string
                 (nconc
                  (list 'define-package
