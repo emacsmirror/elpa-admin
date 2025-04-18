@@ -1048,10 +1048,10 @@ SPECS is the list of package specifications."
      dir)))
 
 (defconst elpaa--supported-keywords
-  '(:url :core :auto-sync :ignored-files :release-branch :release
-    :readme :news :doc :renames :version-map :make :shell-command
-    :branch :lisp-dir :merge :excludes :rolling-release ;;  :main-file
-    :maintainer :manual-sync
+  '(:auto-sync :branch :core :doc :doc-files :excludes :ignored-files
+    :lisp-dir :maintainer :make :manual-sync :merge :news ;;  :main-file
+    :readme :release :release-branch :renames :rolling-release
+    :shell-command :url :version-map
     ;; Internal use only.
     :parent--package)
   "List of keywords that can appear in a spec.")
@@ -2734,11 +2734,38 @@ directory; one of archive, archive-devel."
 	    (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
     (when html-dir
       (when (not (file-readable-p html-dir)) ;FIXME: Why bother testing?
-	(make-directory html-dir t)))
+	(make-directory html-dir t))
+      (elpaa--doc-copy-auxfiles pkg-spec dir html-dir))
 
     (plist-put (cdr pkg-spec) :internal--html-docs nil)
     (dolist (f docfiles)
       (elpaa--build-Info-1 pkg-spec f dir html-dir))))
+
+(defun elpaa--doc-copy-auxfiles (pkg-spec dir html-dir)
+  (let ((res ())
+        (changed nil)
+        (default-directory (elpaa--dirname dir))
+        (auxfiles (elpaa--spec-get pkg-spec :doc-files)))
+    (when auxfiles
+      (dolist (file auxfiles)
+        (if (not (file-directory-p file))
+            (push file res)
+          ;; FIXME: Recurse?
+          (setq changed t)
+          (setq res
+                (nconc (mapcar (lambda (f) (file-name-concat file f))
+                               (directory-files file nil
+                                                "\\`\\(?:[^.]\\|\\.[^.]\\)"))
+                       res))))
+
+      (dolist (f res)
+        (let ((d (file-name-directory f)))
+          (when d (make-directory (expand-file-name d html-dir) t))
+          (copy-file f (expand-file-name f html-dir) 'ok-if-already-exists)))
+
+      (when changed
+        (message ":doc-files = %S" res)
+        (plist-put (cdr pkg-spec) :doc-files res)))))
 
 (defun elpaa--makeinfo (input output &optional extraargs)
   (let* ((input-dir (file-name-directory input))
@@ -2777,6 +2804,7 @@ directory; one of archive, archive-devel."
 	  (expand-file-name destname (file-name-directory html-dir))))
     (elpaa--makeinfo docfile html-file
                      (list "--html" (format "--css-ref=%s" elpaa--css-url)))
+    (elpaa--doc-html-adjust-auxfiles pkg-spec docfile html-file)
     (push (cons (file-name-base html-file)
                 (file-name-nondirectory html-file))
           (plist-get (cdr pkg-spec) :internal--html-docs))
@@ -2794,6 +2822,28 @@ directory; one of archive, archive-devel."
        ((equal target current-target) nil) ;Nothing to do.
        (t (error "Manual name %S conflicts with %S"
                  destname current-target))))))
+
+(defun elpaa--doc-html-adjust-auxfiles (pkg-spec docfile html-file)
+  (let* ((auxfiles (elpaa--spec-get pkg-spec :doc-files)))
+    (when auxfiles
+      (let* ((docdir (file-name-directory docfile))
+             (rel (when docdir
+                    (mapcar (lambda (auxfile) (file-relative-name auxfile docdir))
+                            auxfiles)))
+             (regexp (format " \\(?:href\\|src\\)=\"%s\""
+                             (regexp-opt (or rel auxfiles) t))))
+        (with-current-buffer (find-file-noselect html-file)
+          (message "regexp=%S" regexp)
+          (message "buffer-size=%S" (buffer-size))
+          (goto-char (point-min))
+          (let ((case-fold-search t))
+            ;; FIXME: Skip false positives found outside of tags!
+            (while (re-search-forward regexp nil t)
+              (message "found match for: %S" (match-string 0))
+              (goto-char (match-beginning 1))
+              (insert (concat (symbol-name (car pkg-spec)) "/" docdir))))
+          (let ((make-backup-files nil))
+            (save-buffer)))))))
 
 (defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
