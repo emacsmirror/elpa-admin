@@ -21,6 +21,18 @@
 
 ;;;; TODO
 
+;; - bug#73425: Allow images in readme and manual
+;;   + Support for Org and Markdown readmes.
+;;   + Support for HTML manual.
+;;   - Doesn't work for Kubed's HTML manual.
+;;   - Doesn't work for Info manuals if the Texinfo is not in root directory,
+;;     such as Hyperbole's.
+;; - bug#73425: Need a convenient way to specify parts of the pkg spec
+;;   directly in the package, such as in the main file.
+;;   Currently this can be done for `:ignored-files' via `.elpaignore',
+;;   but it should be made more general.  E.g. for `:doc-files', `:doc',
+;;   `:readme', ...
+
 ;; - bug#45345: [elpa-archive] "make build/<package>" should not pull
 ;;   unconditionally
 ;; - bug#45346: make it easier to ignore all the files in <directory>
@@ -1673,7 +1685,7 @@ which see."
                      :ext-plist (append '(:ascii-charset utf-8)
                                         elpaa--org-export-options)))
 
-(cl-defgeneric elpaa--section-to-html (section)
+(cl-defgeneric elpaa--section-to-html (section &optional _pkg-spec)
   "Return SECTION as HTML.
 SECTION should be a cons as returned by `elpaa--get-section',
 which see."
@@ -1681,13 +1693,19 @@ which see."
           (elpaa--html-quote (cdr section))
           "\n</pre>\n"))
 
-(cl-defmethod elpaa--section-to-html ((section (head text/x-org)))
-  ;; FIXME: When the HTML refers to files (typically pictures), we should
-  ;; make those links works.
-  (elpaa--export-org (cdr section) 'html
-                     :body-only t
-                     :ext-plist (append '(:html-toplevel-hlevel 3)
-                                        elpaa--org-export-options)))
+(cl-defmethod elpaa--section-to-html ((section (head text/x-org)) &optional pkg-spec)
+  (let ((html (elpaa--export-org (cdr section) 'html
+                                 :body-only t
+                                 :ext-plist (append '(:html-toplevel-hlevel 3)
+                                                    elpaa--org-export-options))))
+    (if (not (and pkg-spec (elpaa--spec-get pkg-spec :doc-files)))
+        html
+      (with-temp-buffer
+        (insert html)
+        (elpaa--doc-html-adjust-auxfiles
+         pkg-spec nil (current-buffer)
+         (concat "doc/" (symbol-name (car pkg-spec)) "/"))
+        (buffer-string)))))
 
 (defvar elpaa-markdown-command
   (if (executable-find "markdown2")
@@ -1696,7 +1714,8 @@ which see."
       '("markdown2" "-x" "code-friendly,tables,fenced-code-blocks,nofollow")
     '("markdown")))
 
-(cl-defmethod elpaa--section-to-html ((section (head text/markdown)))
+(cl-defmethod elpaa--section-to-html ((section (head text/markdown))
+                                      &optional pkg-spec)
   (with-temp-buffer
     (let ((input-filename
            (make-temp-file (expand-file-name "elpaa--export-input"))))
@@ -1717,6 +1736,12 @@ which see."
       (replace-match (number-to-string
                       (+ 2 (string-to-number (match-string 1))))
                      t t nil 1))
+    ;; Adjust refs to local resources.
+    (when (and pkg-spec (elpaa--spec-get pkg-spec :doc-files))
+      (elpaa--doc-html-adjust-auxfiles
+       pkg-spec nil (current-buffer)
+       (concat "doc/" (symbol-name (car pkg-spec)) "/")))
+
     (buffer-string)))
 
 (defun elpaa--extension-to-mime (ext)
@@ -1974,7 +1999,7 @@ arbitrary code."
                       "<code>list-packages</code>"))
       (let* ((readme-content (elpaa--get-README pkg-spec srcdir))
              (readme-text plain-readme)
-             (readme-html (elpaa--section-to-html readme-content))
+             (readme-html (elpaa--section-to-html readme-content pkg-spec))
              (readme-output-filename (concat name "-readme.txt")))
         (write-region readme-text nil readme-output-filename)
         (insert "<h2>Full description</h2>\n"
@@ -2804,7 +2829,8 @@ directory; one of archive, archive-devel."
 	  (expand-file-name destname (file-name-directory html-dir))))
     (elpaa--makeinfo docfile html-file
                      (list "--html" (format "--css-ref=%s" elpaa--css-url)))
-    (elpaa--doc-html-adjust-auxfiles pkg-spec docfile html-file)
+    (elpaa--doc-html-adjust-auxfiles pkg-spec docfile html-file
+                                     (concat (symbol-name (car pkg-spec)) "/"))
     (push (cons (file-name-base html-file)
                 (file-name-nondirectory html-file))
           (plist-get (cdr pkg-spec) :internal--html-docs))
@@ -2823,16 +2849,18 @@ directory; one of archive, archive-devel."
        (t (error "Manual name %S conflicts with %S"
                  destname current-target))))))
 
-(defun elpaa--doc-html-adjust-auxfiles (pkg-spec docfile html-file)
+(defun elpaa--doc-html-adjust-auxfiles (pkg-spec docfile html-file offset)
   (let* ((auxfiles (elpaa--spec-get pkg-spec :doc-files)))
     (when auxfiles
-      (let* ((docdir (file-name-directory docfile))
+      (let* ((docdir (if (stringp docfile) (file-name-directory docfile)))
              (rel (when docdir
                     (mapcar (lambda (auxfile) (file-relative-name auxfile docdir))
                             auxfiles)))
              (regexp (format " \\(?:href\\|src\\)=\"%s\""
                              (regexp-opt (or rel auxfiles) t))))
-        (with-current-buffer (find-file-noselect html-file)
+        (with-current-buffer (if (stringp html-file)
+                                 (find-file-noselect html-file)
+                               html-file)
           (message "regexp=%S" regexp)
           (message "buffer-size=%S" (buffer-size))
           (goto-char (point-min))
@@ -2841,9 +2869,10 @@ directory; one of archive, archive-devel."
             (while (re-search-forward regexp nil t)
               (message "found match for: %S" (match-string 0))
               (goto-char (match-beginning 1))
-              (insert (concat (symbol-name (car pkg-spec)) "/" docdir))))
-          (let ((make-backup-files nil))
-            (save-buffer)))))))
+              (insert (concat offset docdir))))
+          (when (stringp html-file)
+            (let ((make-backup-files nil))
+              (save-buffer))))))))
 
 (defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
