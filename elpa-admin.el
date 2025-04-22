@@ -157,8 +157,11 @@ See variable `org-export-options-alist'.")
 (defun elpaa--dirname (dir &optional base)
   (file-name-as-directory (expand-file-name dir base)))
 
-(defun elpaa--pkg-root (pkg)
-  (elpaa--dirname (format "%s" pkg) "packages"))
+(defun elpaa--pkg-root (pkg-spec)
+  (or (elpaa--spec-get pkg-spec :internal--pkg-root)
+      (let ((dir (elpaa--dirname (format "%s" (car pkg-spec)) "packages")))
+        (plist-put (cdr pkg-spec) :internal--pkg-root dir)
+        dir)))
 
 (defun elpaa--delete-elc-files (dir &optional only-orphans)
   "Recursively delete all .elc files in DIR.
@@ -276,7 +279,7 @@ commit which modified the \"Version:\" pseudo header."
   "Return (VERSION . REV) of the last release.
 Assumes that the current worktree holds a snapshot version."
   (with-temp-buffer
-    (let* ((default-directory (elpaa--pkg-root (car pkg-spec)))
+    (let* ((default-directory (elpaa--pkg-root pkg-spec))
            (release-branch (elpaa--spec-get pkg-spec :release-branch))
            (L-spec (concat "/^;;* *\\(Package-\\)\\?Version:/,+1:"
                            (elpaa--main-file pkg-spec)))
@@ -1060,7 +1063,7 @@ SPECS is the list of package specifications."
      dir)))
 
 (defconst elpaa--supported-keywords
-  '(:auto-sync :branch :core :doc :doc-files :excludes :ignored-files
+  '(:auto-sync :branch :core :doc :excludes :ignored-files
     :lisp-dir :maintainer :make :manual-sync :merge :news ;;  :main-file
     :readme :release :release-branch :renames :rolling-release
     :shell-command :url :version-map
@@ -1242,7 +1245,7 @@ If TARBALL-ONLY is non-nil, don't try and select some other revision and
 place the resulting tarball into the file named TARBALL-ONLY."
   (elpaa--message "Checking package %s for updates..." (car pkg-spec))
   (let* ((pkgname (car pkg-spec))
-         (dir (elpaa--pkg-root pkgname))
+         (dir (elpaa--pkg-root pkg-spec))
          (_ (cond
              (tarball-only nil)
              ((eq (nth 1 pkg-spec) :core) (elpaa--core-package-sync pkg-spec))
@@ -1698,14 +1701,12 @@ which see."
                                  :body-only t
                                  :ext-plist (append '(:html-toplevel-hlevel 3)
                                                     elpaa--org-export-options))))
-    (if (not (and pkg-spec (elpaa--spec-get pkg-spec :doc-files)))
-        html
-      (with-temp-buffer
-        (insert html)
-        (elpaa--doc-html-adjust-auxfiles
-         pkg-spec nil (current-buffer)
-         (concat "doc/" (symbol-name (car pkg-spec)) "/"))
-        (buffer-string)))))
+    (with-temp-buffer
+      (insert html)
+      (elpaa--doc-html-adjust-auxfiles
+       pkg-spec nil (current-buffer)
+       (concat "doc/" (symbol-name (car pkg-spec)) "/"))
+      (buffer-string))))
 
 (defvar elpaa-markdown-command
   (if (executable-find "markdown2")
@@ -1737,10 +1738,9 @@ which see."
                       (+ 2 (string-to-number (match-string 1))))
                      t t nil 1))
     ;; Adjust refs to local resources.
-    (when (and pkg-spec (elpaa--spec-get pkg-spec :doc-files))
-      (elpaa--doc-html-adjust-auxfiles
-       pkg-spec nil (current-buffer)
-       (concat "doc/" (symbol-name (car pkg-spec)) "/")))
+    (elpaa--doc-html-adjust-auxfiles
+     pkg-spec nil (current-buffer)
+     (concat "doc/" (symbol-name (car pkg-spec)) "/"))
 
     (buffer-string)))
 
@@ -2483,7 +2483,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
        (file-patterns (elpaa--spec-get pkg-spec :core))
        (excludes (elpaa--spec-get pkg-spec :excludes))
        (emacs-repo-root (expand-file-name "emacs"))
-       (package-root (elpaa--pkg-root name))
+       (package-root (elpaa--pkg-root pkg-spec))
        (default-directory package-root)
        (exclude-regexp
         (mapconcat #'identity
@@ -2546,7 +2546,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 (defun elpaa--copyright-files (pkg-spec)
   "Return the list of ELisp files in the package PKG-SPEC."
   (let* ((pkg (car pkg-spec))
-         (default-directory (elpaa--pkg-root pkg))
+         (default-directory (elpaa--pkg-root pkg-spec))
          (ignores (elpaa--spec-get pkg-spec :ignored-files))
          (all-ignores '("." ".." ".git" ".dir-locals.el" ".mailmap"
                         ".github" ".travis.yml"
@@ -2626,7 +2626,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
     (when (equal pkgs '("-"))
       (setq pkgs (delq nil (mapcar (lambda (spec)
                                      (when (file-directory-p
-                                            (elpaa--pkg-root (car spec)))
+                                            (elpaa--pkg-root spec))
                                        (car spec)))
                                    specs))))
     (dolist (pkg pkgs)
@@ -2634,7 +2634,9 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
         (ignore-error error
           (elpaa--copyright-check pkg-spec))
         (condition-case err
-            (let* ((metadata (elpaa--metadata (elpaa--pkg-root pkg) pkg-spec)))
+            ;; FIXME: elpaa--metadata should receive a single arg maybe?
+            (let* ((metadata (elpaa--metadata (elpaa--pkg-root pkg-spec)
+                                              pkg-spec)))
               (elpaa--check-dependencies metadata ac))
           (error (message "Dependency error in %S:\n%S" pkg err)))))))
 
@@ -2661,7 +2663,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
 (defun elpaa--maintainers (pkg-spec metadata)
   (let* ((metadata (or metadata
                        (with-demoted-errors "elpaa--maintainers: %S"
-                         (elpaa--metadata (elpaa--pkg-root (car pkg-spec))
+                         (elpaa--metadata (elpaa--pkg-root pkg-spec)
                                           pkg-spec))))
          (maint (cdr (assq :maintainer (nth 4 metadata))))
          ;; `:maintainer' can hold a list or a single maintainer.
@@ -2758,39 +2760,17 @@ directory; one of archive, archive-devel."
 	    (format "%s" (car pkg-spec))
 	    (expand-file-name elpaa--doc-subdirectory tarball-dir)))))
     (when html-dir
-      (when (not (file-readable-p html-dir)) ;FIXME: Why bother testing?
-	(make-directory html-dir t))
-      (elpaa--doc-copy-auxfiles pkg-spec dir html-dir))
+      (when (file-directory-p html-dir)
+        (delete-directory html-dir 'recursive))
+      (make-directory html-dir t)
+      ;; (elpaa--doc-copy-auxfiles pkg-spec dir html-dir)
+      )
 
+    (plist-put (cdr pkg-spec) :internal--html-dir html-dir)
     (plist-put (cdr pkg-spec) :internal--html-docs nil)
+    (plist-put (cdr pkg-spec) :internal--html-resources nil)
     (dolist (f docfiles)
       (elpaa--build-Info-1 pkg-spec f dir html-dir))))
-
-(defun elpaa--doc-copy-auxfiles (pkg-spec dir html-dir)
-  (let ((res ())
-        (changed nil)
-        (default-directory (elpaa--dirname dir))
-        (auxfiles (elpaa--spec-get pkg-spec :doc-files)))
-    (when auxfiles
-      (dolist (file auxfiles)
-        (if (not (file-directory-p file))
-            (push file res)
-          ;; FIXME: Recurse?
-          (setq changed t)
-          (setq res
-                (nconc (mapcar (lambda (f) (file-name-concat file f))
-                               (directory-files file nil
-                                                "\\`\\(?:[^.]\\|\\.[^.]\\)"))
-                       res))))
-
-      (dolist (f res)
-        (let ((d (file-name-directory f)))
-          (when d (make-directory (expand-file-name d html-dir) t))
-          (copy-file f (expand-file-name f html-dir) 'ok-if-already-exists)))
-
-      (when changed
-        (message ":doc-files = %S" res)
-        (plist-put (cdr pkg-spec) :doc-files res)))))
 
 (defun elpaa--makeinfo (input output &optional extraargs)
   (let* ((input-dir (file-name-directory input))
@@ -2850,29 +2830,43 @@ directory; one of archive, archive-devel."
                  destname current-target))))))
 
 (defun elpaa--doc-html-adjust-auxfiles (pkg-spec docfile html-file offset)
-  (let* ((auxfiles (elpaa--spec-get pkg-spec :doc-files)))
-    (when auxfiles
-      (let* ((docdir (if (stringp docfile) (file-name-directory docfile)))
-             (rel (when docdir
-                    (mapcar (lambda (auxfile) (file-relative-name auxfile docdir))
-                            auxfiles)))
-             (regexp (format " \\(?:href\\|src\\)=\"%s\""
-                             (regexp-opt (or rel auxfiles) t))))
-        (with-current-buffer (if (stringp html-file)
-                                 (find-file-noselect html-file)
-                               html-file)
-          (message "regexp=%S" regexp)
-          (message "buffer-size=%S" (buffer-size))
-          (goto-char (point-min))
-          (let ((case-fold-search t))
-            ;; FIXME: Skip false positives found outside of tags!
-            (while (re-search-forward regexp nil t)
-              (message "found match for: %S" (match-string 0))
-              (goto-char (match-beginning 1))
-              (insert (concat offset docdir))))
-          (when (stringp html-file)
-            (let ((make-backup-files nil))
-              (save-buffer))))))))
+  ;; (let* ((auxfiles (elpaa--spec-get pkg-spec :doc-files)))
+  ;;  (when auxfiles
+  (let* ((docdir (if (stringp docfile) (file-name-directory docfile)))
+         (regexp (format " \\(?:src\\)=\"\\([^#/.\"][^:\"#]+\\)\"")))
+    (with-current-buffer (if (stringp html-file)
+                             (find-file-noselect html-file)
+                           html-file)
+      (let ((default-directory (elpaa--pkg-root pkg-spec)))
+        (message "regexp=%S" regexp)
+        (message "buffer-size=%S" (buffer-size))
+        (message "default-directory=%S" default-directory)
+        (goto-char (point-min))
+        (let ((case-fold-search t))
+          ;; FIXME: Skip false positives found outside of tags!
+          (while (re-search-forward regexp nil t)
+            (message "found match for: %S" (match-string 1))
+            (let* ((file (match-string 1))
+                   (rootedfile (file-name-concat docdir file))
+                   (idr (elpaa--spec-get pkg-spec :internal--html-resources)))
+              (when (or (member rootedfile idr)
+                        (if (not (file-readable-p rootedfile))
+                            (message "False positive?  Skipping %S" file)
+                          (let* ((html-dir (elpaa--spec-get
+                                            pkg-spec :internal--html-dir))
+                                 (destfile
+                                  (expand-file-name rootedfile html-dir))
+                                 (destdir (file-name-directory destfile)))
+                            (plist-put (cdr pkg-spec) :internal--html-resources
+                                       (cons rootedfile idr))
+                            (when destdir (make-directory destdir t))
+                            (copy-file rootedfile destfile)
+                            t)))
+                (goto-char (match-beginning 1))
+                (insert (concat offset docdir)))))))
+      (when (stringp html-file)
+        (let ((make-backup-files nil))
+          (save-buffer))))))
 
 (defun elpaa--build-Info-1 (pkg-spec docfile dir html-dir)
   "Build an info file from DOCFILE (a texinfo source file).
@@ -3141,7 +3135,7 @@ relative to elpa root."
                             (elpaa--urtb pkg-spec "release")
                             (elpaa--local-branch-name pkg-spec t)))))
         (message "Pushed %s successfully:\n%s" pkg (buffer-string))
-        (when (file-directory-p (elpaa--pkg-root pkg))
+        (when (file-directory-p (elpaa--pkg-root pkg-spec))
           (elpaa--worktree-sync pkg-spec)))
        (t
         (message "Push error for %s:\n%s" pkg (buffer-string)))))))
