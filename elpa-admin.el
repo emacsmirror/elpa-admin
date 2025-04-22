@@ -2850,8 +2850,14 @@ directory; one of archive, archive-devel."
                    (rootedfile (file-name-concat docdir file))
                    (idr (elpaa--spec-get pkg-spec :internal--html-resources)))
               (when (or (member rootedfile idr)
-                        (if (not (file-readable-p rootedfile))
-                            (message "False positive?  Skipping %S" file)
+                        (cond
+                         ((string-match "\\.\\." file)
+                          (message "Suspicious file name: %S" file)
+                          nil)
+                         ((not (file-readable-p rootedfile))
+                          (message "False positive?  Skipping: %S" file)
+                          nil)
+                         (t
                           (let* ((html-dir (elpaa--spec-get
                                             pkg-spec :internal--html-dir))
                                  (destfile
@@ -2861,7 +2867,7 @@ directory; one of archive, archive-devel."
                                        (cons rootedfile idr))
                             (when destdir (make-directory destdir t))
                             (copy-file rootedfile destfile)
-                            t)))
+                            t))))
                 (goto-char (match-beginning 1))
                 (insert (concat offset docdir)))))))
       (when (stringp html-file)
