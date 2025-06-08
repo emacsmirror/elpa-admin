@@ -1957,6 +1957,39 @@ arbitrary code."
 	  ))
       (insert "</dd>\n"))))
 
+(defun elpaa--collect-reqs-1 (pkg-name seen)
+  "Collect all dependencies of PKG-NAME, without sanitising results.
+The optional argument SEEN is used to avoid unbounded recursion
+in case of cyclic dependencies."
+  (with-demoted-errors "Failed to infer dependencies %S"
+    (when-let*
+        (((not (memq pkg-name seen)))
+         (attr (alist-get pkg-name (elpaa--get-specs)))
+         (spec (cons pkg-name attr))
+         (meta (elpaa--metadata (elpaa--pkg-root spec) spec))
+         (reqs (nth 3 meta)))
+      (append reqs
+              (mapcan (lambda (pkg)
+                        (elpaa--collect-reqs-1
+                         (car pkg)
+                         (cons (car pkg) seen)))
+                      reqs)))))
+
+(defun elpaa--collect-reqs (pkg-name)
+  "Collect all dependencies of PKG-NAME."
+  (let ((reqs (elpaa--collect-reqs-1 pkg-name '())))
+    (delq 'emacs (delete-dups (mapcar #'car reqs)))))
+
+(defun elpaa--html-insert-reqs (pkg-spec)
+  (when-let* ((reqs (elpaa--collect-reqs (car pkg-spec))))
+    (insert "<dt>All Dependencies</dt><dd>"
+            (mapconcat
+             (lambda (pkg-name)
+               (format "<a href=\"%s.html\">%s</a> (<a href=\"%s.tar\">.tar</a>)"
+                       pkg-name pkg-name pkg-name))
+             reqs ", ")
+            "</dd>\n")))
+
 (defun elpaa--html-make-pkg (pkg pkg-spec files srcdir plain-readme)
   (let* ((name (symbol-name (car pkg)))
          (latest (package-version-join (aref (cdr pkg) 0)))
@@ -2010,6 +2043,10 @@ arbitrary code."
        pkg-spec
        (or (cdr (assoc :url (aref (cdr pkg) 4)))
            (elpaa--get-prop "URL" name srcdir mainsrcfile)))
+      (let ((default-directory (expand-file-name "..")))
+        ;; FIXME: Avoid having to move up a directory to access
+        ;; elpa-archive and the package metadata.
+        (elpaa--html-insert-reqs pkg-spec))
       (insert (format "<dt>Badge</dt><dd><img src=\"%s.svg\"/></dd>\n" (elpaa--html-quote name)))
       (elpaa--html-insert-docs pkg-spec)
       (insert "</dl>")
