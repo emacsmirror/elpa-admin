@@ -1114,14 +1114,21 @@ SPECS is the list of package specifications."
 
 (defun elpaa-batch-make-all-packages (&rest _)
   "Check all the packages and build the relevant new tarballs."
-  (let ((specs (elpaa--get-specs)))
+  (let ((specs (elpaa--get-specs))
+        (fuel most-positive-fixnum))
     (elpaa--scrub-archive-contents elpaa--release-subdir specs)
     (elpaa--scrub-archive-contents elpaa--devel-subdir specs)
     (elpaa--publish-package-specs specs)
-    (dolist (spec specs)
-      (condition-case err
-          (elpaa--make-one-package spec)
-        (error (message "Build error for %s: %S" (car spec) err))))))
+    (while specs
+      (let ((spec (pop specs)))
+        ;; The topological-ordering algorithm used in
+        ;; `elpaa--make-one-package' is very naive and doesn't detect cycles,
+        ;; so break cycles by counting steps and disabling the
+        ;; topological sort if the count is higher than normal.
+        (setq fuel (min (1- fuel) (expt (length specs) 2)))
+        (condition-case err
+            (elpaa--make-one-package spec nil (if (> fuel 0) specs))
+          (error (message "Build error for %s: %S" (car spec) err)))))))
 
 (defun elpaa-batch-make-one-package (&rest _)
   "Build the new tarballs (if needed) for one particular package."
@@ -1239,7 +1246,16 @@ SPECS is the list of package specifications."
 </svg>")))))
       (write-region (point-min) (point-max) file))))
 
-(defun elpaa--make-one-package (pkg-spec &optional tarball-only)
+(defun elpaa--depends-on-pending-p (metadata pending-specs)
+  "Return non-nil if one of the required packages is in `pending-specs'."
+  (let ((reqs (nth 3 metadata))
+        (depends nil))
+    (pcase-dolist (`(,pkg ,_vers) reqs)
+      (if (assq pkg pending-specs)
+          (setq depends t)))
+    depends))
+
+(defun elpaa--make-one-package (pkg-spec &optional tarball-only pending-specs)
   "Build the new tarballs (if needed) for PKG-SPEC.
 If TARBALL-ONLY is non-nil, don't try and select some other revision and
 place the resulting tarball into the file named TARBALL-ONLY."
@@ -1255,8 +1271,14 @@ place the resulting tarball into the file named TARBALL-ONLY."
                      (elpaa--metadata dir pkg-spec))))
     (elpaa--message "metadata = %S" metadata)
     (elpaa--check-sync-failures pkg-spec metadata)
-    (if (null metadata)
-        (error "No metadata found for package: %s" pkgname)
+    (cond
+     ((null metadata)
+      (error "No metadata found for package: %s" pkgname))
+     ((and pending-specs (elpaa--depends-on-pending-p metadata pending-specs))
+      ;; Try and build packages in dependency order, so as to avoid
+      ;; signaling spurious "missing dependencies".
+      (setq pending-specs (nconc pending-specs (list pkg-spec))))
+     (t
       ;; Disregard the simple/multi distinction.  This might have been useful
       ;; in a distant past, but nowadays it's just unneeded extra complexity.
       (setf (car metadata) nil)
@@ -1336,7 +1358,7 @@ place the resulting tarball into the file named TARBALL-ONLY."
                      (elpaa--get-release-revision
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map))))
-              (elpaa--release-email pkg-spec metadata dir)))))))))
+              (elpaa--release-email pkg-spec metadata dir))))))))))
 
 (defun elpaa--call (destination program &rest args)
   "Like ‘call-process’ for PROGRAM, DESTINATION, ARGS.
