@@ -2855,14 +2855,14 @@ directory; one of archive, archive-devel."
   ;; (let* ((auxfiles (elpaa--spec-get pkg-spec :doc-files)))
   ;;  (when auxfiles
   (let* ((docdir (if (stringp docfile) (file-name-directory docfile)))
-         (regexp (format " \\(?:src\\)=\"\\([^#/.\"][^:\"#]+\\)\"")))
+         (regexp " \\(?:src\\)=\"\\([^#/.\"][^:\"#]+\\)\""))
     (with-current-buffer (if (stringp html-file)
                              (find-file-noselect html-file)
                            html-file)
       (let ((default-directory (elpaa--pkg-root pkg-spec)))
-        (message "regexp=%S" regexp)
-        (message "buffer-size=%S" (buffer-size))
-        (message "default-directory=%S" default-directory)
+        (elpaa--message "regexp=%S" regexp)
+        ;; (elpaa--message "buffer-size=%S" (buffer-size))
+        (elpaa--message "default-directory=%S" default-directory)
         (goto-char (point-min))
         (let ((case-fold-search t))
           ;; FIXME: Skip false positives found outside of tags!
