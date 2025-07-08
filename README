@@ -1,7 +1,7 @@
 #+TITLE: ELPA-Admin README
 #+DATE: 2022-12-11
 
-Copyright (C) 2010-2022 Free Software Foundation, Inc. \\
+Copyright (C) 2010-2025 Free Software Foundation, Inc. \\
 See the end of the file for license conditions.
 
 #+BEGIN_COMMENT
@@ -130,13 +130,6 @@ If there is no upstream (=:url= is nil), this is simply ignored.
 ** =:lisp-dir=
 Subdirectory in which the main ELisp found are found.
 Defaults to the top-level directory.
-
-** =:main-file FILE=
-Gives the name of the main file of the package, i.e. the file in which
-the metadata can be found in the form of pseudo-headers like "Version:".
-It needs to be an ELisp file formatted following the proper conventions.
-This is normally the file [PKG].el in the LISP-DIR, but in some rare
-circumstances the file is named differently.
 
 ** =:release-branch BRANCH=
 The upstream BRANCH from which releases are cut.  This is only used
