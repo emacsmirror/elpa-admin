@@ -2126,7 +2126,10 @@ arbitrary code."
            " " "HTTP/" (+ (or alnum "."))))) ; Protocol
 
 (defun elpaa--string-to-seconds (timestr)
-  (encode-time (parse-time-string timestr)))
+  (condition-case err
+      (encode-time (parse-time-string timestr))
+    (error (message "Can't convert timestr %S: %S" timestr err)
+           0)))
 
 (defun elpaa--wsl-read (logfile fn)
   (with-temp-buffer
