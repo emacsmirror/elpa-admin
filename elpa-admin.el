@@ -2125,6 +2125,9 @@ arbitrary code."
            " " (group (+ (not (any blank)))) ; Path
            " " "HTTP/" (+ (or alnum "."))))) ; Protocol
 
+(defun elpaa--string-to-seconds (timestr)
+  (encode-time (parse-time-string timestr)))
+
 (defun elpaa--wsl-read (logfile fn)
   (with-temp-buffer
     (insert-file-contents logfile)
@@ -2142,7 +2145,7 @@ arbitrary code."
                     (replace-match " \\1 \\2 " t nil timestr)
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
-               (time (encode-time (parse-time-string timestr))))
+               (time (elpaa--string-to-seconds timestr)))
           (when (not (member status '("404" "400" "408")))
             (if (not (string-match elpaa--wsl-request-re request))
                 (message "Unrecognized request (status=%s): %s" status request)
