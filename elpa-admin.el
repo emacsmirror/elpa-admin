@@ -700,7 +700,7 @@ as well as in the local clone, not upstream."
   (let* ((pkg (car pkg-spec))
          (basename (format "%s-sync-failure.txt" pkg))
          (syncfail-file (expand-file-name basename elpaa--sync-failures-dir)))
-    ;; FIXME: Add a link from <PKG>.html to this status report?
+    ;; FIXME: Add a link from <PKG>.html to this status report.
     (elpaa--report-failure
      pkg-spec metadata
      (when (file-exists-p syncfail-file)
@@ -2410,7 +2410,7 @@ If WITH-CORE is non-nil, it means we manage :core packages as well."
                                     "--get-all" "remote.origin.fetch")
                        (unless (or (= (point) pos)
                                    (save-excursion
-				     (re-search-backward "\\*$" pos t)))
+				     (search-backward "+refs/heads/*:" pos t)))
                          (elpaa--call t "git" "remote" "set-branches"
                                       "--add" "origin" branch)
                          (when (elpaa--spec-get pkg-spec :release-branch)
