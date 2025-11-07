@@ -620,27 +620,27 @@ returns.  Return the selected revision."
                                     (file-name-sans-extension filename)
                                   filename)
                                 ".sig"))
+                   (fa (file-attributes filename))
+                   (age (when (and minage fa)
+                          (float-time
+                           (time-subtract
+                            (current-time)
+                            (file-attribute-modification-time fa)))))
                    (mvfun (lambda (f)
-                            (let* ((src (expand-file-name f destdir))
-                                   (fa (file-attributes src)))
+                            (let* ((src (expand-file-name f destdir)))
                               (cond
-                               ((not fa)
+                               ((not (file-exists-p src))
                                 (message "Not existing/moving: %S" src))
-                               ((and minage
-                                     (< (float-time
-                                         (time-subtract
-                                          (current-time)
-                                          (file-attribute-modification-time
-                                           fa)))
-                                        ;; One year.
-                                        minage))
-                                (message "File too young: %S" src))
                                (t
                                 (rename-file src
                                              (expand-file-name f olddir))))))))
-              (make-directory olddir t)
-              (funcall mvfun filename)
-              (funcall mvfun sig))))
+              (if (and age (< age minage))
+                  (message "File too young (%s years): %S"
+                           (/ age 60 60 24 365)
+                           filename)
+                (make-directory olddir t)
+                (funcall mvfun filename)
+                (funcall mvfun sig)))))
         (setq oldtarballs keep)))
     (dolist (oldtarball oldtarballs)
       ;; Compress oldtarballs.
