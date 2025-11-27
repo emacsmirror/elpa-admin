@@ -2149,7 +2149,8 @@ arbitrary code."
                   (message "Unrecognized timestamp: %s" timestr)
                   timestr))
                (time (elpaa--string-to-seconds timestr)))
-          (when (not (member status '("404" "400" "408")))
+          ;; Ignore unsuccessful requests, usually fishing expeditions.
+          (when (and (stringp status) (string-match "\\`2" status))
             (if (not (string-match elpaa--wsl-request-re request))
                 (message "Unrecognized request (status=%s): %s" status request)
               (let* ((file (match-string 1 request))
@@ -2244,11 +2245,10 @@ arbitrary code."
           (elpaa--wsl-one-file logfile table)))))
     (when changed
       (with-temp-buffer
-        (funcall (if (fboundp 'pp-28) #'pp-28 #'pp)
-                 `(:web-server-log-stats ,newseen ,table
+        (let ((data `(:web-server-log-stats ,newseen ,table
                    ;; Rebuild the scoreboard "by week".
-                   ,(elpaa--wsl-scores table))
-                 (current-buffer))
+                   ,(elpaa--wsl-scores table))))
+          (if (fboundp 'pp-28) (pp-28 data) (pp data (current-buffer))))
         (princ "\n" (current-buffer))
         (write-region nil nil elpaa--wsl-stats-file)))))
 
