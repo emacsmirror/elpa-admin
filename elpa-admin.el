@@ -2159,7 +2159,7 @@ arbitrary code."
                                    (or "packages" "devel"
                                        "nongnu" "nongnu-devel")
                                    (+ "/")
-                                   (group (+? any))
+                                   (group (+? not-newline))
                                    (\?
                                     "-" (or
                                          (seq
@@ -2285,8 +2285,13 @@ arbitrary code."
                  (let ((elpaa--debug nil))
                    (elpaa--call t "git" "status" "--branch" "--porcelain=2"))
                  (buffer-string))))
-          (if (string-match (regexp-quote "\n# branch.ab +0 -0") status)
-              (elpaa--message "%s up-to-date" dirname)
+          (cond
+           ((string-match "^u" status)
+            (message "### %s has unresolved conflicts! ###" dirname)
+            (elpaa--call t "git" "status"))
+           ((string-match (regexp-quote "\n# branch.ab +0 -0") status)
+            (elpaa--message "%s up-to-date" dirname))
+           (t
             (let* ((br (and (string-match
                              (concat "\n# branch.head \\("
                                      (regexp-quote elpaa--branch-prefix)
@@ -2307,8 +2312,9 @@ arbitrary code."
                       (elpaa--git-branch-p ortb))
 		  (progn
 		    (message "Updating worktree in %S" default-directory)
-		    (elpaa--call t "git" "merge"))
-	        (message "Not pushed to origin yet.  Not updating worktree"))))))
+		    (unless (equal 0 (elpaa--call t "git" "merge"))
+		      (elpaa--force-merge)))
+	        (message "Not pushed to origin yet.  Not updating worktree")))))))
        (t (error "No .git in %S" default-directory)))
       (unless (and (eobp) (bobp))
         (message "Updated %s:%s%s" dirname
@@ -2316,6 +2322,16 @@ arbitrary code."
                           (eq (line-beginning-position 0) (point-min)))
                      " " "\n")
                  (buffer-string))))))
+
+(defun elpaa--force-merge ()
+  (when (equal 0 (elpaa--call t "git" "stash"))
+    (unwind-protect
+        (unless (equal 0 (elpaa--call t "git" "merge" "--ff-only"))
+          ;; FIXME: Maybe test `status' in `elpaa--pull' so as to avoid
+          ;; calling `elpaa--force-merge' in such a case!
+          (message "### Can't fast-forward!! ###"))
+      (elpaa--call t "git" "stash" "apply")
+      (elpaa--call t "git" "stash" "drop"))))
 
 (defun elpaa--sync-emacs-repo ()
   "Sync Emacs repository, if applicable.
@@ -3087,7 +3103,7 @@ relative to elpa root."
                 (push "\n  Upstream changes:\n" msgs)
                 (push (delete-and-extract-region (point-min) (point-max)) msgs)
                 (let ((total-msg
-                       (mapconcat #'identity (nreverse msgs) "")))
+                       (mapconcat #'identity (nreverse msgs))))
                   (when show-diverged (setq msg total-msg))
                   (when (eq k #'elpaa--push)
                     (elpaa--record-sync-failure pkg-spec total-msg)))))
