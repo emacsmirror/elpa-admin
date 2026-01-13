@@ -1,6 +1,6 @@
 ;;; elpa-admin.el --- Auto-generate an Emacs Lisp package archive  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2011-2025  Free Software Foundation, Inc
+;; Copyright (C) 2011-2026  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 
@@ -2819,13 +2819,16 @@ directory; one of archive, archive-devel."
 (defun elpaa--makeinfo (input output &optional extraargs)
   (let* ((input-dir (file-name-directory input))
          (input-name (file-name-nondirectory input))
-         (output-ext (file-name-extension output))
 	 ;; The sandbox may not allow write access to the output,
          ;; so we first create the file inside the sandbox and then
          ;; move it to its intended destination.
+         ;; We generate the file in a subdir so its non-directory name
+         ;; is "the real one", which makes the build more reproducible
+         ;; (bug#80133).
+         (tmpdir (make-temp-file input-name t))
 	 (tmpfile
-	  (concat (make-temp-name (expand-file-name "doc" input-dir))
-	          (if output-ext (concat "." output-ext)))))
+          (expand-file-name (file-name-nondirectory output) tmpdir)))
+    (elpaa--temp-file (lambda () (delete-directory tmpdir 'recursive)))
     (elpaa--temp-file tmpfile)
     (with-temp-buffer
       ;; We change directory to that of the input file, because
