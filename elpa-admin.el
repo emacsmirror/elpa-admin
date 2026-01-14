@@ -2825,7 +2825,7 @@ directory; one of archive, archive-devel."
          ;; We generate the file in a subdir so its non-directory name
          ;; is "the real one", which makes the build more reproducible
          ;; (bug#80133).
-         (tmpdir (make-temp-file input-name t))
+         (tmpdir (make-temp-file (expand-file-name "doc" input-dir) t))
 	 (tmpfile
           (expand-file-name (file-name-nondirectory output) tmpdir)))
     (elpaa--temp-file (lambda () (delete-directory tmpdir 'recursive)))
@@ -2844,7 +2844,8 @@ directory; one of archive, archive-devel."
         ;; I don't know, but it's not satisfactory.
         (apply #'elpaa--call-sandboxed
                t "makeinfo" "--no-split" input-name "-o" tmpfile extraargs))
-      (message "%s" (buffer-string)))
+      (unless (= (point-min) (point-max))
+        (message "%s" (buffer-string))))
     (elpaa--message "Renaming %S => %S" tmpfile output)
     (rename-file tmpfile output t)))
 
