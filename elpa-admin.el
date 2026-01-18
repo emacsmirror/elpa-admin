@@ -641,16 +641,7 @@ returns.  Return the selected revision."
                 (make-directory olddir t)
                 (funcall mvfun filename)
                 (funcall mvfun sig)))))
-        (setq oldtarballs keep)))
-    (dolist (oldtarball oldtarballs)
-      ;; Compress oldtarballs.
-      (let ((file (cdr oldtarball)))
-        (when (string-match "\\.\\(tar\\|el\\)\\'" file)
-          ;; Make sure we don't compress the file we just created.
-          (cl-assert (not (equal file (file-name-nondirectory tarball))))
-          ;; (elpaa--message "not equal %s and %s" file tarball)
-          (elpaa--call nil "lzip" (expand-file-name file destdir))
-          (setf (cdr oldtarball) (concat file ".lz"))))))
+        (setq oldtarballs keep))))
   oldtarballs)
 
 (defun elpaa--report-failure ( pkg-spec metadata txt basename destdir
@@ -887,6 +878,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
               ,(format "s|^packages/%s|%s-%s|" pkg pkg vers)
               "-chf" ,tarball
               ,(format "packages/%s" pkg)))
+     (elpaa--call nil "lzip" "-k" tarball)
      (cl-assert (file-readable-p tarball))
      (unless tarball-only
        (let* ((pkgdesc
@@ -911,7 +903,9 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
          (let ((link (expand-file-name (format "%s.tar" pkg) destdir)))
 	   (when (file-symlink-p link) (delete-file link))
 	   (ignore-error file-error     ;E.g. under w32!
-	     (make-symbolic-link (file-name-nondirectory tarball) link)))
+	     (make-symbolic-link (file-name-nondirectory tarball) link)
+             (make-symbolic-link (file-name-nondirectory (concat tarball ".lz"))
+                                 (concat link ".lz") t)))
          (setq oldtarballs
                (let ((elpaa--keep-max
                       ;; In the devel directory, don't bother keeping so
