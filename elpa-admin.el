@@ -863,6 +863,7 @@ auxiliary files unless TARBALL-ONLY is non-nil ."
        (elpaa--build-Info pkg-spec dir destdir))
      (elpaa--write-pkg-file dir pkg metadata revision)
      (setq rendered (elpaa--write-plain-readme dir pkg-spec))
+     (elpaa--write-plain-news dir pkg-spec)
      ;; FIXME: Allow renaming files or selecting a subset of the files!
      (cl-assert (not (string-match "[][*\\|?]" pkgname)))
      (cl-assert (not (string-match "[][*\\|?]" vers)))
@@ -1604,6 +1605,18 @@ readme file has an unconventional name"
             (copy-file readme-file "README-elpa"))
           (cdr readme-content))))
      ((cdr readme-content)))))
+
+(defun elpaa--write-plain-news (pkg-dir pkg-spec)
+  "Render a plain text news file from PKG-SPEC in PKG-DIR."
+  (and-let* ((section (elpaa--get-NEWS pkg-spec pkg-dir))
+             (text (elpaa--section-to-plain-text section)))
+    (progn
+      ;; FIXME: With Emacs 31 we also check for a "NEWS-elpa" file, but
+      ;; Emacs 28 has already been checking for a "news" file.
+      ;; Eventually we should switch to generate "NEWS-elpa" files
+      ;; instead.
+      (write-region text nil (expand-file-name "news" pkg-dir))
+      text)))
 
 (defun elpaa-batch-generate-description-file (&rest _)
   "(Re)build the <PKG>-pkg.el file for particular packages."
