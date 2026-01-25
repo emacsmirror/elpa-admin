@@ -2890,7 +2890,10 @@ directory; one of archive, archive-devel."
       (unless (= (point-min) (point-max))
         (message "%s" (buffer-string))))
     (elpaa--message "Renaming %S => %S" tmpfile output)
-    (rename-file tmpfile output t)))
+    (rename-file tmpfile output t)
+    ;; The cleanup should do that for us already, but too late:
+    ;; the empty temp dir ends up in the tarball (bug#80217).
+    (delete-directory tmpdir 'recursive)))
 
 (defun elpaa--html-build-doc (pkg-spec docfile html-dir)
   (setq html-dir (directory-file-name html-dir))
