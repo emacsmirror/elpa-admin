@@ -1388,8 +1388,14 @@ PROGRAM, DESTINATION, ARGS is like in `elpaa--call'."
         (setq b (expand-file-name b))
         (setq args (nconc `("--ro-bind" ,b ,b) args))))
     (let ((exitcode
-           (apply #'elpaa--call destination "bwrap"
-                  (append elpaa--bwrap-args args))))
+           ;; Don't inherit MAKEFLAGS from any surrounding make process.
+           ;; FIXME: Should arguably be automatic, but apparently it's not
+           ;; because I get errors like:
+           ;;
+           ;;     make: *** cannot open output sync mutex /tmp/GmFauChr
+           (let ((process-environment (cons "MAKEFLAGS" process-environment)))
+             (apply #'elpaa--call destination "bwrap"
+                    (append elpaa--bwrap-args args)))))
       (unless (eq exitcode 0)
         (if (eq destination t)
             (error "Error-indicating exit code in elpaa--call-sandboxed:\n%s"
@@ -2882,11 +2888,9 @@ directory; one of archive, archive-devel."
       (let ((default-directory
              (if input-dir (expand-file-name input-dir)
                default-directory)))
-        ;; FIXME: The name of the output file is splattered all over the output
-        ;; file, so it ends up wrong after renaming.  Maybe it's harmless,
-        ;; I don't know, but it's not satisfactory.
-        (apply #'elpaa--call-sandboxed
-               t "makeinfo" "--no-split" input-name "-o" tmpfile extraargs))
+        (apply #'elpaa--call-sandboxed t
+               "makeinfo" `("--no-split" "--force"
+                            ,input-name "-o" ,tmpfile ,@extraargs)))
       (unless (= (point-min) (point-max))
         (message "%s" (buffer-string))))
     (elpaa--message "Renaming %S => %S" tmpfile output)
