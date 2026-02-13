@@ -57,7 +57,8 @@ archiv%/index.html: archiv%/archive-contents
 	         -f elpaa-batch-html-make-index $< $*
 
 ########## Rules for in-place installation ####################################
-pkgs := $(wildcard packages/*)
+PACKAGE_DIRS := $(shell find packages -mindepth 1 -maxdepth 1 -type d)
+pkgs := $(PACKAGE_DIRS) #$(wildcard packages/*)
 
 define SET-diff
 $(shell $(file > .tmp.setdiff, $(1))  \
@@ -127,6 +128,8 @@ packages/%.elc: packages/%.el
 	    --eval "(setq package-directory-list 		     \
                           (list \"$(abspath other-packages)\")       \
 			  load-prefer-newer t			     \
+                          byte-compile-debug t 			     \
+                          debug-on-error t 			     \
 	                  package-user-dir \"$(abspath packages)\")" \
 	    -f package-activate-all 		       	     	     \
 	    -L $(dir $@) -f batch-byte-compile $<
@@ -267,9 +270,7 @@ externals worktrees:	# "externals" is the old name we used to use.
 
 
 ################### Testing ###############
-
-PACKAGE_DIRS = $(shell find packages -maxdepth 1 -type d)
-PACKAGES=$(subst /,,$(subst packages,,$(PACKAGE_DIRS)))
+PACKAGES=$(subst packages/,,$(PACKAGE_DIRS))
 
 define test_template
 $(1)-test:
