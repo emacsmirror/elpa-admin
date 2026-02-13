@@ -1388,12 +1388,10 @@ PROGRAM, DESTINATION, ARGS is like in `elpaa--call'."
         (setq b (expand-file-name b))
         (setq args (nconc `("--ro-bind" ,b ,b) args))))
     (let ((exitcode
-           ;; Don't inherit MAKEFLAGS from any surrounding make process.
-           ;; FIXME: Should arguably be automatic, but apparently it's not
-           ;; because I get errors like:
-           ;;
-           ;;     make: *** cannot open output sync mutex /tmp/GmFauChr
-           (let ((process-environment (cons "MAKEFLAGS" process-environment)))
+           ;; Don't inherit MAKEFLAGS from any surrounding make process,
+           ;; nor TMP/TMPDIR since the container uses its own tmp dir.
+           (let ((process-environment `("MAKEFLAGS" "TMP" "TMPDIR"
+                                        ,@process-environment)))
              (apply #'elpaa--call destination "bwrap"
                     (append elpaa--bwrap-args args)))))
       (unless (eq exitcode 0)
@@ -1556,7 +1554,7 @@ Rename DIR/ to PKG-VERS/, and return the descriptor."
     (pcase-let ((`(,version ,desc ,requires ,extras)
                  (cdr metadata)))
       (write-region
-       (concat (format ";; Generated package description from %s.el  -*- %sno-byte-compile: t -*-\n"
+       (concat (format ";; Generated package description from %s.el  -*- %sno-byte-compile: t; lexical-binding:t -*-\n"
 		       name
 		       (let* ((emacs-req (assq 'emacs requires))
 		              (emacs-vers (car (cadr emacs-req))))
