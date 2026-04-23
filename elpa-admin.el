@@ -1454,6 +1454,17 @@ PROGRAM, DESTINATION, ARGS is like in `elpaa--call'."
     (or (apply orig-fun "package-maintainer" args)
         (apply orig-fun header args))))
 
+;; FIXME: Fix that in `package-buffer-info'.
+(advice-add 'lm-package-requires :around #'elpaa--demote-deps-syntax-errors)
+(defun elpaa--demote-deps-syntax-errors (orig-fun &rest args)
+  (condition-case err
+      (apply orig-fun args)
+    (error
+     ;; FIXME: Sadly, the invalid version number causes errors later on.
+     ;;`((syntax-error-in-Package-Requires ,(error-message-string err)))
+     `((syntax-error-in-Package-Requires "0")
+       (,(make-symbol (error-message-string err)) "0")))))
+
 (defun elpaa--metadata (dir pkg-spec)
   "Return a list (SIMPLE VERSION DESCRIPTION REQ EXTRAS).
 SIMPLE is non-nil if the package is simple;
@@ -1811,6 +1822,7 @@ which see."
     ((or "md" "markdown") 'text/markdown)
     (_
      (require 'mailcap)
+     (declare-function mailcap-extension-to-mime "mailcap" (extn))
      (let ((mt (if ext (mailcap-extension-to-mime ext))))
          (if mt (intern mt) 'text/plain)))))
 
