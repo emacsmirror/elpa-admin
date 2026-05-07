@@ -274,7 +274,6 @@ PACKAGES=$(subst packages/,,$(PACKAGE_DIRS))
 
 define test_template
 $(1)-test:
-	cd packages/$(1);				       	      \
 	$(EMACS) -l $(CURDIR)/admin/elpa-admin.el 		      \
 		--eval "(elpaa-ert-test-package \"$(CURDIR)\" '$(1))" \
 

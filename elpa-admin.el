@@ -3327,6 +3327,8 @@ relative to elpa root."
 
 (defun elpaa-ert-package-install (top-directory package)
   ;; blitz default value and set up from elpa.
+  ;; (unless (file-directory-p (expand-file-name (format "packages/%s" package)
+  ;;                                             top-directory))
   (setq package-archives
         `(("local-elpa"
 	   . ,(expand-file-name "packages" top-directory)))
@@ -3357,12 +3359,11 @@ relative to elpa root."
    (elpaa-ert-test-find-tests package-directory package)))
 
 (defun elpaa-ert-test-package (top-directory package)
-  (elpaa-ert-package-install top-directory package)
-  (elpaa-ert-load-tests
-   (expand-file-name (format "packages/%s" package) top-directory)
-   package)
-
-  (ert-run-tests-batch-and-exit t))
+  ;; (elpaa-ert-package-install top-directory package)
+  (let ((default-directory
+         (expand-file-name (format "packages/%s" package) top-directory)))
+    (elpaa-ert-load-tests default-directory package)
+    (ert-run-tests-batch-and-exit t)))
 
 ;;; Make dependencies
 
