@@ -51,7 +51,7 @@
 
 ;; FIXME: `read-symbol-shorthands' as currently implemented is
 ;; a gaping security hole.  So try and avoid the corresponding problems.
-(when (boundp permanently-enabled-local-variables)
+(when (boundp 'permanently-enabled-local-variables)
   (setq permanently-enabled-local-variables
         (delq 'read-symbol-shorthands permanently-enabled-local-variables)))
 (put 'read-symbol-shorthands 'safe-local-variable nil)
