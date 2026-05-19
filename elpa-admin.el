@@ -1022,54 +1022,76 @@ Core folders are recursively searched, excluded files are ignored."
            (string-match-p re file-name))
          core-files)))))
 
-(defun elpaa--get-devel-version (dir pkg-spec &optional release-rev)
-  "Compute the date-based pseudo-version used for devel builds."
-  (let* ((gitdate
-          (with-temp-buffer
-            (if (plist-get (cdr pkg-spec) :core)
-                (let ((core-files (elpaa--core-files pkg-spec))
-                      (default-directory (expand-file-name "emacs/")))
-                  ;; For core packages, don't use the date of the last
-                  ;; commit to the branch, but that of the last commit
-                  ;; to the core files.
-                  (apply #'elpaa--call t "git" "log" "--pretty=format:%cI" "--no-patch"
-                         "-1" "--" core-files))
-              ;; FIXME: Why follow symlinks?  I have the nagging feeling that
-              ;; this used to be needed for the :core case only, so not needed
-              ;; here any more.
-              (let* ((ftn (file-truename      ;; Follow symlinks!
-                           (expand-file-name (elpaa--main-file pkg-spec) dir)))
-                     (default-directory (file-name-directory ftn)))
-                (elpaa--call t "git" "show" "--pretty=format:%cI" "--no-patch")))
-            (buffer-string)))
-         (verdate
-          ;; Convert Git's date into something that looks like a version number.
-          ;; While we're at it, convert Git's date into its UTC equivalent,
-          ;; to try and make sure time-versions are monotone.
-          (format-time-string "%Y%m%d.%H%M%S"
-                              (elpaa--git-date-to-timestamp gitdate)
-                              0))
-         (new-verdate
-          ;; FIXME: Replace with a TIME of the COUNT of
-          ;; commits since the last release, e.g. with
-          ;;
-          ;;     git rev-list --count HEAD ^$(git merge-base HEAD RELEASE-REV)
-          (with-temp-buffer
-            ;; FIXME: Make it work for `:core'!
-            (let* ((ftn (file-truename ;; Follow symlinks!?
-                         (expand-file-name (elpaa--main-file pkg-spec) dir)))
-                   (default-directory (file-name-directory ftn)))
-              (elpaa--call t "git" "rev-list" "--count" "HEAD"
-                           (if release-rev (concat "^" release-rev)))
-              (let ((count (buffer-string)))
-                (if (not (string-match "\\`[0-9]*\n\\'" count))
-                    ;; Old style format.
-                    (format-time-string "%Y%m%d.%H%M%S"
-                              (elpaa--git-date-to-timestamp gitdate)
-                              0)
-                (format-time-string (concat "%Y%m%d." (substring count 0 -1))
-                                    (elpaa--git-date-to-timestamp gitdate)
-                                    0)))))))
+(defun elpaa--get-devel-datecount (dir pkg-spec &optional release-rev)
+  "Get the (GITDATE. COUNT) info for devel builds."
+  (with-temp-buffer
+    (cond
+     ((plist-get (cdr pkg-spec) :core)
+      (let ((core-files (elpaa--core-files pkg-spec))
+            (default-directory (expand-file-name "emacs/")))
+        ;; For core packages, don't use the date of the last
+        ;; commit to the branch, but that of the last commit
+        ;; to the core files.
+        (apply #'elpaa--call t "git" "log"
+               "--pretty=format:%H %cI" "--no-patch" "-1" "--" core-files)
+        (goto-char (point-min))
+        (let ((lastrev (if (search-forward " " nil t)
+                           (buffer-substring (point-min) (match-beginning 0))
+                         "HEAD"))
+              (gitdate (buffer-substring (point) (point-max))))
+          (erase-buffer)
+          (apply #'elpaa--call t "git" "rev-list" "--count" lastrev
+                 (if release-rev (concat "^" release-rev))
+                 "--" core-files)
+          (cons gitdate (buffer-string)))))
+     (t
+      ;; FIXME: Why follow symlinks?  I have the nagging feeling that
+      ;; this used to be needed for the :core case only, so not needed
+      ;; here any more.
+      (let* ((ftn (file-truename ;; Follow symlinks!
+                   (expand-file-name (elpaa--main-file pkg-spec) dir)))
+             (default-directory (file-name-directory ftn)))
+        (elpaa--call t "git" "show"
+                     "--pretty=format:%cI" "--no-patch")
+        (let ((gitdate (delete-and-extract-region (point-min) (point-max))))
+          (elpaa--call t "git" "rev-list" "--count" "HEAD"
+                       (if release-rev (concat "^" release-rev)))
+          (cons gitdate (buffer-string))))))))
+
+(defun elpaa--make-old-devel-vers (vers datecount)
+  (pcase-let*
+      ((`(,gitdate . ,_count) datecount)
+       (time (elpaa--git-date-to-timestamp gitdate))
+       (verdate
+        (concat vers (if (string-match "[0-9]\\'" vers) ".") "0."
+                ;; Convert Git's date into something that looks like
+                ;; a version number.  While we're at it, convert Git's
+                ;; date into its UTC equivalent, to try and make sure
+                ;; time-versions are monotone.
+                (format-time-string "%Y%m%d.%H%M%S" time 0))))
+    ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
+    (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+\\([0-9]\\)" "\\1\\2"
+                              ;; Remove trailing newline or anything untoward.
+                              (replace-regexp-in-string "[^.0-9]+" ""
+                                                        verdate))))
+
+(defun elpaa--make-new-devel-vers (pkg-spec vers datecount)
+  (pcase-let*
+      ((`(,gitdate . ,count) datecount)
+       (time (elpaa--git-date-to-timestamp gitdate))
+       (verdate
+        ;; Add a ".0." so that when the version number goes from
+        ;; NN.MM to NN.MM.1 we don't end up with the devel build
+        ;; of NN.MM comparing as more recent than NN.MM.1.
+        ;; But be careful to turn "2.3" into "2.3.0.DATE"
+        ;; and "2.3b" into "2.3b0.DATE".
+        ;; FIXME: Signal an error if OLDVERS < VERS < OLDVERS.0.DATE.
+        (concat vers (if (string-match "[0-9]\\'" vers) ".") "0."
+                (format-time-string
+                 (if (not (string-match "\\`[0-9]*\n\\'" count))
+                     ;; Old style format.
+                  "%Y%m%d.%H%M%S" (concat "%Y%m%d." (substring count 0 -1)))
+                 time 0))))
     ;; FIXME: Before using this new DATE.COUNT scheme, we need to
     ;; arrange the code so that we don't uselessly
     ;; create a fresh new `foo-VERS.0.DATE.COUNT.tar' when we already
@@ -1078,7 +1100,7 @@ Core folders are recursively searched, excluded files are ignored."
     ;; packages when the scheme changes.
     ;; Maybe the easiest way to do that is to decide which scheme to use
     ;; based on GITDATE.
-    (message "New devel version would be: %S" new-verdate)
+    (message "New devel version of %S would be: %S" (car pkg-spec) verdate)
     ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
     (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+\\([0-9]\\)" "\\1\\2"
                               ;; Remove trailing newline or anything untoward.
@@ -1341,20 +1363,23 @@ place the resulting tarball into the file named TARBALL-ONLY."
               (elpaa--get-release-revision
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map)))
-             (date-version (elpaa--get-devel-version dir pkg-spec release-rev))
-             ;; Add a ".0." so that when the version number goes from
-             ;; NN.MM to NN.MM.1 we don't end up with the devel build
-             ;; of NN.MM comparing as more recent than NN.MM.1.
-             ;; But be careful to turn "2.3" into "2.3.0.DATE"
-             ;; and "2.3b" into "2.3b0.DATE".
-             ;; FIXME: Signal an error if OLDVERS < VERS < OLDVERS.0.DATE.
-             (devel-vers
-              (concat vers (if (string-match "[0-9]\\'" vers) ".")
-                      "0." date-version))
-             (tarball (or tarball-only
-                          (format "%s%s-%s.tar"
+             (datecount (elpaa--get-devel-datecount dir pkg-spec release-rev))
+             (devel-vers (elpaa--make-old-devel-vers vers datecount))
+             (new-devel-vers
+              (elpaa--make-new-devel-vers pkg-spec vers datecount))
+             (tarball
+              (or tarball-only
+                  (let ((old-name
+                         (format "%s%s-%s.tar"
+                                 elpaa--devel-subdir pkgname devel-vers)))
+                    (if (file-exists-p old-name)
+                        old-name
+                      (let ((new-name
+                             (format "%s%s-%s.tar"
                                   elpaa--devel-subdir
-                                  pkgname devel-vers)))
+                                  pkgname new-devel-vers)))
+                        (message "New devel version would be: %S" new-name))
+                      old-name))))
              (new
               (let ((elpaa--name (concat elpaa--name "-devel"))
                     (elpaa--url elpaa--devel-url))
