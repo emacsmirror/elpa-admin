@@ -1023,7 +1023,7 @@ Core folders are recursively searched, excluded files are ignored."
          core-files)))))
 
 (defun elpaa--get-devel-datecount (dir pkg-spec &optional release-rev)
-  "Get the (GITDATE. COUNT) info for devel builds."
+  "Get the (GITDATE . COUNT) info for devel builds."
   (with-temp-buffer
     (cond
      ((plist-get (cdr pkg-spec) :core)
@@ -1075,7 +1075,7 @@ Core folders are recursively searched, excluded files are ignored."
                               (replace-regexp-in-string "[^.0-9]+" ""
                                                         verdate))))
 
-(defun elpaa--make-new-devel-vers (pkg-spec vers datecount)
+(defun elpaa--make-new-devel-vers (vers datecount)
   (pcase-let*
       ((`(,gitdate . ,count) datecount)
        (time (elpaa--git-date-to-timestamp gitdate))
@@ -1100,7 +1100,6 @@ Core folders are recursively searched, excluded files are ignored."
     ;; packages when the scheme changes.
     ;; Maybe the easiest way to do that is to decide which scheme to use
     ;; based on GITDATE.
-    (message "New devel version of %S would be: %S" (car pkg-spec) verdate)
     ;; Get rid of leading zeros since ELPA's version numbers don't allow them.
     (replace-regexp-in-string "\\(\\`\\|[^0-9]\\)0+\\([0-9]\\)" "\\1\\2"
                               ;; Remove trailing newline or anything untoward.
@@ -1364,22 +1363,23 @@ place the resulting tarball into the file named TARBALL-ONLY."
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map)))
              (datecount (elpaa--get-devel-datecount dir pkg-spec release-rev))
-             (devel-vers (elpaa--make-old-devel-vers vers datecount))
-             (new-devel-vers
-              (elpaa--make-new-devel-vers pkg-spec vers datecount))
+             (devel-vers     (elpaa--make-old-devel-vers vers datecount))
+             (new-devel-vers (elpaa--make-new-devel-vers vers datecount))
              (tarball
               (or tarball-only
                   (let ((old-name
                          (format "%s%s-%s.tar"
-                                 elpaa--devel-subdir pkgname devel-vers)))
+                                 elpaa--devel-subdir pkgname devel-vers))
+                        (new-name
+                         (format "%s%s-%s.tar"
+                                 elpaa--devel-subdir pkgname new-devel-vers)))
                     (if (file-exists-p old-name)
-                        old-name
-                      (let ((new-name
-                             (format "%s%s-%s.tar"
-                                  elpaa--devel-subdir
-                                  pkgname new-devel-vers)))
-                        (message "New devel version would be: %S" new-name))
-                      old-name))))
+                        (progn
+                          (message "Pre-existing old devel version: %s"
+                                   old-name)
+                          old-name)
+                      (elpaa--message "New devel version: %s" new-name)
+                      new-name))))
              (new
               (let ((elpaa--name (concat elpaa--name "-devel"))
                     (elpaa--url elpaa--devel-url))
@@ -3611,7 +3611,7 @@ relative to elpa root."
          (pkg (intern pkgname))
          (pkg-spec (assoc-string pkg (elpaa--get-specs) t))
          (srcdir (format "packages/%s" pkg))
-         (files 
+         (files
           (elpaa--package-oldfiles
            pkgname
            (file-name-directory (expand-file-name filename)))))
