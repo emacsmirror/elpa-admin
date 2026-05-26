@@ -1363,13 +1363,14 @@ place the resulting tarball into the file named TARBALL-ONLY."
                       dir pkg-spec vers
                       (plist-get (cdr pkg-spec) :version-map)))
              (datecount (elpaa--get-devel-datecount dir pkg-spec release-rev))
-             (devel-vers     (elpaa--make-old-devel-vers vers datecount))
+             (old-devel-vers (elpaa--make-old-devel-vers vers datecount))
              (new-devel-vers (elpaa--make-new-devel-vers vers datecount))
+             devel-vers
              (tarball
               (or tarball-only
                   (let ((old-name
                          (format "%s%s-%s.tar"
-                                 elpaa--devel-subdir pkgname devel-vers))
+                                 elpaa--devel-subdir pkgname old-devel-vers))
                         (new-name
                          (format "%s%s-%s.tar"
                                  elpaa--devel-subdir pkgname new-devel-vers)))
@@ -1377,8 +1378,10 @@ place the resulting tarball into the file named TARBALL-ONLY."
                         (progn
                           (message "Pre-existing old devel version: %s"
                                    old-name)
+                          (setq devel-vers old-devel-vers)
                           old-name)
                       (elpaa--message "New devel version: %s" new-name)
+                      (setq devel-vers new-devel-vers)
                       new-name))))
              (new
               (let ((elpaa--name (concat elpaa--name "-devel"))
